@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Collect static files (whitenoise serves them)
+# Collect static files into /app/staticfiles (nginx serves them via shared volume)
 RUN SECRET_KEY=build-placeholder python manage.py collectstatic --noinput
 
 # Create mount point for Playwright project

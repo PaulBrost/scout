@@ -6,12 +6,14 @@ services:
     environment:
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
-    ports:
-      - "${SCOUT_PORT:-8009}:8000"
+    expose:
+      - "8000"
     volumes:
       - ./playwright:/playwright-project
+      - staticfiles:/app/staticfiles
     command: >
       sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
              gunicorn scout.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile -"
 
   worker:
@@ -28,3 +30,19 @@ services:
                npm install --prefix /playwright-project;
              fi &&
              python manage.py qcluster"
+    depends_on:
+      - web
+
+  nginx:
+    image: nginx:latest
+    restart: unless-stopped
+    ports:
+      - "${SCOUT_PORT:-8009}:80"
+    volumes:
+      - staticfiles:/static:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web
+
+volumes:
+  staticfiles:
