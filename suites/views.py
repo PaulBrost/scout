@@ -318,21 +318,53 @@ def run_script(request):
             return JsonResponse({'error': 'scriptPath required'}, status=400)
 
         with connection.cursor() as cursor:
+            # Look up environment_id from test_scripts, with POST body fallback
+            cursor.execute('SELECT environment_id FROM test_scripts WHERE script_path = %s', [script_path])
+            env_row = cursor.fetchone()
+            environment_id = env_row[0] if env_row else None
+            if not environment_id and data.get('environment_id'):
+                environment_id = data['environment_id']
+
+            # Build config with optional headed and scheduled_at flags
+            config = {}
+            if data.get('headed'):
+                config['headed'] = True
+            scheduled_at = data.get('scheduled_at')
+            if scheduled_at:
+                config['scheduled_at'] = scheduled_at
+
+            run_status = 'scheduled' if scheduled_at else 'running'
+
             cursor.execute(
-                """INSERT INTO test_runs (status, trigger_type, config, notes)
-                   VALUES ('running', 'manual', '{}', %s) RETURNING id""",
-                [f'Ad-hoc: {script_path}']
+                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, started_at)
+                   VALUES (gen_random_uuid(), %s, 'manual', %s, %s, %s, now()) RETURNING id""",
+                [run_status, str(environment_id) if environment_id else None,
+                 json.dumps(config), f'Ad-hoc: {script_path}']
             )
             run_id = cursor.fetchone()[0]
             cursor.execute(
-                "INSERT INTO test_run_scripts (run_id, script_path, status) VALUES (%s, %s, 'queued')",
+                "INSERT INTO test_run_scripts (id, run_id, script_path, status) VALUES (gen_random_uuid(), %s, %s, 'queued')",
                 [str(run_id), script_path]
             )
 
-        from django_q.tasks import async_task
-        async_task('tasks.run_tasks.execute_single_script', str(run_id), script_path)
+        # Only queue for immediate execution if not scheduled
+        if not scheduled_at:
+            if data.get('headed'):
+                # Headed mode: run synchronously via thread so the browser opens
+                # on this machine (qcluster worker has no display)
+                import threading
+                def _run_headed():
+                    try:
+                        from tasks.run_tasks import execute_single_script
+                        execute_single_script(str(run_id), script_path)
+                    except Exception as e:
+                        print(f'[run_script] headed run error: {e}')
+                threading.Thread(target=_run_headed, daemon=True).start()
+            else:
+                from django_q.tasks import async_task
+                async_task('tasks.run_tasks.execute_single_script', str(run_id), script_path)
 
-        return JsonResponse({'runId': str(run_id), 'status': 'running'})
+        return JsonResponse({'runId': str(run_id), 'status': run_status})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

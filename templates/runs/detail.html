@@ -17,7 +17,7 @@
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <div class="text-muted small">Status</div>
-        <div class="mt-1"><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></div>
+        <div class="mt-1" id="runStatusBadge"><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></div>
       </div>
     </div>
   </div>
@@ -29,19 +29,17 @@
       </div>
     </div>
   </div>
-  {% if run.summary %}
-  <div class="col-md-3">
+  <div class="col-md-3" id="runSummary" {% if not run.summary %}style="display:none"{% endif %}>
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <div class="text-muted small">Results</div>
-        <div class="mt-1">
+        <div class="mt-1 summary-values">
           <span class="text-success fw-bold">{{ run.summary.passed|default:0 }} passed</span>
           / <span class="text-danger fw-bold">{{ run.summary.failed|default:0 }} failed</span>
         </div>
       </div>
     </div>
   </div>
-  {% endif %}
   <div class="col-md-3">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
@@ -74,16 +72,18 @@
       </thead>
       <tbody>
         {% for sr in script_results %}
-        <tr>
+        <tr id="script-{{ sr.id }}">
           <td class="font-monospace small">{{ sr.script_path }}</td>
-          <td><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
-          <td>{% if sr.duration_ms %}{{ sr.duration_ms }}ms{% else %}—{% endif %}</td>
-          <td class="text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ sr.error_message|default:'' }}">
-            {{ sr.error_message|default:"" }}
+          <td class="script-status"><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
+          <td class="script-duration">{% if sr.duration_ms %}{{ sr.duration_ms }}ms{% else %}—{% endif %}</td>
+          <td class="script-error text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {% if sr.error_message %}
+            <a href="#" class="text-danger text-decoration-none" data-error="{{ sr.error_message }}" onclick="showError(this.dataset.error); return false;" title="Click to view full error">{{ sr.error_message|truncatechars:120 }}</a>
+            {% endif %}
           </td>
-          <td class="text-nowrap">
+          <td class="script-actions text-nowrap">
             {% if sr.execution_log %}
-            <button class="btn btn-sm btn-outline-secondary" onclick="showLog('{{ sr.id }}')">
+            <button class="btn btn-sm btn-outline-secondary log-btn me-1" onclick="showLog('{{ sr.id }}')">
               <i class="bi bi-terminal"></i> Log
             </button>
             {% endif %}
@@ -116,13 +116,99 @@
 </div>
 
 <script>
+var runId = '{{ run.id }}';
+var polling = null;
+
 function showLog(id) {
-  fetch('/runs/{{ run.id }}/script/' + id + '/')
-    .then(r => r.json())
-    .then(d => {
+  fetch('/runs/' + runId + '/script/' + id + '/')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(d) {
       document.getElementById('logContent').textContent = d.execution_log || 'No log available.';
       new bootstrap.Modal(document.getElementById('logModal')).show();
+    })
+    .catch(function(err) {
+      alert('Failed to load log: ' + err.message);
     });
+}
+
+function showError(msg) {
+  document.getElementById('logContent').textContent = msg || 'No details.';
+  new bootstrap.Modal(document.getElementById('logModal')).show();
+}
+
+function statusBadgeHtml(status) {
+  return '<span class="status-badge status-' + status + '">' + status + '</span>';
+}
+
+function pollRunStatus() {
+  fetch('/runs/' + runId + '/status/')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (!d) return;
+
+      // Update run status badge
+      var statusEl = document.getElementById('runStatusBadge');
+      if (statusEl) statusEl.innerHTML = statusBadgeHtml(d.status);
+
+      // Update summary
+      var summaryEl = document.getElementById('runSummary');
+      if (summaryEl && d.summary && (d.summary.passed !== undefined)) {
+        summaryEl.style.display = '';
+        summaryEl.querySelector('.summary-values').innerHTML =
+          '<span class="text-success fw-bold">' + (d.summary.passed || 0) + ' passed</span>' +
+          ' / <span class="text-danger fw-bold">' + (d.summary.failed || 0) + ' failed</span>';
+      }
+
+      // Update script rows
+      if (d.scripts) {
+        d.scripts.forEach(function(s) {
+          var row = document.getElementById('script-' + s.id);
+          if (!row) return;
+          row.querySelector('.script-status').innerHTML = statusBadgeHtml(s.status);
+          row.querySelector('.script-duration').textContent = s.duration_ms ? (s.duration_ms + 'ms') : '\u2014';
+
+          var errCell = row.querySelector('.script-error');
+          if (s.error_message) {
+            errCell.innerHTML = '<a href="#" class="text-danger text-decoration-none" onclick="showError(' +
+              JSON.stringify(s.error_message).replace(/"/g, '&quot;') + '); return false;" title="Click to view full error">' +
+              escapeHtml(s.error_message.substring(0, 120)) + (s.error_message.length > 120 ? '\u2026' : '') + '</a>';
+          } else {
+            errCell.textContent = '';
+          }
+
+          var actionsCell = row.querySelector('.script-actions');
+          var logBtn = actionsCell.querySelector('.log-btn');
+          if (s.has_log && !logBtn) {
+            var btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-outline-secondary log-btn me-1';
+            btn.setAttribute('onclick', "showLog('" + s.id + "')");
+            btn.innerHTML = '<i class="bi bi-terminal"></i> Log';
+            actionsCell.insertBefore(btn, actionsCell.firstChild);
+          }
+        });
+      }
+
+      // Stop polling when run is done
+      if (d.status !== 'running' && d.status !== 'scheduled') {
+        clearInterval(polling);
+        polling = null;
+      }
+    })
+    .catch(function() {}); // Silently ignore transient network errors
+}
+
+function escapeHtml(text) {
+  var d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// Start polling if run is in progress
+if ('{{ run.status }}' === 'running' || '{{ run.status }}' === 'scheduled') {
+  polling = setInterval(pollRunStatus, 3000);
 }
 </script>
 {% endblock %}

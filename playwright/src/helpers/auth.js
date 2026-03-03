@@ -51,8 +51,8 @@ async function login(page, options = {}) {
   await page.waitForSelector(passwordSelector, { timeout: 15000 });
 
   if (authType === 'username_password' && username) {
-    // Look for username field (common patterns)
-    var usernameSelector = '#_ctl0_Body_UserNameText';
+    var usernameSelector = (envConfig && envConfig.credentials && envConfig.credentials.username_selector)
+      || '#_ctl0_Body_UserNameText';
     try {
       await page.fill(usernameSelector, username);
     } catch (e) {
@@ -78,7 +78,12 @@ async function login(page, options = {}) {
 async function loginAndStartTest(page, options = {}) {
   const formKey = options.formKey || 'cra-form1';
   const skipIntro = options.skipIntro !== false;
-  const envConfig = options.env;
+
+  // Auto-load env config from runner if not explicitly provided
+  var envConfig = options.env;
+  if (!envConfig && process.env.SCOUT_ENV_CONFIG) {
+    try { envConfig = JSON.parse(process.env.SCOUT_ENV_CONFIG); } catch (e) { /* ignore */ }
+  }
 
   // Resolve URL for session check
   var checkUrl;

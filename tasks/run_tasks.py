@@ -32,7 +32,23 @@ def execute_suite_run(run_id):
 def execute_single_script(run_id, script_path):
     """django-q task: ad-hoc single script run."""
     from executor.runner import execute_run
-    execute_run(run_id, [script_path])
+
+    # Read run config for options like headed mode
+    options = {}
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT config FROM test_runs WHERE id = %s', [run_id])
+        row = cursor.fetchone()
+        if row and row[0]:
+            run_config = row[0]
+            if isinstance(run_config, str):
+                try:
+                    run_config = json.loads(run_config)
+                except (json.JSONDecodeError, TypeError):
+                    run_config = {}
+            if isinstance(run_config, dict) and run_config.get('headed'):
+                options['headed'] = True
+
+    execute_run(run_id, [script_path], options=options)
 
     # Post-execution pipeline
     _run_post_execution(run_id)

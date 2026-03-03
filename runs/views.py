@@ -170,6 +170,44 @@ def script_detail(request, run_id, script_id):
 
 
 @login_required(login_url='/login/')
+def api_run_status(request, run_id):
+    """Lightweight JSON endpoint for polling run status + script results."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT status, summary FROM test_runs WHERE id = %s',
+            [run_id]
+        )
+        row = cursor.fetchone()
+    if not row:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    run_status = row[0]
+    summary = row[1]
+    if isinstance(summary, str):
+        try:
+            summary = json.loads(summary)
+        except Exception:
+            summary = {}
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT id, script_path, status, duration_ms, error_message,
+                      execution_log IS NOT NULL AS has_log
+               FROM test_run_scripts WHERE run_id = %s
+               ORDER BY completed_at DESC NULLS LAST, script_path""",
+            [run_id]
+        )
+        cols = [c[0] for c in cursor.description]
+        scripts = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    return JsonResponse({
+        'status': run_status,
+        'summary': summary,
+        'scripts': scripts,
+    }, default=str)
+
+
+@login_required(login_url='/login/')
 def api_list(request):
     page = max(1, int(request.GET.get('page', 1)))
     page_size = min(500, max(1, int(request.GET.get('pageSize', 25))))

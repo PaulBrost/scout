@@ -78,7 +78,7 @@ def extract_error_message(stdout, stderr, json_report):
     return 'Test failed (see execution log for details)'
 
 
-def execute_script(script_path, project='', timeout=None, env_vars=None):
+def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False):
     """Execute a single Playwright test script."""
     if timeout is None:
         timeout = settings.SCOUT_SCRIPT_TIMEOUT / 1000  # convert ms to seconds
@@ -104,6 +104,11 @@ def execute_script(script_path, project='', timeout=None, env_vars=None):
     json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
 
     args = ['npx', 'playwright', 'test', str(full_path), '--reporter=list,json', '--retries=0']
+    if headed:
+        args.append('--headed')
+        # Default to single project so only one browser window opens
+        if not project:
+            project = 'chrome-desktop'
     if project:
         args.append(f'--project={project}')
 
@@ -250,13 +255,41 @@ def execute_run(run_id, script_paths, options=None):
     options = options or {}
     passed = failed = errors = 0
 
-    # Prepare test data if environment is set on the run
+    # Prepare test data and environment config if environment is set on the run
     test_data_path = None
+    env_config_json = None
+    headed = options.get('headed', False)
     with connection.cursor() as cursor:
-        cursor.execute('SELECT environment_id FROM test_runs WHERE id = %s', [run_id])
+        cursor.execute('SELECT environment_id, config FROM test_runs WHERE id = %s', [run_id])
         row = cursor.fetchone()
+        if row:
+            # Check run config for headed flag
+            run_config = row[1]
+            if isinstance(run_config, str):
+                try:
+                    run_config = json.loads(run_config)
+                except (json.JSONDecodeError, TypeError):
+                    run_config = {}
+            if isinstance(run_config, dict) and run_config.get('headed'):
+                headed = True
         if row and row[0]:
-            test_data_path = prepare_test_data(run_id, row[0])
+            environment_id = row[0]
+            test_data_path = prepare_test_data(run_id, environment_id)
+
+            # Fetch full environment config so Playwright helpers can use it
+            cursor.execute(
+                'SELECT base_url, auth_type, credentials, launcher_config FROM environments WHERE id = %s',
+                [str(environment_id)]
+            )
+            env_row = cursor.fetchone()
+            if env_row:
+                env_config = {
+                    'base_url': env_row[0],
+                    'auth_type': env_row[1],
+                    'credentials': env_row[2] if isinstance(env_row[2], dict) else {},
+                    'launcher_config': env_row[3] if isinstance(env_row[3], dict) else {},
+                }
+                env_config_json = json.dumps(env_config, default=str)
 
     for script_path in script_paths:
         with connection.cursor() as cursor:
@@ -269,11 +302,14 @@ def execute_run(run_id, script_paths, options=None):
             env_vars = dict(options.get('env') or {})
             if test_data_path:
                 env_vars['SCOUT_TEST_DATA'] = test_data_path
+            if env_config_json:
+                env_vars['SCOUT_ENV_CONFIG'] = env_config_json
 
             result = execute_script(
                 script_path,
                 project=options.get('project', ''),
                 env_vars=env_vars if env_vars else None,
+                headed=headed,
             )
             with connection.cursor() as cursor:
                 cursor.execute(

@@ -132,11 +132,29 @@
 
     <!-- Bottom action bar -->
     <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+      <span id="runStatus" class="text-muted small me-auto" style="min-height:1.2em"></span>
       <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" id="dryRunBtn">
         <i class="bi bi-check2-circle"></i> Check
       </button>
       <button class="btn btn-sm btn-success" onclick="saveFile()" id="saveBtn">
         <i class="bi bi-save"></i> Save
+      </button>
+      <!-- Save & Run split dropdown -->
+      <div class="btn-group">
+        <button class="btn btn-sm btn-primary" onclick="saveAndRun(false)" id="saveRunBtn" {% if not file_path %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> Save &amp; Run
+        </button>
+        <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split"
+          data-bs-toggle="dropdown" aria-expanded="false" {% if not file_path %}disabled{% endif %}>
+          <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" onclick="saveAndRun(false); return false;"><i class="bi bi-play-fill me-1"></i>Run Now</a></li>
+          <li><a class="dropdown-item" href="#" onclick="openScheduleModal(); return false;"><i class="bi bi-clock me-1"></i>Schedule</a></li>
+        </ul>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" onclick="runInUI()" id="runUIBtn" {% if not file_path %}disabled{% endif %}>
+        <i class="bi bi-display"></i> Run in UI Mode
       </button>
     </div>
   </div>
@@ -247,9 +265,33 @@
 
 </div>
 
+<!-- Schedule Run Modal -->
+<div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="scheduleModalLabel">Schedule Run</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label small mb-1">Run at</label>
+        <input type="datetime-local" id="scheduleTime" class="form-control form-control-sm">
+        <div class="text-muted small mt-1">Script will be saved and scheduled.</div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="scheduleRun()">
+          <i class="bi bi-clock"></i> Schedule
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 var conversationId = null;
 var currentFilePath = '{{ file_path|default:""|escapejs }}';
+var currentEnvironmentId = '{{ script_meta.environment_id|default:""|escapejs }}';
 var isDirty = false;
 
 function getCookie(name) {
@@ -429,6 +471,7 @@ function saveFile() {
     if (d.path) {
       currentFilePath = d.path;
     }
+    updateRunButtons();
     setStatus('Saved to ' + (d.path || currentFilePath), 'text-success');
     setTimeout(() => setStatus('', ''), 3000);
   })
@@ -492,6 +535,157 @@ function saveMeta() {
     statusEl.textContent = d.ok ? 'Saved.' : ('Error: ' + d.error);
     setTimeout(() => statusEl.textContent = '', 3000);
   });
+}
+
+function setRunStatus(msg, cls) {
+  var el = document.getElementById('runStatus');
+  el.textContent = msg;
+  el.className = 'small me-auto ' + (cls || 'text-muted');
+}
+
+function doRunScript(headed, scheduledAt) {
+  if (!currentFilePath) {
+    alert('Save the script first before running.');
+    return;
+  }
+  var envId = currentEnvironmentId || (document.getElementById('envPicker') ? document.getElementById('envPicker').value : '');
+  var payload = { scriptPath: currentFilePath };
+  if (envId) payload.environment_id = envId;
+  if (headed) payload.headed = true;
+  if (scheduledAt) payload.scheduled_at = scheduledAt;
+
+  setRunStatus(scheduledAt ? 'Scheduling…' : 'Starting run…', 'text-info');
+
+  fetch('/suites/run-script/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) {
+      setRunStatus('Error: ' + d.error, 'text-danger');
+      return;
+    }
+    if (scheduledAt) {
+      setRunStatus('Scheduled! Run ID: ' + d.runId.substring(0, 8), 'text-success');
+    } else {
+      window.location.href = '/runs/' + d.runId + '/';
+    }
+  })
+  .catch(err => {
+    setRunStatus('Error: ' + err.message, 'text-danger');
+  });
+}
+
+function saveAndRun(headed) {
+  var code = document.getElementById('codeEditor').value;
+  if (!code.trim()) { alert('No code to save.'); return; }
+
+  if (isDirty || !currentFilePath) {
+    // Save first, then run
+    var envPicker = document.getElementById('envPicker');
+    var envId = envPicker ? envPicker.value : '';
+    if (!currentFilePath && !envId) {
+      alert('Please select an environment before saving a new script.');
+      return;
+    }
+
+    var payload = {code: code};
+    if (currentFilePath) payload.path = currentFilePath;
+    if (envId) payload.environment_id = envId;
+
+    setRunStatus('Saving…', 'text-info');
+
+    fetch('/test-cases/api/save/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setRunStatus('Save failed: ' + d.error, 'text-danger'); return; }
+      isDirty = false;
+      document.getElementById('dirtyIndicator').style.display = 'none';
+      if (d.path) currentFilePath = d.path;
+      updateRunButtons();
+      doRunScript(headed);
+    })
+    .catch(err => {
+      setRunStatus('Save error: ' + err.message, 'text-danger');
+    });
+  } else {
+    doRunScript(headed);
+  }
+}
+
+function runInUI() {
+  saveAndRun(true);
+}
+
+function openScheduleModal() {
+  // Default to 5 minutes from now
+  var now = new Date(Date.now() + 5 * 60 * 1000);
+  var local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('scheduleTime').value = local;
+  new bootstrap.Modal(document.getElementById('scheduleModal')).show();
+}
+
+function scheduleRun() {
+  var timeVal = document.getElementById('scheduleTime').value;
+  if (!timeVal) { alert('Please select a time.'); return; }
+
+  var code = document.getElementById('codeEditor').value;
+  if (!code.trim()) { alert('No code to save.'); return; }
+
+  // Close modal
+  bootstrap.Modal.getInstance(document.getElementById('scheduleModal')).hide();
+
+  if (isDirty || !currentFilePath) {
+    var envPicker = document.getElementById('envPicker');
+    var envId = envPicker ? envPicker.value : '';
+    if (!currentFilePath && !envId) {
+      alert('Please select an environment before saving a new script.');
+      return;
+    }
+
+    var payload = {code: code};
+    if (currentFilePath) payload.path = currentFilePath;
+    if (envId) payload.environment_id = envId;
+
+    setRunStatus('Saving…', 'text-info');
+
+    fetch('/test-cases/api/save/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setRunStatus('Save failed: ' + d.error, 'text-danger'); return; }
+      isDirty = false;
+      document.getElementById('dirtyIndicator').style.display = 'none';
+      if (d.path) currentFilePath = d.path;
+      updateRunButtons();
+      doRunScript(false, timeVal);
+    })
+    .catch(err => {
+      setRunStatus('Save error: ' + err.message, 'text-danger');
+    });
+  } else {
+    doRunScript(false, timeVal);
+  }
+}
+
+function updateRunButtons() {
+  var hasFile = !!currentFilePath;
+  var saveRunBtn = document.getElementById('saveRunBtn');
+  var runUIBtn = document.getElementById('runUIBtn');
+  if (saveRunBtn) saveRunBtn.disabled = !hasFile;
+  if (runUIBtn) runUIBtn.disabled = !hasFile;
+  // Also enable the dropdown toggle
+  var dropdownToggle = saveRunBtn ? saveRunBtn.nextElementSibling : null;
+  if (dropdownToggle) dropdownToggle.disabled = !hasFile;
 }
 
 // Warn on unload if dirty
