@@ -1,0 +1,182 @@
+<%- include('header', { title: 'Test Results', active: 'runs' }) %>
+
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-2xl font-bold text-gray-900">Test Results</h1>
+  <%- include('partials/help-modal', {
+    helpTitle: 'Test Results Help',
+    helpContent: '<p class="font-medium text-gray-900">Understanding Test Results</p>' +
+      '<p>This page shows the history of all test suite executions (runs). Each row represents one run of a test suite.</p>' +
+      '<p><strong>Status</strong> — <em>Completed</em> means all scripts finished. <em>Running</em> means execution is in progress. <em>Failed</em> means one or more scripts encountered errors.</p>' +
+      '<p><strong>Passed / Failed</strong> — Counts of individual test scripts that passed or failed within the run. Failed counts in red indicate failures that need attention.</p>' +
+      '<p><strong>Duration</strong> — Total wall-clock time for the run across all browser profiles.</p>' +
+      '<p><strong>Drill Down</strong> — Click a run row to see per-script results. From there, click "Logs" to view the full Playwright execution log and error details.</p>'
+  }) %>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="filter-status" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Statuses</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="failed">Failed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <select id="filter-trigger" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Triggers</option>
+        <option value="manual">Manual</option>
+        <option value="dashboard">Dashboard</option>
+        <option value="scheduled">Scheduled</option>
+        <option value="ci">CI</option>
+      </select>
+      <input type="text" id="search-input" placeholder="Search…"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-40">
+      <button id="filter-btn" class="rounded-lg bg-scout-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-scout-700">Filter</button>
+    </div>
+  </div>
+
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="started">
+          Started <span class="sort-arrow ml-1 text-gray-700">▼</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="suite">
+          Suite <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="status">
+          Status <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none">Passed</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none">Failed</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none">Scripts</th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="trigger">
+          Trigger <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none w-16">Details</th>
+      </tr>
+    </thead>
+    <tbody id="table-body" class="divide-y divide-gray-200"></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600">
+    <div class="flex items-center gap-3">
+      <span id="page-info">Showing 0–0 of 0</span>
+      <div class="flex gap-1">
+        <button id="prev-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Previous</button>
+        <button id="next-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var state = { page: 1, pageSize: 25, sort: 'started', dir: 'desc', search: '', status: '', trigger: '' };
+  var tbody = document.getElementById('table-body');
+
+  function load() {
+    var params = new URLSearchParams({
+      page: state.page, pageSize: state.pageSize,
+      sort: state.sort, dir: state.dir
+    });
+    if (state.search) params.set('search', state.search);
+    if (state.status) params.set('status', state.status);
+    if (state.trigger) params.set('trigger', state.trigger);
+
+    fetch('/runs/api/list?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) { render(data); })
+      .catch(function(e) { tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-red-500">' + e.message + '</td></tr>'; });
+  }
+
+  function render(data) {
+    var rows = data.rows;
+    var total = data.total;
+    var start = (data.page - 1) * data.pageSize;
+    var end = Math.min(start + rows.length, total);
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No test results found. <a href="/suites" class="text-scout-600 hover:underline">Run a test suite</a> to see results here.</td></tr>';
+    } else {
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var href = '/runs/' + r.id;
+        var statusCls = r.status === 'failed' ? 'bg-red-100 text-red-800' :
+                        r.status === 'running' ? 'bg-yellow-100 text-yellow-800' :
+                        r.status === 'cancelled' ? 'bg-gray-100 text-gray-700' : '';
+        var statusHtml = statusCls ? '<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ' + statusCls + '">' + esc(r.status) + '</span>' :
+                        '<span class="text-sm text-gray-700">' + esc(r.status) + '</span>';
+        var triggerCls = r.trigger_type === 'dashboard' ? 'bg-blue-100 text-blue-800' :
+                         r.trigger_type === 'scheduled' ? 'bg-purple-100 text-purple-800' :
+                         r.trigger_type === 'ci' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-700';
+        var summary = r.summary || {};
+        if (typeof summary === 'string') try { summary = JSON.parse(summary); } catch(e) { summary = {}; }
+        var passed = summary.passed != null ? summary.passed : '—';
+        var failed = summary.failed != null ? summary.failed : '—';
+        var startedText = r.started_at ? new Date(r.started_at).toLocaleString() : '—';
+
+        html += '<tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location=\'' + href + '\'">' +
+          '<td class="px-4 py-3 text-sm text-gray-700">' + esc(startedText) + '</td>' +
+          '<td class="px-4 py-3 text-sm">' + (r.suite_name ? '<a href="/suites/' + r.suite_id + '" onclick="event.stopPropagation()" class="text-scout-600 hover:underline">' + esc(r.suite_name) + '</a>' : '<span class="text-gray-400 italic">Ad-hoc</span>') + '</td>' +
+          '<td class="px-4 py-3">' + statusHtml + '</td>' +
+          '<td class="px-4 py-3 text-sm text-green-600 text-center">' + passed + '</td>' +
+          '<td class="px-4 py-3 text-sm text-center ' + (failed !== '—' && failed > 0 ? 'text-red-600' : 'text-gray-500') + '">' + failed + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-500 text-center">' + (r.script_count || '—') + '</td>' +
+          '<td class="px-4 py-3"><span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' + triggerCls + '">' + esc(r.trigger_type) + '</span></td>' +
+          '<td class="px-4 py-3 text-center"><a href="' + href + '" onclick="event.stopPropagation()" class="text-scout-600 hover:underline text-sm">View</a></td>' +
+          '</tr>';
+      }
+      tbody.innerHTML = html;
+    }
+
+    document.getElementById('page-info').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : 'No results';
+    var pages = Math.max(1, Math.ceil(total / data.pageSize));
+    document.getElementById('prev-btn').disabled = data.page <= 1;
+    document.getElementById('next-btn').disabled = data.page >= pages;
+  }
+
+  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  document.getElementById('page-size').addEventListener('change', function() { state.pageSize = parseInt(this.value); state.page = 1; load(); });
+  document.getElementById('filter-status').addEventListener('change', function() { state.status = this.value; state.page = 1; load(); });
+  document.getElementById('filter-trigger').addEventListener('change', function() { state.trigger = this.value; state.page = 1; load(); });
+  document.getElementById('filter-btn').addEventListener('click', function() { state.search = document.getElementById('search-input').value; state.page = 1; load(); });
+  document.getElementById('search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') { state.search = this.value; state.page = 1; load(); } });
+
+  document.querySelectorAll('.sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.col;
+      if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; } else { state.sort = col; state.dir = col === 'started' ? 'desc' : 'asc'; }
+      document.querySelectorAll('.sort-arrow').forEach(function(a) { a.textContent = '▲'; a.classList.add('text-gray-300'); a.classList.remove('text-gray-700'); });
+      var arrow = th.querySelector('.sort-arrow');
+      arrow.textContent = state.dir === 'asc' ? '▲' : '▼';
+      arrow.classList.remove('text-gray-300'); arrow.classList.add('text-gray-700');
+      state.page = 1; load();
+    });
+  });
+
+  document.getElementById('prev-btn').addEventListener('click', function() { state.page--; load(); });
+  document.getElementById('next-btn').addEventListener('click', function() { state.page++; load(); });
+
+  load();
+})();
+</script>
+
+<%- include('footer') %>

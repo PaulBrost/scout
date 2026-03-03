@@ -1,0 +1,42 @@
+<%- include('header', { title: 'Items', active: 'items' }) %>
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Items</h1>
+  <p class="text-sm text-gray-500">Assessment items under test</p>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item ID</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tier</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      <% if (locals.items && items.length > 0) { %>
+        <% items.forEach(item => { %>
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-4 text-sm font-mono font-medium"><a href="/items/<%= encodeURIComponent(item.id) %>" class="text-scout-600 hover:underline"><%= item.id %></a></td>
+          <td class="px-6 py-4 text-sm text-gray-700"><%= item.title || '—' %></td>
+          <td class="px-6 py-4 text-sm text-gray-500"><%= item.category || '—' %></td>
+          <td class="px-6 py-4">
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+              <%= item.tier === 'smoke' ? 'bg-green-100 text-green-800' : item.tier === 'core' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800' %>">
+              <%= item.tier %>
+            </span>
+          </td>
+          <td class="px-6 py-4 text-sm"><a href="/items/<%= encodeURIComponent(item.id) %>" class="text-scout-600 hover:underline">View History</a></td>
+        </tr>
+        <% }); %>
+      <% } else { %>
+        <tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">No items registered yet. Run tests to populate the item catalog.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('footer') %>

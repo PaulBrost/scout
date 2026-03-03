@@ -1,0 +1,105 @@
+<%- include('header', { title: item.title || item.id, active: 'items' }) %>
+
+<div class="mb-6 flex justify-between items-center">
+  <div>
+    <nav class="text-sm text-gray-500 mb-2">
+      <a href="/items" class="hover:underline">Items</a> → <span class="text-gray-900"><%= item.title || item.id %></span>
+    </nav>
+    <h1 class="text-2xl font-bold text-gray-900"><%= item.title || item.id %></h1>
+    <div class="flex items-center gap-3 mt-1">
+      <span class="text-xs text-gray-400 font-mono">#<%= item.numeric_id %></span>
+      <span class="text-xs text-gray-400 font-mono"><%= item.id %></span>
+      <% if (item.assessment_name) { %>
+        <span class="text-xs text-gray-500">— <a href="/assessments/<%= item.assessment_id %>" class="text-scout-600 hover:underline"><%= item.assessment_name %></a></span>
+      <% } %>
+    </div>
+  </div>
+  <%- include('partials/help-modal', { helpTitle: 'Item Detail', helpContent: '<p class=\"mb-2\">This page shows details for a single test item including its configuration and associated test scripts.</p><p class=\"mb-2\"><strong>Test Scripts</strong> — Shows which scripts test this item, with category, pass/fail counts, and last run date. Click Edit to open a script in the editor where you can view its full run history.</p><p>Associate scripts with items from the script editor\'s Settings tab.</p>' }) %>
+  <button onclick="deleteItem()" class="inline-flex items-center rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 border border-red-200 shadow-sm">
+    🗑️ Delete
+  </button>
+</div>
+
+<!-- Item info -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Category</div>
+    <div class="mt-1 text-lg"><%= item.category || '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Tier</div>
+    <div class="mt-1 text-lg"><%= item.tier %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Languages</div>
+    <div class="mt-1 text-lg"><%= item.languages ? item.languages.join(', ') : 'English' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Version</div>
+    <div class="mt-1 text-lg"><%= item.active_version || '—' %></div>
+  </div>
+</div>
+
+<!-- Test Scripts -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">Test Scripts</h2>
+  </div>
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Script</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Runs</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Passed</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Failed</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Run</th>
+        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      <% if (locals.scripts && scripts.length > 0) { %>
+        <% scripts.forEach(function(s) { %>
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3 text-sm font-mono text-gray-700"><%= s.script_path %></td>
+          <td class="px-6 py-3 text-sm">
+            <% if (s.category) { %>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+              <%= s.category === 'visual' ? 'bg-purple-100 text-purple-800' :
+                 s.category === 'content' ? 'bg-sky-100 text-sky-800' :
+                 s.category === 'feature' ? 'bg-indigo-100 text-indigo-800' :
+                 s.category === 'workflow' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800' %>">
+              <%= s.category %>
+            </span>
+            <% } else { %><span class="text-gray-400">—</span><% } %>
+          </td>
+          <td class="px-6 py-3 text-sm text-gray-600"><%= s.run_count %></td>
+          <td class="px-6 py-3 text-sm text-green-600 font-medium"><%= s.passed %></td>
+          <td class="px-6 py-3 text-sm <%= parseInt(s.failed) > 0 ? 'text-red-600 font-medium' : 'text-gray-500' %>"><%= s.failed %></td>
+          <td class="px-6 py-3 text-sm text-gray-500"><%= s.last_run ? new Date(s.last_run).toLocaleString() : '—' %></td>
+          <td class="px-6 py-3 text-center text-sm">
+            <a href="/builder?file=<%= encodeURIComponent(s.script_path) %>" class="text-scout-600 hover:underline">Edit</a>
+          </td>
+        </tr>
+        <% }); %>
+      <% } else { %>
+        <tr><td colspan="7" class="px-6 py-8 text-center text-gray-500">No test scripts associated with this item yet</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function deleteItem() {
+  if (!confirm('Delete item "<%= (item.title || item.id).replace(/"/g, '\\"') %>"? This will also delete all associated test results, AI analyses, and baselines. This cannot be undone.')) return;
+  fetch('/items/<%= item.numeric_id %>', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.href = '/items';
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

@@ -1,0 +1,394 @@
+<%- include('header', { title: 'Run ' + run.id.substring(0, 8), active: 'runs' }) %>
+
+<div class="mb-6">
+  <nav class="text-sm text-gray-500 mb-2">
+    <a href="/runs" class="hover:text-scout-600">Test Results</a> → <span class="text-gray-900"><%= run.id.substring(0, 8) %></span>
+  </nav>
+  <div class="flex items-center gap-3">
+    <h1 class="text-2xl font-bold text-gray-900">Run Details</h1>
+    <%- include('partials/help-modal', {
+      helpTitle: 'Run Details Help',
+      helpContent: '<p class="font-medium text-gray-900">Understanding Run Details</p>' +
+        '<p>This page shows the results of a single test run — every script that was executed and its outcome.</p>' +
+        '<p><strong>Summary Cards</strong> — Quick counts of passed, failed, and errored scripts at the top.</p>' +
+        '<p><strong>Script Results Table</strong> — Each row is one test script. Status shows passed (green), failed (red), or error (yellow).</p>' +
+        '<p><strong>Logs</strong> — Click the "Logs" button to view the full Playwright execution log, including step-by-step actions, timing, assertion details, and error messages with stack traces.</p>' +
+        '<p><strong>Trace</strong> — Downloads the Playwright trace archive (.zip) for failed tests. Open it with <code>npx playwright show-trace trace.zip</code> to see a step-by-step replay with DOM snapshots, network activity, and console logs.</p>' +
+        '<p><strong>Video</strong> — Watch a recording of the browser during test execution. Available for failed tests to help verify what happened visually.</p>' +
+        '<p><strong>Edit</strong> — Opens the test script in the code editor so you can fix failing tests.</p>' +
+        '<p><strong>Duration</strong> — Time taken for that script across all browser profiles.</p>'
+    }) %>
+    <% if (run.suite_name) { %>
+    <a href="/suites/<%= run.suite_id %>" class="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-3 py-0.5 text-sm font-medium hover:bg-blue-200">
+      📦 <%= run.suite_name %>
+    </a>
+    <% } else { %>
+    <span class="inline-flex items-center rounded-full bg-gray-100 text-gray-600 px-3 py-0.5 text-sm">Ad-hoc run</span>
+    <% } %>
+  </div>
+</div>
+
+<% var s = locals.summary || {}; %>
+<!-- Run summary cards -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Status</div>
+    <div class="mt-1 text-lg font-semibold <%= run.status === 'completed' ? 'text-green-600' : run.status === 'failed' ? 'text-red-600' : 'text-yellow-600' %>"><%= run.status %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Passed</div>
+    <div class="mt-1 text-lg font-semibold text-green-600"><%= s.passed != null ? s.passed : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Failed</div>
+    <div class="mt-1 text-lg font-semibold text-red-600"><%= s.failed != null ? s.failed : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Total Scripts</div>
+    <div class="mt-1 text-lg font-semibold"><%= s.total != null ? s.total : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs font-medium text-gray-500 uppercase">Trigger</div>
+    <div class="mt-1 text-sm font-semibold text-gray-700"><%= run.trigger_type %></div>
+    <div class="text-xs text-gray-400 mt-0.5"><%= run.started_at ? new Date(run.started_at).toLocaleString() : '' %></div>
+  </div>
+</div>
+
+<!-- Per-script results -->
+<% if (locals.scriptResults && scriptResults.length > 0) { %>
+<div class="bg-white rounded-lg shadow overflow-hidden mb-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">Script Results</h2>
+  </div>
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Script</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase w-24">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      <% scriptResults.forEach(function(sr) { %>
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 text-sm font-mono text-gray-700"><%= sr.script_path %></td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+            <%= sr.status === 'passed' ? 'bg-green-100 text-green-800' :
+               sr.status === 'failed' ? 'bg-red-100 text-red-800' :
+               sr.status === 'running' ? 'bg-yellow-100 text-yellow-800' :
+               sr.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700' %>">
+            <%= sr.status %>
+          </span>
+        </td>
+        <td class="px-4 py-3 text-sm text-gray-500"><%= sr.duration_ms ? (sr.duration_ms / 1000).toFixed(1) + 's' : '—' %></td>
+        <td class="px-4 py-3 text-sm text-red-600 max-w-sm truncate"><%= sr.error_message || (sr.status === 'passed' ? '' : '—') %></td>
+        <td class="px-4 py-3 text-center text-sm space-x-2">
+          <button onclick="openScriptDetail('<%= sr.id %>')" class="text-scout-600 hover:underline">Logs</button>
+          <% if (sr.trace_path) { %>
+          <a href="/<%= sr.trace_path %>" target="_blank" class="text-purple-600 hover:underline" title="Download Playwright trace">Trace</a>
+          <% } %>
+          <% if (sr.video_path) { %>
+          <button onclick="openVideoPlayer('/<%= sr.video_path %>', '<%= sr.script_path.replace(/'/g, "\\'") %>')" class="text-blue-600 hover:underline" title="Watch test execution video">Video</button>
+          <% } %>
+          <a href="/builder?file=<%= encodeURIComponent(sr.script_path) %>" class="text-gray-500 hover:underline">Edit</a>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<!-- Legacy item-level results (from older runs) -->
+<% if (locals.results && results.length > 0) { %>
+<div class="bg-white rounded-lg shadow overflow-hidden mb-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">Item Results</h2>
+  </div>
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Browser</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Diff Ratio</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">AI</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      <% results.forEach(function(r) { %>
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 text-sm font-medium text-gray-900"><% if (r.item_numeric_id) { %><a href="/items/<%= r.item_numeric_id %>" class="text-scout-600 hover:underline"><%= r.item_id %></a><% } else { %><%= r.item_id %><% } %></td>
+        <td class="px-4 py-3 text-sm text-gray-500"><%= r.browser %></td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+            <%= r.status === 'passed' ? 'bg-green-100 text-green-800' : r.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800' %>">
+            <%= r.status %>
+          </span>
+        </td>
+        <td class="px-4 py-3 text-sm"><%= r.diff_pixel_ratio != null ? (r.diff_pixel_ratio * 100).toFixed(2) + '%' : '—' %></td>
+        <td class="px-4 py-3 text-sm text-gray-500"><%= r.duration_ms ? (r.duration_ms / 1000).toFixed(1) + 's' : '—' %></td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+            <%= r.ai_status === 'completed' ? 'bg-blue-100 text-blue-800' : r.ai_status === 'none' ? 'bg-gray-100 text-gray-600' : 'bg-yellow-100 text-yellow-800' %>">
+            <%= r.ai_status %>
+          </span>
+        </td>
+        <td class="px-4 py-3 text-sm text-red-600 max-w-xs truncate"><%= r.error_message || '' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<!-- AI Analyses -->
+<% if (locals.analyses && analyses.length > 0) { %>
+<div class="bg-white rounded-lg shadow overflow-hidden mt-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">AI Analyses</h2>
+  </div>
+  <div class="divide-y divide-gray-200">
+    <% analyses.forEach(function(a) { %>
+    <div class="px-6 py-4">
+      <div class="flex items-center gap-3 mb-2">
+        <span class="font-medium"><%= a.item_id %></span>
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800"><%= a.analysis_type %></span>
+        <span class="text-sm text-gray-500">Model: <%= a.model %></span>
+        <% if (a.issues_found) { %>
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800"><%= a.issue_count %> issue(s)</span>
+        <% } else { %>
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Clean</span>
+        <% } %>
+      </div>
+      <pre class="bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 overflow-y-auto"><%= a.output %></pre>
+    </div>
+    <% }); %>
+  </div>
+</div>
+<% } %>
+
+<% if ((!locals.scriptResults || scriptResults.length === 0) && (!locals.results || results.length === 0)) { %>
+<div class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+  <% if (run.status === 'running') { %>
+  <div class="text-4xl mb-3 animate-pulse">⚙️</div>
+  <p>Run is still in progress. <a href="" onclick="location.reload(); return false;" class="text-scout-600 hover:underline">Refresh</a> to check for updates.</p>
+  <% } else { %>
+  <p>No detailed results available for this run.</p>
+  <% } %>
+</div>
+<% } %>
+
+<!-- Video Player Modal -->
+<div id="videoModal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/60" onclick="closeVideoPlayer()"></div>
+  <div class="absolute inset-8 md:inset-16 lg:inset-y-16 lg:inset-x-32 bg-gray-900 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-3 border-b border-gray-700 shrink-0">
+      <div>
+        <h3 id="videoTitle" class="text-lg font-semibold text-white font-mono"></h3>
+        <p class="text-sm text-gray-400 mt-0.5">Test execution recording</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a id="videoDownload" href="#" download class="text-sm text-gray-400 hover:text-white">⬇ Download</a>
+        <button onclick="closeVideoPlayer()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+      </div>
+    </div>
+    <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
+      <video id="videoElement" controls class="max-w-full max-h-full rounded-lg shadow-lg" style="background: #000">
+        Your browser does not support video playback.
+      </video>
+    </div>
+  </div>
+</div>
+
+<!-- Trace Viewer Modal -->
+<div id="traceModal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/40" onclick="closeTraceViewer()"></div>
+  <div class="absolute inset-4 md:inset-8 bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+      <h3 id="traceTitle" class="text-lg font-semibold text-gray-900">Playwright Trace Viewer</h3>
+      <div class="flex items-center gap-3">
+        <a id="traceDownload" href="#" download class="text-sm text-gray-500 hover:text-gray-700">⬇ Download trace.zip</a>
+        <button onclick="closeTraceViewer()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+      </div>
+    </div>
+    <div class="flex-1 overflow-hidden">
+      <iframe id="traceFrame" class="w-full h-full border-0"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- Script Detail Modal -->
+<div id="scriptModal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/40" onclick="closeScriptDetail()"></div>
+  <div class="absolute inset-4 md:inset-10 lg:inset-y-10 lg:inset-x-24 bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+      <div>
+        <h3 id="modalTitle" class="text-lg font-semibold text-gray-900 font-mono"></h3>
+        <div class="flex items-center gap-3 mt-1">
+          <span id="modalStatus" class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"></span>
+          <span id="modalDuration" class="text-sm text-gray-500"></span>
+        </div>
+      </div>
+      <button onclick="closeScriptDetail()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="flex-1 overflow-auto">
+      <!-- Error section (only for failed) -->
+      <div id="modalErrorSection" class="hidden border-b border-red-200">
+        <div class="px-6 py-3 bg-red-50">
+          <h4 class="text-sm font-semibold text-red-800 uppercase tracking-wide">Error Details</h4>
+        </div>
+        <pre id="modalError" class="px-6 py-4 text-sm font-mono text-red-700 bg-red-50/50 whitespace-pre-wrap overflow-x-auto"></pre>
+      </div>
+      <!-- Execution log -->
+      <div>
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Execution Log</h4>
+        </div>
+        <pre id="modalLog" class="px-6 py-4 text-sm font-mono text-gray-700 whitespace-pre-wrap overflow-x-auto leading-relaxed"></pre>
+      </div>
+    </div>
+    <div class="px-6 py-3 border-t border-gray-200 shrink-0 flex justify-end gap-3">
+      <button onclick="copyLogToClipboard()" class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50">Copy Log</button>
+      <button onclick="closeScriptDetail()" class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var currentRunId = '<%= run.id %>';
+var cachedLogText = '';
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function openScriptDetail(scriptId) {
+  var modal = document.getElementById('scriptModal');
+  modal.classList.remove('hidden');
+  document.getElementById('modalTitle').textContent = 'Loading...';
+  document.getElementById('modalStatus').textContent = '';
+  document.getElementById('modalDuration').textContent = '';
+  document.getElementById('modalError').textContent = '';
+  document.getElementById('modalLog').textContent = 'Loading execution log...';
+  document.getElementById('modalErrorSection').classList.add('hidden');
+
+  fetch('/runs/' + currentRunId + '/script/' + scriptId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('modalTitle').textContent = data.script_path || scriptId;
+
+      var statusEl = document.getElementById('modalStatus');
+      statusEl.textContent = data.status;
+      statusEl.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ' +
+        (data.status === 'passed' ? 'bg-green-100 text-green-800' :
+         data.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700');
+
+      document.getElementById('modalDuration').textContent =
+        data.duration_ms ? (data.duration_ms / 1000).toFixed(1) + 's' : '';
+
+      // Split execution_log into log and error sections
+      var log = data.execution_log || 'No execution log available.';
+      var errorDetail = '';
+      var splitIdx = log.indexOf('── Error Detail');
+      if (splitIdx !== -1) {
+        errorDetail = log.substring(splitIdx).replace(/^── Error Detail[─ ]*\n/, '');
+        log = log.substring(0, splitIdx).trimEnd();
+      }
+
+      // Color the log lines
+      var logEl = document.getElementById('modalLog');
+      logEl.innerHTML = colorizeLog(log);
+      cachedLogText = data.execution_log || '';
+
+      if (data.status === 'failed' || data.status === 'error') {
+        document.getElementById('modalErrorSection').classList.remove('hidden');
+        var errorText = errorDetail || data.error_message || 'No error details captured.';
+        document.getElementById('modalError').innerHTML = colorizeError(errorText);
+      } else {
+        document.getElementById('modalErrorSection').classList.add('hidden');
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('modalLog').textContent = 'Failed to load: ' + err.message;
+    });
+}
+
+function colorizeLog(text) {
+  return text.split('\n').map(function(line) {
+    var escaped = esc(line);
+    if (/✓/.test(line)) return '<span class="text-green-700">' + escaped + '</span>';
+    if (/✗/.test(line)) return '<span class="text-red-600 font-semibold">' + escaped + '</span>';
+    if (/▶/.test(line)) return '<span class="text-blue-700">' + escaped + '</span>';
+    return escaped;
+  }).join('\n');
+}
+
+function colorizeError(text) {
+  return text.split('\n').map(function(line) {
+    var escaped = esc(line);
+    if (/Expected|Received|Actual|missing|typo|possible/i.test(line))
+      return '<span class="font-semibold">' + escaped + '</span>';
+    if (/at tests\//.test(line))
+      return '<span class="text-red-400">' + escaped + '</span>';
+    return escaped;
+  }).join('\n');
+}
+
+function closeScriptDetail() {
+  document.getElementById('scriptModal').classList.add('hidden');
+}
+
+function copyLogToClipboard() {
+  navigator.clipboard.writeText(cachedLogText).then(function() {
+    var btn = event.target;
+    var orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  });
+}
+
+function openVideoPlayer(videoUrl, scriptName) {
+  var modal = document.getElementById('videoModal');
+  var video = document.getElementById('videoElement');
+  document.getElementById('videoTitle').textContent = scriptName;
+  document.getElementById('videoDownload').href = videoUrl;
+  video.src = videoUrl;
+  modal.classList.remove('hidden');
+  video.play().catch(function() {}); // autoplay may be blocked
+}
+
+function closeVideoPlayer() {
+  var modal = document.getElementById('videoModal');
+  var video = document.getElementById('videoElement');
+  video.pause();
+  video.src = '';
+  modal.classList.add('hidden');
+}
+
+function openTraceViewer(traceUrl) {
+  var modal = document.getElementById('traceModal');
+  document.getElementById('traceDownload').href = traceUrl;
+  // Use Playwright's hosted trace viewer with the local trace URL
+  // For air-gapped environments, this can be replaced with a self-hosted viewer
+  var fullTraceUrl = window.location.origin + traceUrl;
+  document.getElementById('traceFrame').src = 'https://trace.playwright.dev/?trace=' + encodeURIComponent(fullTraceUrl);
+  modal.classList.remove('hidden');
+}
+
+function closeTraceViewer() {
+  document.getElementById('traceFrame').src = '';
+  document.getElementById('traceModal').classList.add('hidden');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeScriptDetail();
+  if (e.key === 'Escape') closeVideoPlayer();
+  if (e.key === 'Escape') closeTraceViewer();
+});
+</script>
+
+<%- include('footer') %>

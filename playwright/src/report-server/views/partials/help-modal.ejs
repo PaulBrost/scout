@@ -1,0 +1,23 @@
+<%# Help modal partial — include on each page with helpTitle and helpContent locals %>
+<button onclick="document.getElementById('help-modal').classList.remove('hidden')" class="text-gray-400 hover:text-scout-600 transition-colors" title="Help">
+  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 18h.01" />
+    <circle cx="12" cy="12" r="10" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+</button>
+
+<div id="help-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-semibold text-gray-900"><%= locals.helpTitle || 'Help' %></h2>
+      <button onclick="document.getElementById('help-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <div class="px-6 py-4 overflow-y-auto text-sm text-gray-700 space-y-3 help-content">
+      <%- locals.helpContent || '' %>
+    </div>
+    <div class="px-6 py-3 border-t border-gray-100 text-right">
+      <button onclick="document.getElementById('help-modal').classList.add('hidden')" class="rounded-lg bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">Got it</button>
+    </div>
+  </div>
+</div>
+<script>document.addEventListener('keydown',function(e){if(e.key==='Escape'){var m=document.getElementById('help-modal');if(m&&!m.classList.contains('hidden'))m.classList.add('hidden')}})</script>

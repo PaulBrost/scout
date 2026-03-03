@@ -1,0 +1,276 @@
+<%- include('header', { title: 'Items', active: 'items' }) %>
+
+<div class="mb-6 flex justify-between items-center">
+  <h1 class="text-2xl font-bold text-gray-900">Items</h1>
+  <div class="flex items-center gap-3">
+    <%- include('partials/help-modal', {
+      helpTitle: 'Items Help',
+      helpContent: '<p class="font-medium text-gray-900">What are Items?</p>' +
+        '<p>An <strong>item</strong> is an individual assessment question, content page, or interactive element that SCOUT tests.</p>' +
+        '<p><strong>Item ID</strong> — A unique identifier used to reference the item in test scripts and baselines (e.g., "piaac-u501-hiccups").</p>' +
+        '<p><strong>Category</strong> — The content domain: literacy, numeracy, problem-solving, etc.</p>' +
+        '<p><strong>Tier</strong> — Determines testing priority: <em>smoke</em> (critical, run always), <em>core</em> (standard), or <em>full</em> (comprehensive).</p>' +
+        '<p><strong>Languages</strong> — Which language versions exist for the item (e.g., English, Spanish, Romanian).</p>' +
+        '<p><strong>Assessment</strong> — Filter by assessment to see items belonging to a specific project.</p>' +
+        '<p><strong>Add New Item</strong> — Creates an item record. Items can also be imported automatically via portal scrapers.</p>'
+    }) %>
+    <button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" class="inline-flex items-center rounded-lg bg-scout-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-scout-700 shadow-sm">
+      Add New Item
+    </button>
+  </div>
+</div>
+
+<!-- Add Item Modal -->
+<div id="add-item-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-900">Add New Item</h2>
+      <button onclick="document.getElementById('add-item-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <form id="item-form" onsubmit="event.preventDefault(); alert('Item creation is not yet wired up. This is a storyboard preview.');">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Item ID <span class="text-red-500">*</span></label>
+          <input type="text" name="item_id" placeholder="e.g., CRA-F1-001"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Title <span class="text-red-500">*</span></label>
+          <input type="text" name="title" placeholder="e.g., Fraction Addition — Item 1"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Environment <span class="text-red-500">*</span></label>
+          <select name="environment_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+            <option value="">Select environment…</option>
+            <% environments.forEach(function(e) { %>
+              <option value="<%= e.id %>"><%= e.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Assessment</label>
+          <select name="assessment_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+            <option value="">Select assessment…</option>
+            <% assessments.forEach(function(a) { %>
+              <option value="<%= a.id %>"><%= a.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Item Number</label>
+          <input type="number" name="item_number" min="1" placeholder="e.g., 1"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+          <select name="category"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+            <option value="">Select…</option>
+            <option value="multiple-choice">Multiple Choice</option>
+            <option value="short-answer">Short Answer</option>
+            <option value="extended-response">Extended Response</option>
+            <option value="interactive">Interactive / Drag-and-Drop</option>
+            <option value="equation-editor">Equation Editor</option>
+            <option value="information">Information Screen</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tier</label>
+          <select name="tier"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+            <option value="full">Full</option>
+            <option value="core">Core</option>
+            <option value="smoke">Smoke</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Language(s)</label>
+          <div class="flex items-center gap-4 mt-1.5">
+            <label class="flex items-center gap-1.5 text-sm text-gray-700">
+              <input type="checkbox" name="lang_english" checked class="rounded border-gray-300 text-scout-600 focus:ring-scout-500"> English
+            </label>
+            <label class="flex items-center gap-1.5 text-sm text-gray-700">
+              <input type="checkbox" name="lang_spanish" class="rounded border-gray-300 text-scout-600 focus:ring-scout-500"> Spanish
+            </label>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Active Version</label>
+          <input type="text" name="active_version" placeholder="e.g., v2025"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        </div>
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+        <textarea name="notes" rows="2" placeholder="Optional notes about this item"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500"></textarea>
+      </div>
+      <p class="text-xs text-amber-600 mt-3">⚠️ Item creation is not yet implemented — this is a preview of the planned interface.</p>
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="button" onclick="document.getElementById('add-item-modal').classList.add('hidden')" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Cancel</button>
+        <button type="submit" class="rounded-lg bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">Add Item</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Items Table -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" onchange="state.pageSize=+this.value;state.page=1;load();" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="assess-filter" onchange="state.assessment=this.value;state.page=1;load();" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Assessments</option>
+        <% assessments.forEach(function(a) { %>
+          <option value="<%= a.id %>"><%= a.name %></option>
+        <% }); %>
+      </select>
+      <input type="text" id="table-search" placeholder="Search items…"
+        onkeydown="if(event.key==='Enter'){state.search=this.value;state.page=1;load();}"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-56">
+    </div>
+  </div>
+
+  <!-- Table -->
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th onclick="toggleSort('numeric_id')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none w-16">
+          # <span id="sort-numeric_id" class="sort-arrow ml-1 text-gray-700">▲</span>
+        </th>
+        <th onclick="toggleSort('id')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Item ID <span id="sort-id" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th onclick="toggleSort('title')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Title <span id="sort-title" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th onclick="toggleSort('assessment')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Assessment <span id="sort-assessment" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th onclick="toggleSort('category')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Category <span id="sort-category" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th onclick="toggleSort('tier')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Tier <span id="sort-tier" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
+        <th onclick="toggleSort('env')" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Environment <span id="sort-env" class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase w-16">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="items-body" class="divide-y divide-gray-200"></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div id="pagination" class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600"></div>
+</div>
+
+<script>
+(function() {
+  window.state = { page: 1, pageSize: 25, sort: 'numeric_id', dir: 'asc', search: '', assessment: '' };
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function tierBadge(t) {
+    if (!t) return '<span class="text-gray-400">—</span>';
+    var c = t === 'smoke' ? 'bg-green-100 text-green-800' : t === 'core' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800';
+    return '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' + c + '">' + esc(t) + '</span>';
+  }
+
+  window.toggleSort = function(col) {
+    if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; }
+    else { state.sort = col; state.dir = 'asc'; }
+    load();
+  };
+
+  function updateSortArrows() {
+    document.querySelectorAll('.sort-arrow').forEach(function(el) {
+      var col = el.id.replace('sort-', '');
+      if (col === state.sort) {
+        el.textContent = state.dir === 'asc' ? '▲' : '▼';
+        el.className = 'sort-arrow ml-1 text-gray-700';
+      } else {
+        el.textContent = '▲';
+        el.className = 'sort-arrow ml-1 text-gray-300';
+      }
+    });
+  }
+
+  window.load = function() {
+    var qs = 'page=' + state.page + '&pageSize=' + state.pageSize +
+      '&sort=' + state.sort + '&dir=' + state.dir;
+    if (state.search) qs += '&search=' + encodeURIComponent(state.search);
+    if (state.assessment) qs += '&assessment=' + encodeURIComponent(state.assessment);
+
+    fetch('/items/api/list?' + qs)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var body = document.getElementById('items-body');
+        if (!data.rows || data.rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="9" class="px-6 py-8 text-center text-gray-400">No items found</td></tr>';
+        } else {
+          body.innerHTML = data.rows.map(function(r) {
+            var langs = r.languages ? r.languages.join(', ') : '—';
+            return '<tr class="hover:bg-gray-50">' +
+              '<td class="px-4 py-3 text-sm text-gray-400">' + r.numeric_id + '</td>' +
+              '<td class="px-4 py-3 text-sm font-mono font-medium"><a href="/items/' + r.numeric_id + '" class="text-scout-600 hover:underline">' + esc(r.id) + '</a></td>' +
+              '<td class="px-4 py-3 text-sm text-gray-700">' + esc(r.title || '—') + '</td>' +
+              '<td class="px-4 py-3 text-sm text-gray-600">' + (r.assessment_name ? '<a href="/assessments/' + encodeURIComponent(r.assessment_id) + '" class="text-scout-600 hover:underline">' + esc(r.assessment_name) + '</a>' : '<span class="text-gray-400">—</span>') + '</td>' +
+              '<td class="px-4 py-3 text-sm text-gray-500">' + esc(r.category || '—') + '</td>' +
+              '<td class="px-4 py-3">' + tierBadge(r.tier) + '</td>' +
+              '<td class="px-4 py-3 text-sm text-gray-500">' + esc(langs) + '</td>' +
+              '<td class="px-4 py-3 text-sm text-gray-500">' + esc(r.env_name || '—') + '</td>' +
+              '<td class="px-4 py-3 text-center"><button onclick="deleteItem(' + r.numeric_id + ', \'' + esc(r.id).replace(/'/g, "\\'") + '\')" class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 border border-red-200" title="Delete">🗑️</button></td>' +
+              '</tr>';
+          }).join('');
+        }
+
+        // Pagination
+        var total = data.total;
+        var pages = Math.ceil(total / state.pageSize);
+        var start = (state.page - 1) * state.pageSize + 1;
+        var end = Math.min(state.page * state.pageSize, total);
+        var pag = document.getElementById('pagination');
+        pag.innerHTML = '<div class="flex items-center gap-3">' +
+          '<span>Showing ' + (total > 0 ? start : 0) + '–' + end + ' of ' + total + '</span>' +
+          '<div class="flex gap-1">' +
+          '<button onclick="state.page=Math.max(1,state.page-1);load();" ' + (state.page <= 1 ? 'disabled class="rounded border border-gray-300 px-3 py-1 opacity-40 cursor-not-allowed"' : 'class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100"') + '>Previous</button>' +
+          '<button onclick="state.page=Math.min(' + pages + ',state.page+1);load();" ' + (state.page >= pages ? 'disabled class="rounded border border-gray-300 px-3 py-1 opacity-40 cursor-not-allowed"' : 'class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100"') + '>Next</button>' +
+          '</div></div>';
+
+        updateSortArrows();
+      });
+  };
+
+  load();
+})();
+
+function deleteItem(numericId, name) {
+  if (!confirm('Delete item "' + name + '"? This will also delete all associated test results, AI analyses, and baselines. This cannot be undone.')) return;
+  fetch('/items/' + numericId, { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      load();
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

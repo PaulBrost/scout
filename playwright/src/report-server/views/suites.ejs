@@ -1,0 +1,199 @@
+<%- include('header', { title: 'Test Suites', active: 'suites' }) %>
+
+<div class="mb-6 flex justify-between items-center">
+  <h1 class="text-2xl font-bold text-gray-900">Test Suites</h1>
+  <div class="flex items-center gap-3">
+    <%- include('partials/help-modal', {
+      helpTitle: 'Test Suites Help',
+      helpContent: '<p class="font-medium text-gray-900">What are Test Suites?</p>' +
+        '<p>A <strong>test suite</strong> bundles one or more test scripts together into a single runnable collection. This lets you group related tests and execute them as a batch.</p>' +
+        '<p><strong>Browser Profiles</strong> — Each suite specifies which browsers to test against (Chrome, Firefox, Edge, WebKit, Chromebook). Tests run across all selected profiles.</p>' +
+        '<p><strong>Scheduling</strong> — Suites can be scheduled to run automatically at set intervals (daily, weekly) or triggered manually with "Run Now".</p>' +
+        '<p><strong>Run Now</strong> — Executes all scripts in the suite immediately. Results appear on the Test Results page.</p>' +
+        '<p><strong>New Test Suite</strong> — Create a suite by selecting scripts from the available test scripts and choosing browser profiles.</p>'
+    }) %>
+    <a href="/suites/new" class="inline-flex items-center rounded-lg bg-scout-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-scout-700 shadow-sm">
+      New Test Suite
+    </a>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="text" id="search-input" placeholder="Search suites…"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-48">
+      <button id="filter-btn" class="rounded-lg bg-scout-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-scout-700">Filter</button>
+    </div>
+  </div>
+
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="name">
+          Suite Name <span class="sort-arrow ml-1 text-gray-700">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="scripts">
+          Scripts <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase select-none">
+          Browser Profiles
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="schedule">
+          Schedule <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="updated">
+          Last Updated <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none w-24">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="table-body" class="divide-y divide-gray-200"></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600">
+    <div class="flex items-center gap-3">
+      <span id="page-info">Showing 0–0 of 0</span>
+      <div class="flex gap-1">
+        <button id="prev-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Previous</button>
+        <button id="next-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var state = { page: 1, pageSize: 25, sort: 'name', dir: 'asc', search: '' };
+  var tbody = document.getElementById('table-body');
+
+  function load() {
+    var params = new URLSearchParams({
+      page: state.page, pageSize: state.pageSize,
+      sort: state.sort, dir: state.dir
+    });
+    if (state.search) params.set('search', state.search);
+
+    fetch('/suites/api/list?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) { render(data); })
+      .catch(function(e) { tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-red-500">' + e.message + '</td></tr>'; });
+  }
+
+  function render(data) {
+    var rows = data.rows;
+    var total = data.total;
+    var start = (data.page - 1) * data.pageSize;
+    var end = Math.min(start + rows.length, total);
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">' +
+        '<div class="mb-2 text-2xl">📦</div>No test suites yet. <a href="/suites/new" class="text-scout-600 hover:underline">Create one</a> to group your test scripts.</td></tr>';
+    } else {
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var s = rows[i];
+        var href = '/suites/' + s.id;
+        var browsers = s.browser_profiles || ['chrome-desktop'];
+        var browserHtml = '';
+        for (var b = 0; b < browsers.length; b++) {
+          browserHtml += '<span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 mr-1 mb-1">' + esc(browsers[b]) + '</span>';
+        }
+
+        var scheduleText = 'Manual';
+        if (s.schedule) {
+          try {
+            var sched = typeof s.schedule === 'string' ? JSON.parse(s.schedule) : s.schedule;
+            if (sched && sched.enabled) {
+              scheduleText = (sched.frequency || 'daily');
+              scheduleText = scheduleText.charAt(0).toUpperCase() + scheduleText.slice(1);
+              if (sched.time) scheduleText += ' at ' + sched.time;
+            }
+          } catch(e) {}
+        }
+
+        var updatedText = s.updated_at ? timeAgo(new Date(s.updated_at)) : '—';
+
+        html += '<tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location=\'' + href + '\'">' +
+          '<td class="px-4 py-3"><div class="text-sm font-medium text-gray-900">' + esc(s.name) + '</div>' +
+            (s.description ? '<div class="text-xs text-gray-500 mt-0.5">' + esc(s.description) + '</div>' : '') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-500 text-center">' + (s.script_count || 0) + '</td>' +
+          '<td class="px-4 py-3">' + browserHtml + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-500">' + esc(scheduleText) + '</td>' +
+          '<td class="px-4 py-3 text-xs text-gray-500">' + esc(updatedText) + '</td>' +
+          '<td class="px-4 py-3 text-center">' +
+            '<a href="' + href + '" onclick="event.stopPropagation()" class="inline-flex items-center rounded-md bg-scout-50 px-2 py-1 text-xs text-scout-700 hover:bg-scout-100 border border-scout-200 mr-1">✏️</a>' +
+            '<button onclick="event.stopPropagation(); deleteSuite(\'' + s.id + '\', \'' + esc(s.name).replace(/'/g, "\\'") + '\')" class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 border border-red-200">🗑️</button>' +
+          '</td>' +
+          '</tr>';
+      }
+      tbody.innerHTML = html;
+    }
+
+    document.getElementById('page-info').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : 'No results';
+    var pages = Math.max(1, Math.ceil(total / data.pageSize));
+    document.getElementById('prev-btn').disabled = data.page <= 1;
+    document.getElementById('next-btn').disabled = data.page >= pages;
+  }
+
+  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function timeAgo(date) {
+    var secs = Math.floor((new Date() - date) / 1000);
+    if (secs < 60) return 'just now';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+    if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+    return Math.floor(secs / 86400) + 'd ago';
+  }
+
+  // Page size
+  document.getElementById('page-size').addEventListener('change', function() { state.pageSize = parseInt(this.value); state.page = 1; load(); });
+
+  // Search
+  document.getElementById('filter-btn').addEventListener('click', function() { state.search = document.getElementById('search-input').value; state.page = 1; load(); });
+  document.getElementById('search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') { state.search = this.value; state.page = 1; load(); } });
+
+  // Sort
+  document.querySelectorAll('.sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.col;
+      if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; } else { state.sort = col; state.dir = 'asc'; }
+      document.querySelectorAll('.sort-arrow').forEach(function(a) { a.textContent = '▲'; a.classList.add('text-gray-300'); a.classList.remove('text-gray-700'); });
+      var arrow = th.querySelector('.sort-arrow');
+      arrow.textContent = state.dir === 'asc' ? '▲' : '▼';
+      arrow.classList.remove('text-gray-300'); arrow.classList.add('text-gray-700');
+      state.page = 1; load();
+    });
+  });
+
+  // Pagination
+  document.getElementById('prev-btn').addEventListener('click', function() { state.page--; load(); });
+  document.getElementById('next-btn').addEventListener('click', function() { state.page++; load(); });
+
+  load();
+})();
+
+function deleteSuite(id, name) {
+  if (!confirm('Delete suite "' + name + '"? This cannot be undone.')) return;
+  fetch('/suites/' + id, { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function() { window.location.reload(); })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

@@ -1,0 +1,611 @@
+<%- include('header', { title: locals.filename ? 'Edit: ' + filename : 'Test Builder', active: locals.filename ? 'test-cases' : 'builder' }) %>
+
+<div class="mb-4">
+<% if (locals.filePath) { %>
+  <div class="flex items-center justify-between mb-2">
+    <nav class="text-sm text-gray-500">
+      <a href="/test-cases" class="hover:underline">Test Scripts</a> → <span class="text-gray-900"><%= locals.filename %></span>
+    </nav>
+    <div class="flex items-center gap-3">
+      <%- include('partials/help-modal', {
+        helpTitle: 'Script Editor Help',
+        helpContent: '<p class="font-medium text-gray-900">Editing Test Scripts</p>' +
+          '<p>The code editor lets you view and modify Playwright test scripts directly in the browser.</p>' +
+          '<p><strong>Save</strong> — Saves changes to the .spec.js file on disk. The script will use the updated code on its next run.</p>' +
+          '<p><strong>Copy</strong> — Copies the entire script content to your clipboard.</p>' +
+          '<p><strong>AI Chat</strong> — Use the chat panel on the right to ask AI to modify or explain the code. Describe what you want in plain English.</p>'
+      }) %>
+      <button id="copy-btn" class="text-sm text-scout-600 hover:text-scout-800 hover:underline">Copy</button>
+      <button onclick="deleteCurrentScript()" class="text-sm text-red-600 hover:text-red-800 hover:underline">Delete</button>
+    </div>
+  </div>
+<% } else { %>
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">AI Test Builder</h1>
+      <p class="text-sm text-gray-500">Describe a test in plain English — AI generates Playwright code</p>
+    </div>
+    <%- include('partials/help-modal', {
+      helpTitle: 'AI Test Builder Help',
+      helpContent: '<p class="font-medium text-gray-900">How to Use the AI Test Builder</p>' +
+        '<p>Describe what you want to test in plain English using the chat panel, and the AI will generate a complete Playwright test script.</p>' +
+        '<p><strong>Example prompts:</strong></p>' +
+        '<ul class="list-disc ml-4 space-y-1">' +
+        '<li>"Test that the calculator opens when clicking the calculator button"</li>' +
+        '<li>"Verify the help panel displays content and closes cleanly"</li>' +
+        '<li>"Check that switching to Spanish translates all visible text"</li>' +
+        '</ul>' +
+        '<p><strong>Save</strong> — Once you\'re happy with the generated code, save it as a new test script file.</p>' +
+        '<p><strong>Assessment Context</strong> — If an assessment is selected, the AI uses its environment and item details to generate more accurate scripts.</p>'
+    }) %>
+  </div>
+<% } %>
+<% if (locals.assessment) { %>
+  <div class="flex items-center gap-2 mt-1 text-sm text-gray-500">
+    <span class="inline-flex items-center rounded-full bg-scout-50 border border-scout-200 px-2.5 py-0.5 text-xs font-medium text-scout-700">
+      <%= assessment.name %>
+    </span>
+    <% if (assessment.env_name) { %><span class="text-gray-400">· <%= assessment.env_name %></span><% } %>
+    <% if (locals.testType) { %>
+    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+      <%= testType === 'visual' ? 'bg-purple-100 text-purple-800' : testType === 'content' ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800' %>">
+      <%= testType === 'visual' ? 'Visual Regression' : testType === 'content' ? 'Content Validation' : 'Feature' %>
+    </span>
+    <% } %>
+    <% if (locals.baselineVersion) { %><span class="text-gray-400">· Compare: <%= baselineVersion %></span><% } %>
+  </div>
+<% } %>
+  <div class="flex items-center gap-3 mt-2">
+    <label for="ai-toggle" class="relative inline-flex items-center cursor-pointer">
+      <input type="checkbox" id="ai-toggle" class="sr-only peer" checked>
+      <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-scout-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-scout-600"></div>
+    </label>
+    <span id="ai-toggle-label" class="text-sm font-medium text-gray-700">AI Assistant</span>
+  </div>
+</div>
+
+<div id="builder-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <!-- Chat input -->
+  <div id="chat-panel" class="bg-white rounded-lg shadow flex flex-col">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-medium text-gray-900"><%= locals.filePath ? 'AI Assistant' : 'Describe Your Test' %></h2>
+    </div>
+    <div class="p-6 flex-1 flex flex-col">
+      <div id="chat-messages" class="space-y-4 mb-4 max-h-96 overflow-y-auto flex-1">
+        <div class="bg-scout-50 rounded-lg p-4 text-sm">
+          <p class="font-medium text-scout-800">SCOUT AI</p>
+<% if (locals.filePath) { %>
+          <p class="mt-1 text-gray-700">I've loaded <strong><%= locals.filename %></strong>. You can:</p>
+          <ul class="mt-2 text-gray-600 list-disc list-inside space-y-1">
+            <li>Edit the code directly in the editor</li>
+            <li>Ask me to modify it: "Add a test for Item 10"</li>
+            <li>Ask me to explain it: "What does this test do?"</li>
+            <li>"Add error handling to the navigation steps"</li>
+          </ul>
+<% } else { %>
+          <p class="mt-1 text-gray-700">Tell me what you'd like to test. For example:</p>
+          <ul class="mt-2 text-gray-600 list-disc list-inside space-y-1">
+            <li>"Test that all 20 CRA items have readable text"</li>
+            <li>"Verify the calculator opens and closes on Item 5"</li>
+            <li>"Check that items display correctly at 150% zoom"</li>
+            <li>"Compare item text between current and baseline versions"</li>
+          </ul>
+<% } %>
+        </div>
+      </div>
+
+      <form id="builder-form" class="flex gap-2">
+        <input type="text" id="test-description" placeholder="<%= locals.filePath ? 'Ask about this script or request changes...' : 'Describe the test you want, or ask a question...' %>"
+               class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-scout-500 focus:ring-scout-500 px-3 py-2 border text-sm">
+        <button type="submit" id="generate-btn"
+                class="inline-flex items-center rounded-md bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">
+          Send
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Code editor panel with tabs -->
+  <div class="bg-white rounded-lg shadow flex flex-col">
+<% if (locals.filePath) { %>
+    <!-- Tabs for edit mode -->
+    <div class="border-b border-gray-200">
+      <nav class="flex -mb-px">
+        <button onclick="switchEditorTab('code')" id="ed-tab-code"
+          class="px-5 py-3 text-sm font-medium border-b-2 border-scout-600 text-scout-600">
+          Code
+        </button>
+        <button onclick="switchEditorTab('history')" id="ed-tab-history"
+          class="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+          Run History <% if (locals.runHistory && runHistory.length > 0) { %><span class="ml-1 bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 text-xs"><%= runHistory.length %></span><% } %>
+        </button>
+        <button onclick="switchEditorTab('settings')" id="ed-tab-settings"
+          class="px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+          Settings
+        </button>
+      </nav>
+    </div>
+<% } else { %>
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-medium text-gray-900">Generated Test</h2>
+    </div>
+<% } %>
+
+    <!-- Code Tab -->
+    <div id="ed-panel-code" class="p-6 flex-1 flex flex-col">
+      <textarea id="code-editor"
+                class="flex-1 bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono leading-relaxed resize-none border-0 focus:ring-1 focus:ring-scout-500"
+                style="min-height: 500px; tab-size: 2;"
+                spellcheck="false"><%= locals.fileContent ? fileContent : '// Generated test code will appear here...' %></textarea>
+      <div id="code-status" class="mt-3 text-sm text-gray-500 hidden"></div>
+      <div class="flex justify-between items-center mt-3">
+        <button id="dry-run-btn" class="inline-flex items-center rounded-md bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 border border-amber-200">
+          ▶ Dry Run
+        </button>
+        <div class="flex gap-2">
+          <a href="/test-cases" class="inline-flex items-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 border border-gray-200">Cancel</a>
+          <button id="save-btn" class="inline-flex items-center rounded-md bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">Save</button>
+          <button id="save-run-btn" class="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Save &amp; Run</button>
+        </div>
+      </div>
+    </div>
+
+<% if (locals.filePath) { %>
+    <!-- Run History Tab -->
+    <div id="ed-panel-history" class="hidden">
+      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <p class="text-sm text-gray-600">Past executions of <span class="font-mono font-medium"><%= locals.filename %></span></p>
+      </div>
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Run</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Suite</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          <% if (locals.runHistory && runHistory.length > 0) { %>
+            <% runHistory.forEach(function(h) { %>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-sm font-mono"><a href="/runs/<%= h.run_id %>" class="text-scout-600 hover:underline"><%= h.run_id.substring(0, 8) %></a></td>
+              <td class="px-4 py-3 text-sm text-gray-500"><%= h.completed_at ? new Date(h.completed_at).toLocaleString() : '—' %></td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                  <%= h.status === 'passed' ? 'bg-green-100 text-green-800' :
+                     h.status === 'failed' ? 'bg-red-100 text-red-800' :
+                     h.status === 'running' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700' %>">
+                  <%= h.status %>
+                </span>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-500"><%= h.duration_ms ? (h.duration_ms / 1000).toFixed(1) + 's' : '—' %></td>
+              <td class="px-4 py-3 text-sm"><% if (h.suite_name) { %><a href="/suites/<%= h.suite_id %>" class="text-scout-600 hover:underline"><%= h.suite_name %></a><% } else { %><span class="text-gray-400">Ad-hoc</span><% } %></td>
+              <td class="px-4 py-3 text-sm text-red-600 max-w-xs truncate"><%= h.error_message || '' %></td>
+            </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">This script has not been run yet</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Settings Tab (associations) -->
+    <div id="ed-panel-settings" class="hidden p-6 space-y-5">
+      <p class="text-sm text-gray-600 mb-4">Associate this script with an item and/or assessment to organize tests and track coverage.</p>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Associated Item</label>
+        <select id="assoc-item" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+          <option value="">None</option>
+          <% if (locals.items) { items.forEach(function(it) { %>
+            <option value="<%= it.id %>" <%= (locals.scriptMeta && scriptMeta.item_id === it.id) ? 'selected' : '' %>>#<%= it.numeric_id %> — <%= it.title || it.id %></option>
+          <% }); } %>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Associated Assessment</label>
+        <select id="assoc-assessment" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+          <option value="">None</option>
+          <% if (locals.assessments) { assessments.forEach(function(a) { %>
+            <option value="<%= a.id %>" <%= (locals.scriptMeta && scriptMeta.assessment_id === a.id) ? 'selected' : '' %>><%= a.name %></option>
+          <% }); } %>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+        <select id="assoc-category" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+          <option value="">Not set</option>
+          <% ['visual', 'content', 'feature', 'workflow', 'scoring'].forEach(function(c) { %>
+            <option value="<%= c %>" <%= (locals.scriptMeta && scriptMeta.category === c) ? 'selected' : '' %>><%= c.charAt(0).toUpperCase() + c.slice(1) %></option>
+          <% }); %>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea id="assoc-description" rows="2" placeholder="Brief description of what this script tests"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500"><%= (locals.scriptMeta && scriptMeta.description) ? scriptMeta.description : '' %></textarea>
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="saveAssociations()" id="assoc-save-btn" class="inline-flex items-center rounded-md bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">
+          Save Settings
+        </button>
+      </div>
+      <div id="assoc-status" class="text-sm hidden"></div>
+    </div>
+<% } %>
+  </div>
+</div>
+
+<script>
+const form = document.getElementById('builder-form');
+const input = document.getElementById('test-description');
+const editor = document.getElementById('code-editor');
+const messages = document.getElementById('chat-messages');
+const statusEl = document.getElementById('code-status');
+const generateBtn = document.getElementById('generate-btn');
+const aiToggle = document.getElementById('ai-toggle');
+const aiToggleLabel = document.getElementById('ai-toggle-label');
+const chatPanel = document.getElementById('chat-panel');
+const builderGrid = document.getElementById('builder-grid');
+
+const editingFile = '<%= locals.filePath || "" %>';
+var conversationId = null; // Track multi-turn conversation
+
+// AI toggle — remember preference
+const AI_PREF_KEY = 'scout_ai_assistant';
+const savedPref = localStorage.getItem(AI_PREF_KEY);
+if (savedPref === 'off') {
+  aiToggle.checked = false;
+  applyAiToggle(false);
+}
+
+aiToggle.addEventListener('change', () => {
+  const on = aiToggle.checked;
+  localStorage.setItem(AI_PREF_KEY, on ? 'on' : 'off');
+  applyAiToggle(on);
+});
+
+function applyAiToggle(on) {
+  if (on) {
+    chatPanel.classList.remove('hidden');
+    builderGrid.classList.remove('lg:grid-cols-1');
+    builderGrid.classList.add('lg:grid-cols-2');
+    aiToggleLabel.textContent = 'AI Assistant';
+  } else {
+    chatPanel.classList.add('hidden');
+    builderGrid.classList.remove('lg:grid-cols-2');
+    builderGrid.classList.add('lg:grid-cols-1');
+    aiToggleLabel.textContent = 'Editor Only';
+  }
+}
+
+// Tab key inserts spaces
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveCode();
+  }
+});
+
+function escapeHtml(str) {
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function addUserBubble(text) {
+  messages.innerHTML += '<div class="bg-gray-100 rounded-lg p-4 text-sm">' +
+    '<p class="font-medium text-gray-800">You</p>' +
+    '<p class="mt-1 whitespace-pre-wrap">' + escapeHtml(text) + '</p></div>';
+}
+
+function addAiBubble(text, toolsUsed, codeUpdate) {
+  var html = '<div class="bg-scout-50 rounded-lg p-4 text-sm">' +
+    '<p class="font-medium text-scout-800">SCOUT AI</p>';
+
+  // Tool usage indicators
+  if (toolsUsed && toolsUsed.length > 0) {
+    html += '<div class="mt-2 space-y-1">';
+    toolsUsed.forEach(function(t) {
+      var icon = t.success ? '✓' : '✗';
+      var color = t.success ? 'text-green-600' : 'text-red-600';
+      html += '<div class="flex items-center gap-1.5 text-xs">' +
+        '<span class="' + color + '">' + icon + '</span>' +
+        '<span class="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">' + escapeHtml(t.tool) + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Code update notification
+  if (codeUpdate) {
+    html += '<div class="mt-2 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">' +
+      '<span class="text-blue-600">📝</span>' +
+      '<span class="text-blue-800 text-xs font-medium">' + escapeHtml(codeUpdate.summary) + '</span>' +
+      '<button onclick="undoCodeUpdate()" class="ml-auto text-xs text-blue-600 hover:text-blue-800 underline">Undo</button>' +
+      '</div>';
+  }
+
+  // Response text
+  if (text && text.trim()) {
+    html += '<div class="mt-2 text-gray-700 whitespace-pre-wrap prose-sm">' + formatResponse(text) + '</div>';
+  }
+
+  html += '</div>';
+  messages.innerHTML += html;
+}
+
+function addErrorBubble(text) {
+  messages.innerHTML += '<div class="bg-red-50 rounded-lg p-4 text-sm">' +
+    '<p class="font-medium text-red-800">Error</p>' +
+    '<p class="mt-1 text-red-700">' + escapeHtml(text) + '</p></div>';
+}
+
+// Simple markdown-like formatting for AI responses
+function formatResponse(text) {
+  var escaped = escapeHtml(text);
+  // Bold
+  escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Inline code
+  escaped = escaped.replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">$1</code>');
+  // Code blocks
+  escaped = escaped.replace(/```[\w]*\n([\s\S]*?)```/g, '<pre class="bg-gray-900 text-green-400 p-2 rounded text-xs mt-1 overflow-x-auto"><code>$1</code></pre>');
+  // Bullet lists
+  escaped = escaped.replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>');
+  return escaped;
+}
+
+var previousCode = ''; // For undo
+
+function undoCodeUpdate() {
+  if (previousCode) {
+    editor.value = previousCode;
+    showStatus('Code reverted', 'green');
+  }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  var description = input.value.trim();
+  if (!description) return;
+
+  addUserBubble(description);
+  input.value = '';
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Thinking...';
+
+  try {
+    var body = {
+      message: description,
+      conversationId: conversationId,
+      currentCode: editor.value,
+      filename: editingFile || undefined,
+    };
+
+    var res = await fetch('/api/builder/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    var data = await res.json();
+
+    if (data.error) {
+      addErrorBubble(data.error);
+    } else {
+      // Update conversation ID for multi-turn
+      conversationId = data.conversationId;
+
+      // Apply code update ONLY if AI explicitly called update_code
+      if (data.codeUpdate) {
+        previousCode = editor.value;
+        editor.value = data.codeUpdate.code;
+      }
+
+      addAiBubble(data.response, data.toolsUsed, data.codeUpdate);
+    }
+  } catch (err) {
+    addErrorBubble(err.message);
+  } finally {
+    generateBtn.disabled = false;
+    generateBtn.textContent = editingFile ? 'Send' : 'Send';
+    messages.scrollTop = messages.scrollHeight;
+  }
+});
+
+var copyBtn = document.getElementById('copy-btn');
+if (copyBtn) {
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(editor.value);
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+  });
+}
+
+document.getElementById('save-btn').addEventListener('click', () => saveCode());
+document.getElementById('save-run-btn').addEventListener('click', () => saveCode({ run: true }));
+document.getElementById('dry-run-btn').addEventListener('click', () => dryRun());
+
+async function saveCode(opts) {
+  opts = opts || {};
+  const code = editor.value;
+  const saveBtn = document.getElementById('save-btn');
+  const saveRunBtn = document.getElementById('save-run-btn');
+  var activeBtn = opts.run ? saveRunBtn : saveBtn;
+  activeBtn.disabled = true;
+  activeBtn.textContent = opts.run ? 'Saving...' : 'Saving...';
+
+  try {
+    let endpoint, body;
+    if (editingFile) {
+      endpoint = '/api/test-cases/save';
+      body = { path: editingFile, content: code };
+    } else {
+      endpoint = '/api/builder/save';
+      body = { code };
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showStatus('Error: ' + data.error, 'red');
+    } else {
+      showStatus('Saved to: ' + data.path, 'green');
+      if (opts.run) {
+        activeBtn.textContent = 'Running...';
+        showStatus('Saved. Starting test run...', 'green');
+        var scriptPath = editingFile || data.path;
+        try {
+          var runRes = await fetch('/suites/run-script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scriptPath: scriptPath }),
+          });
+          var runData = await runRes.json();
+          if (runData.error) {
+            showStatus('Run error: ' + runData.error, 'red');
+          } else {
+            showStatus('Run started! Redirecting to results...', 'green');
+            setTimeout(function() { window.location.href = '/runs/' + runData.runId; }, 3000);
+          }
+        } catch (runErr) {
+          showStatus('Run failed: ' + runErr.message, 'red');
+        }
+      }
+    }
+  } catch (err) {
+    showStatus('Save failed: ' + err.message, 'red');
+  } finally {
+    activeBtn.disabled = false;
+    activeBtn.textContent = opts.run ? 'Save & Run' : 'Save';
+  }
+}
+
+async function dryRun() {
+  var btn = document.getElementById('dry-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  showStatus('Dry run: validating script syntax...', 'green');
+
+  try {
+    const res = await fetch('/api/test-cases/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.value }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showStatus('Dry run failed: ' + data.error, 'red');
+    } else {
+      showStatus(data.message || 'Dry run passed — no syntax errors', 'green');
+    }
+  } catch (err) {
+    showStatus('Dry run error: ' + err.message, 'red');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Dry Run';
+  }
+}
+
+function showStatus(msg, color) {
+  statusEl.textContent = msg;
+  statusEl.className = 'mt-3 text-sm ' + (color === 'green' ? 'text-green-600' : 'text-red-600');
+  setTimeout(() => { statusEl.className = 'mt-3 text-sm text-gray-500 hidden'; }, 4000);
+}
+
+// Editor tab switching
+function switchEditorTab(tab) {
+  var tabs = ['code', 'history', 'settings'];
+  tabs.forEach(function(t) {
+    var btn = document.getElementById('ed-tab-' + t);
+    var panel = document.getElementById('ed-panel-' + t);
+    if (!btn || !panel) return;
+    if (t === tab) {
+      btn.className = 'px-5 py-3 text-sm font-medium border-b-2 border-scout-600 text-scout-600';
+      panel.classList.remove('hidden');
+    } else {
+      btn.className = 'px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300';
+      panel.classList.add('hidden');
+    }
+  });
+}
+window.switchEditorTab = switchEditorTab;
+
+// Save script associations
+async function saveAssociations() {
+  var btn = document.getElementById('assoc-save-btn');
+  var statusDiv = document.getElementById('assoc-status');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    var res = await fetch('/api/test-cases/associate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scriptPath: editingFile,
+        itemId: document.getElementById('assoc-item').value || null,
+        assessmentId: document.getElementById('assoc-assessment').value || null,
+        category: document.getElementById('assoc-category').value || null,
+        description: document.getElementById('assoc-description').value || null,
+      }),
+    });
+    var data = await res.json();
+    if (data.error) {
+      statusDiv.textContent = 'Error: ' + data.error;
+      statusDiv.className = 'text-sm text-red-600';
+    } else {
+      statusDiv.textContent = 'Settings saved successfully';
+      statusDiv.className = 'text-sm text-green-600';
+    }
+    statusDiv.classList.remove('hidden');
+    setTimeout(function() { statusDiv.classList.add('hidden'); }, 3000);
+  } catch (err) {
+    statusDiv.textContent = 'Error: ' + err.message;
+    statusDiv.className = 'text-sm text-red-600';
+    statusDiv.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Settings';
+  }
+}
+window.saveAssociations = saveAssociations;
+
+function deleteCurrentScript() {
+  var scriptPath = '<%= locals.filePath ? filePath.replace(/\'/g, "\\'") : "" %>';
+  if (!scriptPath) return;
+  if (!confirm('Delete test script "' + scriptPath + '"? This will remove the file from disk and the registry entry. This cannot be undone.')) return;
+  fetch('/test-cases/script', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scriptPath: scriptPath })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.href = '/test-cases';
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

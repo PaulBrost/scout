@@ -1,0 +1,205 @@
+<%- include('header', { title: 'Assessments', active: 'assessments' }) %>
+
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-2xl font-bold text-gray-900">Assessments</h1>
+  <%- include('partials/help-modal', {
+    helpTitle: 'Assessments Help',
+    helpContent: '<p class="font-medium text-gray-900">What are Assessments?</p>' +
+      '<p>An <strong>assessment</strong> represents a collection of test items grouped under a specific project or version (e.g., "NAEP 2025 Grade 4 Math").</p>' +
+      '<p><strong>Environment</strong> — Each assessment is linked to an environment that defines the target URL and authentication credentials.</p>' +
+      '<p><strong>Items</strong> — Assessments contain items (individual questions or content pages) that are tested for visual accuracy, content correctness, and feature behavior.</p>' +
+      '<p><strong>Actions</strong> — Click an assessment row to view its details. Use the table controls to sort, filter, and paginate.</p>'
+  }) %>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar: page size left, filters right -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="env-filter" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Environments</option>
+        <% environments.forEach(function(e) { %>
+          <option value="<%= e.id %>"><%= e.name %></option>
+        <% }); %>
+      </select>
+      <input type="text" id="table-search" placeholder="Search assessments…"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-56">
+      <button id="filter-btn" class="rounded-lg bg-scout-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-scout-700">Filter</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <table class="min-w-full divide-y divide-gray-200" id="assessments-table">
+    <thead class="bg-gray-50">
+      <tr>
+        <th data-col="name" class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Name <span class="sort-arrow ml-1">▲</span>
+        </th>
+        <th data-col="subject" class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Subject <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th data-col="grade" class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Grade <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th data-col="year" class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Year <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th data-col="items" class="sortable px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Items <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none">
+          Tests
+        </th>
+        <th data-col="env" class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none">
+          Environment <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none w-16">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="table-body" class="divide-y divide-gray-200">
+      <tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Empty state -->
+  <div id="empty-state" class="hidden px-6 py-8 text-center text-gray-500">No assessments match your search.</div>
+
+  <!-- Pagination: right-aligned -->
+  <div class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600">
+    <div class="flex items-center gap-3">
+      <span id="page-info"></span>
+      <div class="flex gap-1">
+        <button id="prev-page" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Previous</button>
+        <button id="next-page" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var state = { page: 1, pageSize: 25, search: '', sort: 'name', dir: 'asc', env: '' };
+
+  function load() {
+    var qs = '?page=' + state.page + '&pageSize=' + state.pageSize +
+      '&sort=' + state.sort + '&dir=' + state.dir +
+      (state.search ? '&search=' + encodeURIComponent(state.search) : '') +
+      (state.env ? '&env=' + encodeURIComponent(state.env) : '');
+    fetch('/assessments/api/list' + qs)
+      .then(function(r) { return r.json(); })
+      .then(render)
+      .catch(function() { document.getElementById('table-body').innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-red-500">Error loading data</td></tr>'; });
+  }
+
+  function render(data) {
+    var tbody = document.getElementById('table-body');
+    var empty = document.getElementById('empty-state');
+    if (data.rows.length === 0) {
+      tbody.innerHTML = '';
+      empty.classList.remove('hidden');
+    } else {
+      empty.classList.add('hidden');
+      var html = '';
+      data.rows.forEach(function(r) {
+        html += '<tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location.href=\'/assessments/' + r.id + '\'">' +
+          '<td class="px-4 py-3 text-sm font-medium text-scout-700">' + esc(r.name) + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-600">' + esc(r.subject || '') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-600">' + esc(r.grade || '') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-600">' + esc(r.year || '') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-600 text-center">' + (r.item_count || '—') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-center"><span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
+            (r.test_count > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500') + '">' + r.test_count + '</span></td>' +
+          '<td class="px-4 py-3 text-sm text-gray-500">' + esc(r.env_name || '—') + '</td>' +
+          '<td class="px-4 py-3 text-center"><button onclick="event.stopPropagation(); deleteAssessment(\'' + r.id + '\', \'' + esc(r.name).replace(/'/g, "\\'") + '\')" class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 border border-red-200" title="Delete">🗑️</button></td>' +
+          '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+    // Pagination info
+    var start = (data.page - 1) * data.pageSize + 1;
+    var end = Math.min(data.page * data.pageSize, data.total);
+    var pages = Math.max(1, Math.ceil(data.total / data.pageSize));
+    document.getElementById('page-info').textContent = data.total > 0
+      ? 'Showing ' + start + '–' + end + ' of ' + data.total
+      : 'No results';
+    document.getElementById('prev-page').disabled = data.page <= 1;
+    document.getElementById('next-page').disabled = data.page >= pages;
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // Page size
+  document.getElementById('page-size').addEventListener('change', function() {
+    state.pageSize = parseInt(this.value);
+    state.page = 1;
+    load();
+  });
+
+  // Search
+  document.getElementById('filter-btn').addEventListener('click', function() {
+    state.search = document.getElementById('table-search').value;
+    state.env = document.getElementById('env-filter').value;
+    state.page = 1;
+    load();
+  });
+  document.getElementById('table-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { state.search = this.value; state.env = document.getElementById('env-filter').value; state.page = 1; load(); }
+  });
+  document.getElementById('env-filter').addEventListener('change', function() {
+    state.env = this.value;
+    state.page = 1;
+    load();
+  });
+
+  // Sort
+  document.querySelectorAll('.sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.col;
+      if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; }
+      else { state.sort = col; state.dir = 'asc'; }
+      // Update arrows
+      document.querySelectorAll('.sort-arrow').forEach(function(a) { a.textContent = '▲'; a.classList.add('text-gray-300'); a.classList.remove('text-gray-700'); });
+      var arrow = th.querySelector('.sort-arrow');
+      arrow.textContent = state.dir === 'asc' ? '▲' : '▼';
+      arrow.classList.remove('text-gray-300');
+      arrow.classList.add('text-gray-700');
+      state.page = 1;
+      load();
+    });
+  });
+
+  // Pagination
+  document.getElementById('prev-page').addEventListener('click', function() { state.page--; load(); });
+  document.getElementById('next-page').addEventListener('click', function() { state.page++; load(); });
+
+  // Initial active sort indicator
+  document.querySelector('[data-col="name"] .sort-arrow').classList.remove('text-gray-300');
+  document.querySelector('[data-col="name"] .sort-arrow').classList.add('text-gray-700');
+
+  load();
+})();
+
+function deleteAssessment(id, name) {
+  if (!confirm('Delete assessment "' + name + '"? This will also delete all associated items, test results, AI analyses, and baselines. This cannot be undone.')) return;
+  fetch('/assessments/' + id, { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.reload();
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

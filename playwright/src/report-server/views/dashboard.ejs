@@ -1,0 +1,169 @@
+<%- include('header', { title: 'Dashboard', active: 'dashboard' }) %>
+
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-2xl font-bold text-gray-900">SCOUT - Spelling, Content &amp; Output Tester</h1>
+  <%- include('partials/help-modal', {
+    helpTitle: 'Dashboard Help',
+    helpContent: '<p class="font-medium text-gray-900">Welcome to SCOUT</p>' +
+      '<p>The dashboard provides an at-a-glance overview of your testing activity.</p>' +
+      '<p><strong>Stats Cards</strong> — Show totals for tests run, passed, failed, and pending review across all assessments.</p>' +
+      '<p><strong>Recent Runs</strong> — Lists the most recent test suite executions with their status and duration. Click a run to view detailed results.</p>' +
+      '<p><strong>Navigation</strong> — Use the sidebar to access all sections. Collapse it with the ☰ button for more screen space.</p>'
+  }) %>
+</div>
+
+<!-- Stats cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-sm font-medium text-gray-500">Total Tests</div>
+    <div class="mt-1 text-3xl font-semibold text-gray-900"><%= locals.stats ? stats.total : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-sm font-medium text-gray-500">Passed</div>
+    <div class="mt-1 text-3xl font-semibold text-green-600"><%= locals.stats ? stats.passed : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-sm font-medium text-gray-500">Failed</div>
+    <div class="mt-1 text-3xl font-semibold text-red-600"><%= locals.stats ? stats.failed : '—' %></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-sm font-medium text-gray-500">Flagged</div>
+    <div class="mt-1 text-3xl font-semibold text-amber-600"><%= locals.aiFlags ? aiFlags.length : '—' %></div>
+  </div>
+</div>
+
+<!-- Latest run info -->
+<% if (locals.latestRun) { %>
+<div class="bg-white rounded-lg shadow mb-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">Latest Run</h2>
+  </div>
+  <div class="px-6 py-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>
+        <span class="text-gray-500">Run ID:</span>
+        <a href="/runs/<%= latestRun.id %>" class="ml-1 text-scout-600 hover:underline"><%= latestRun.id.substring(0, 8) %>...</a>
+      </div>
+      <div>
+        <span class="text-gray-500">Started:</span>
+        <span class="ml-1"><%= new Date(latestRun.started_at).toLocaleString() %></span>
+      </div>
+      <div>
+        <span class="text-gray-500">Status:</span>
+        <span class="ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= latestRun.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' %>"><%= latestRun.status %></span>
+      </div>
+      <div>
+        <span class="text-gray-500">Browsers:</span>
+        <span class="ml-1"><%= locals.stats ? stats.browsers_tested : '—' %></span>
+      </div>
+    </div>
+  </div>
+</div>
+<% } else { %>
+<div class="bg-white rounded-lg shadow mb-8 p-8 text-center text-gray-500">
+  No test runs yet. <a href="/suites" class="text-scout-600 hover:underline">Create a test suite</a> and run it to get started.
+</div>
+<% } %>
+
+<!-- Recent Runs -->
+<% if (locals.recentRuns && recentRuns.length > 0) { %>
+<div class="bg-white rounded-lg shadow mb-8">
+  <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+    <h2 class="text-lg font-medium text-gray-900">Recent Runs</h2>
+    <a href="/runs" class="text-scout-600 hover:underline text-sm">View all →</a>
+  </div>
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Suite</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Passed</th>
+        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Failed</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Trigger</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      <% recentRuns.forEach(function(rr) { %>
+      <% var rrSummary = rr.summary; if (typeof rrSummary === 'string') try { rrSummary = JSON.parse(rrSummary); } catch(e) { rrSummary = {}; } rrSummary = rrSummary || {}; %>
+      <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/runs/<%= rr.id %>'">
+        <td class="px-4 py-2 text-sm text-gray-700"><%= rr.started_at ? new Date(rr.started_at).toLocaleString() : '—' %></td>
+        <td class="px-4 py-2 text-sm"><%= rr.suite_name || '<span class="text-gray-400 italic">Ad-hoc</span>' %></td>
+        <td class="px-4 py-2">
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+            <%= rr.status === 'completed' ? 'bg-green-100 text-green-800' : rr.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' %>">
+            <%= rr.status %>
+          </span>
+        </td>
+        <td class="px-4 py-2 text-sm text-green-600 text-center"><%= rrSummary.passed != null ? rrSummary.passed : '—' %></td>
+        <td class="px-4 py-2 text-sm text-red-600 text-center"><%= rrSummary.failed != null ? rrSummary.failed : '—' %></td>
+        <td class="px-4 py-2 text-xs text-gray-500"><%= rr.trigger_type %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<!-- Pass rate trend -->
+<% if (locals.trend && trend.length > 0) { %>
+<div class="bg-white rounded-lg shadow mb-8">
+  <div class="px-6 py-4 border-b border-gray-200">
+    <h2 class="text-lg font-medium text-gray-900">Pass Rate Trend</h2>
+  </div>
+  <div class="px-6 py-4">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead>
+        <tr>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Run</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Passed</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Failed</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pass Rate</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Chart</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        <% trend.forEach(row => { %>
+        <tr>
+          <td class="px-4 py-2 text-sm"><a href="/runs/<%= row.id %>" class="text-scout-600 hover:underline"><%= row.id.substring(0, 8) %></a></td>
+          <td class="px-4 py-2 text-sm text-gray-500"><%= new Date(row.started_at).toLocaleString() %></td>
+          <td class="px-4 py-2 text-sm text-green-600"><%= row.passed %></td>
+          <td class="px-4 py-2 text-sm text-red-600"><%= row.failed %></td>
+          <td class="px-4 py-2 text-sm font-medium"><%= row.pass_pct %>%</td>
+          <td class="px-4 py-2">
+            <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="bg-green-500 h-2 rounded-full" style="width: <%= row.pass_pct %>%"></div>
+            </div>
+          </td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% } %>
+
+<!-- AI flags -->
+<% if (locals.aiFlags && aiFlags.length > 0) { %>
+<div class="bg-white rounded-lg shadow">
+  <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+    <h2 class="text-lg font-medium text-gray-900">AI Flags Pending Review</h2>
+    <a href="/reviews" class="text-scout-600 hover:underline text-sm">View all →</a>
+  </div>
+  <div class="divide-y divide-gray-200">
+    <% aiFlags.slice(0, 5).forEach(flag => { %>
+    <div class="px-6 py-4 flex items-center justify-between">
+      <div>
+        <span class="font-medium text-gray-900"><%= flag.item_id %></span>
+        <span class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800"><%= flag.analysis_type %></span>
+        <span class="ml-2 text-sm text-gray-500"><%= flag.issue_count %> issue(s)</span>
+      </div>
+      <a href="/reviews" class="text-scout-600 hover:underline text-sm">Review</a>
+    </div>
+    <% }); %>
+  </div>
+</div>
+<% } %>
+
+<%- include('footer') %>

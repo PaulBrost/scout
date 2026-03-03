@@ -1,0 +1,47 @@
+{
+  "name": "scout",
+  "version": "0.1.0",
+  "description": "SCOUT — Spelling, Content, & Output Universal Tester. Automated visual regression, content validation, and functional testing for the NAEP assessment platform.",
+  "main": "src/config/index.js",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:smoke": "npx playwright test --grep @smoke",
+    "test:visual": "npx playwright test --grep @visual",
+    "test:content": "npx playwright test --grep @content",
+    "test:features": "npx playwright test --grep @feature",
+    "test:chrome": "npx playwright test --project=chrome-desktop",
+    "test:firefox": "npx playwright test --project=firefox-desktop",
+    "test:chromebook": "npx playwright test --project=chromebook",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "report": "npx playwright show-report",
+    "report:latest": "node src/reports/latest.js",
+    "report:failures": "node src/reports/failures.js",
+    "report:ai-flags": "node src/reports/ai-flags.js",
+    "db:init": "node src/db/init.js",
+    "db:health": "node src/db/health.js",
+    "ai:health": "node -e \"require('./src/ai').healthCheck().then(r => { console.log(r); process.exit(r.healthy ? 0 : 1); })\"",
+    "baselines:update": "npx playwright test --update-snapshots",
+    "worker:start": "node src/workers/ai-worker.js",
+    "docker:up": "cd docker && docker compose up -d postgres",
+    "docker:full": "cd docker && docker compose --profile ai --profile worker --profile dashboard up -d",
+    "dashboard": "node src/report-server/index.js"
+  },
+  "keywords": [
+    "naep",
+    "testing",
+    "visual-regression",
+    "playwright",
+    "ai"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@playwright/test": "^1.58.2",
+    "dotenv": "^17.3.1",
+    "ejs": "^4.0.1",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "pg": "^8.19.0"
+  }
+}

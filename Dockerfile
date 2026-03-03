@@ -28,10 +28,6 @@ RUN SECRET_KEY=build-placeholder python manage.py collectstatic --noinput
 # Create mount point for Playwright project
 RUN mkdir -p /playwright-project
 
-# Non-root user for security
-RUN useradd -m scout && chown -R scout:scout /app /playwright-project
-USER scout
-
 EXPOSE 8000
 
 CMD ["gunicorn", "scout.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120", "--access-logfile", "-"]

@@ -1,0 +1,260 @@
+<%- include('header', { title: 'Test Scripts', active: 'test-cases' }) %>
+
+<div class="mb-6 flex justify-between items-center">
+  <h1 class="text-2xl font-bold text-gray-900">Test Scripts</h1>
+  <div class="flex items-center gap-3">
+    <%- include('partials/help-modal', {
+      helpTitle: 'Test Scripts Help',
+      helpContent: '<p class="font-medium text-gray-900">What are Test Scripts?</p>' +
+        '<p>A <strong>test script</strong> is a Playwright JavaScript file (*.spec.js) that automates browser interactions and assertions against assessment items.</p>' +
+        '<p><strong>Categories</strong> — Scripts are organized by type: <em>visual</em> (screenshot comparison), <em>content</em> (text/spelling checks), <em>feature</em> (calculator, help, zoom), <em>workflow</em> (login-to-submit flows), and <em>scoring</em> (answer verification).</p>' +
+        '<p><strong>Running Scripts</strong> — Scripts run as part of test suites. Go to Test Suites to bundle scripts together and execute them.</p>' +
+        '<p><strong>Editing</strong> — Click "Edit" on any script to open the code editor. The AI Test Builder can also generate scripts from plain-English descriptions.</p>' +
+        '<p><strong>New Test Script</strong> — Creates a new .spec.js file in the tests/ directory with boilerplate Playwright code.</p>'
+    }) %>
+    <button onclick="document.getElementById('new-tc-modal').classList.remove('hidden')" class="inline-flex items-center rounded-lg bg-scout-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-scout-700 shadow-sm">
+      New Test Script
+    </button>
+  </div>
+</div>
+
+<!-- New Test Script modal -->
+<div id="new-tc-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-900">New Test Script</h2>
+      <button onclick="document.getElementById('new-tc-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <p class="text-sm text-gray-500 mb-4">Select the assessment and test type for this test script.</p>
+    <form id="new-tc-form">
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Assessment <span class="text-red-500">*</span></label>
+        <select id="new-tc-assessment" required class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+          <option value="">Choose an assessment…</option>
+          <% if (locals.assessments) { %>
+            <% assessments.forEach(function(a) { %>
+          <option value="<%= a.id %>"><%= a.name %><%= a.env_name ? ' (' + a.env_name + ')' : '' %></option>
+            <% }); %>
+          <% } %>
+        </select>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Test Type <span class="text-red-500">*</span></label>
+        <select id="new-tc-type" required class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+          <option value="">Choose a type…</option>
+          <option value="visual">Visual Regression</option>
+          <option value="content">Content Validation</option>
+          <option value="feature">Feature</option>
+        </select>
+      </div>
+      <div id="new-tc-baseline-section" class="mb-4 hidden">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Compare Against Version</label>
+        <select id="new-tc-baseline" class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+          <option value="">Latest approved baseline (default)</option>
+          <option value="v2025">v2025</option>
+          <option value="v2024">v2024</option>
+          <option value="v2023">v2023</option>
+        </select>
+        <p class="text-xs text-gray-400 mt-1">Leave as default to compare against the most recent approved baseline.</p>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="document.getElementById('new-tc-modal').classList.add('hidden')" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Cancel</button>
+        <button type="submit" class="rounded-lg bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">Continue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="filter-type" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Types</option>
+        <option value="visual">Visual Regression</option>
+        <option value="content">Content Validation</option>
+        <option value="feature">Feature</option>
+      </select>
+      <select id="filter-source" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Sources</option>
+        <option value="ai">AI Generated</option>
+        <option value="manual">Manual</option>
+      </select>
+      <input type="text" id="search-input" placeholder="Search…"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-48">
+      <button id="filter-btn" class="rounded-lg bg-scout-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-scout-700">Filter</button>
+    </div>
+  </div>
+
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="name">
+          Test Script <span class="sort-arrow ml-1 text-gray-700">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="type">
+          Type <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="tests">
+          Tests <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="file">
+          File <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="source">
+          Source <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none w-24">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="table-body" class="divide-y divide-gray-200"></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600">
+    <div class="flex items-center gap-3">
+      <span id="page-info">Showing 0–0 of 0</span>
+      <div class="flex gap-1">
+        <button id="prev-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Previous</button>
+        <button id="next-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Modal logic
+document.getElementById('new-tc-type').addEventListener('change', function() {
+  var section = document.getElementById('new-tc-baseline-section');
+  if (this.value === 'visual') { section.classList.remove('hidden'); } else { section.classList.add('hidden'); }
+});
+document.getElementById('new-tc-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var assessment = document.getElementById('new-tc-assessment').value;
+  var type = document.getElementById('new-tc-type').value;
+  if (!assessment || !type) return;
+  var url = '/builder?assessment=' + encodeURIComponent(assessment) + '&type=' + encodeURIComponent(type);
+  var baseline = document.getElementById('new-tc-baseline').value;
+  if (type === 'visual' && baseline) url += '&baseline=' + encodeURIComponent(baseline);
+  window.location.href = url;
+});
+
+// Server-side table
+(function() {
+  var state = { page: 1, pageSize: 25, sort: 'name', dir: 'asc', search: '', type: '', source: '' };
+  var tbody = document.getElementById('table-body');
+
+  function load() {
+    var params = new URLSearchParams({
+      page: state.page, pageSize: state.pageSize,
+      sort: state.sort, dir: state.dir
+    });
+    if (state.search) params.set('search', state.search);
+    if (state.type) params.set('type', state.type);
+    if (state.source) params.set('source', state.source);
+
+    fetch('/test-cases/api/list?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) { render(data); })
+      .catch(function(e) { tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-red-500">' + e.message + '</td></tr>'; });
+  }
+
+  function render(data) {
+    var rows = data.rows;
+    var total = data.total;
+    var start = (data.page - 1) * data.pageSize;
+    var end = Math.min(start + rows.length, total);
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No test scripts found.</td></tr>';
+    } else {
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var tc = rows[i];
+        var typeCls = tc.type === 'visual' ? 'bg-purple-100 text-purple-800' :
+                      tc.type === 'content' ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800';
+        var srcCls = tc.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700';
+        var href = '/builder?file=' + encodeURIComponent(tc.relativePath);
+        html += '<tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location=\'' + href + '\'">' +
+          '<td class="px-4 py-3 text-sm font-medium text-gray-900">' + esc(tc.name) + '</td>' +
+          '<td class="px-4 py-3"><span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ' + typeCls + '">' + esc(tc.typeLabel) + '</span></td>' +
+          '<td class="px-4 py-3 text-sm text-gray-500 text-center">' + tc.testCount + '</td>' +
+          '<td class="px-4 py-3 text-xs font-mono text-gray-500">' + esc(tc.relativePath) + '</td>' +
+          '<td class="px-4 py-3"><span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' + srcCls + '">' + (tc.source === 'ai' ? 'AI' : 'Manual') + '</span></td>' +
+          '<td class="px-4 py-3 text-center">' +
+            '<a href="' + href + '" onclick="event.stopPropagation()" class="inline-flex items-center rounded-md bg-scout-50 px-2 py-1 text-xs text-scout-700 hover:bg-scout-100 border border-scout-200 mr-1">✏️</a>' +
+            '<button onclick="event.stopPropagation(); deleteScript(\'' + esc(tc.relativePath).replace(/'/g, "\\'") + '\', \'' + esc(tc.name).replace(/'/g, "\\'") + '\')" class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 border border-red-200" title="Delete">🗑️</button>' +
+          '</td>' +
+          '</tr>';
+      }
+      tbody.innerHTML = html;
+    }
+
+    document.getElementById('page-info').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : 'No results';
+    var pages = Math.max(1, Math.ceil(total / data.pageSize));
+    document.getElementById('prev-btn').disabled = data.page <= 1;
+    document.getElementById('next-btn').disabled = data.page >= pages;
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // Page size
+  document.getElementById('page-size').addEventListener('change', function() { state.pageSize = parseInt(this.value); state.page = 1; load(); });
+
+  // Filters
+  document.getElementById('filter-type').addEventListener('change', function() { state.type = this.value; state.page = 1; load(); });
+  document.getElementById('filter-source').addEventListener('change', function() { state.source = this.value; state.page = 1; load(); });
+  document.getElementById('filter-btn').addEventListener('click', function() { state.search = document.getElementById('search-input').value; state.page = 1; load(); });
+  document.getElementById('search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') { state.search = this.value; state.page = 1; load(); } });
+
+  // Sort
+  document.querySelectorAll('.sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.col;
+      if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; } else { state.sort = col; state.dir = 'asc'; }
+      document.querySelectorAll('.sort-arrow').forEach(function(a) { a.textContent = '▲'; a.classList.add('text-gray-300'); a.classList.remove('text-gray-700'); });
+      var arrow = th.querySelector('.sort-arrow');
+      arrow.textContent = state.dir === 'asc' ? '▲' : '▼';
+      arrow.classList.remove('text-gray-300'); arrow.classList.add('text-gray-700');
+      state.page = 1;
+      load();
+    });
+  });
+
+  // Pagination
+  document.getElementById('prev-btn').addEventListener('click', function() { state.page--; load(); });
+  document.getElementById('next-btn').addEventListener('click', function() { state.page++; load(); });
+
+  // Initial load
+  load();
+})();
+
+function deleteScript(scriptPath, name) {
+  if (!confirm('Delete test script "' + name + '"? This will remove the registry entry and delete the file from disk. This cannot be undone.')) return;
+  fetch('/test-cases/script', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scriptPath: scriptPath })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.reload();
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+
+<%- include('footer') %>

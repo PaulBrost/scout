@@ -28,7 +28,7 @@ services:
     ports:
       - "${SCOUT_PORT:-8009}:8000"
     volumes:
-      - ${PLAYWRIGHT_PROJECT_PATH:-./.playwright-placeholder}:/playwright-project
+      - ./playwright:/playwright-project
     command: >
       sh -c "python manage.py migrate --noinput &&
              gunicorn scout.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile -"
@@ -45,8 +45,12 @@ services:
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
     volumes:
-      - ${PLAYWRIGHT_PROJECT_PATH:-./.playwright-placeholder}:/playwright-project
-    command: python manage.py qcluster
+      - ./playwright:/playwright-project
+    command: >
+      sh -c "if [ -f /playwright-project/package.json ] && [ ! -d /playwright-project/node_modules ]; then
+               npm install --prefix /playwright-project;
+             fi &&
+             python manage.py qcluster"
 
 volumes:
   pgdata:

@@ -1,0 +1,81 @@
+<%- include('header', { title: 'Environments', active: 'environments' }) %>
+
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Environments</h1>
+    <p class="text-sm text-gray-500">Target sites and authentication configuration for assessments</p>
+  </div>
+  <div class="flex items-center gap-3">
+    <%- include('partials/help-modal', {
+      helpTitle: 'Environments Help',
+      helpContent: '<p class="font-medium text-gray-900">What are Environments?</p>' +
+        '<p>An <strong>environment</strong> defines a target website and how to authenticate with it. Assessments are linked to environments so tests know where to run.</p>' +
+        '<p><strong>Base URL</strong> — The root URL of the assessment platform (e.g., https://assessment.internal or https://piaac.ets.org).</p>' +
+        '<p><strong>Auth Type</strong> — How to log in: <em>form</em> (username/password via HTML form), <em>basic</em> (HTTP basic auth), <em>token</em> (bearer token), or <em>none</em>.</p>' +
+        '<p><strong>Credentials</strong> — Stored securely in the database. Never committed to code or test scripts.</p>' +
+        '<p><strong>Launcher Config</strong> — Optional JSON for advanced setups like cascading dropdown navigation (used for PIAAC portal).</p>' +
+        '<p><strong>Add Environment</strong> — Creates a new target site configuration. Each environment can be shared across multiple assessments.</p>'
+    }) %>
+    <a href="/environments/new" class="inline-flex items-center gap-2 rounded-lg bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700 shadow-sm">
+      + Add Environment
+    </a>
+  </div>
+</div>
+
+<% if (locals.success) { %>
+<div class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+  Environment <%= success === 'created' ? 'created' : success === 'updated' ? 'updated' : 'deleted' %> successfully.
+</div>
+<% } %>
+<% if (locals.error) { %>
+<div class="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+  <%= error %>
+</div>
+<% } %>
+
+<div class="grid gap-4">
+<% environments.forEach(function(env) { %>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="flex items-start justify-between">
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <h2 class="text-lg font-semibold text-gray-900"><%= env.name %></h2>
+          <% if (env.is_default) { %>
+            <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Default</span>
+          <% } %>
+          <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"><%= env.auth_type.replace('_', ' ') %></span>
+        </div>
+        <p class="text-sm text-gray-500 font-mono mb-2"><%= env.base_url %></p>
+        <% if (env.notes) { %>
+          <p class="text-sm text-gray-500"><%= env.notes %></p>
+        <% } %>
+        <div class="mt-3 flex gap-4 text-xs text-gray-400">
+          <span><%= env.assessment_count %> assessment<%= env.assessment_count != 1 ? 's' : '' %></span>
+          <span>Created <%= new Date(env.created_at).toLocaleDateString() %></span>
+        </div>
+      </div>
+      <div class="flex gap-2 ml-4">
+        <a href="/environments/<%= env.id %>/edit" class="inline-flex items-center rounded-md bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200">
+          ✏️ Edit
+        </a>
+        <% if (!env.is_default && env.assessment_count == 0) { %>
+        <form method="POST" action="/environments/<%= env.id %>/delete" onsubmit="return confirm('Delete this environment?')">
+          <button type="submit" class="inline-flex items-center rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 border border-red-200">
+            🗑 Delete
+          </button>
+        </form>
+        <% } %>
+      </div>
+    </div>
+  </div>
+<% }); %>
+
+<% if (environments.length === 0) { %>
+  <div class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+    No environments configured.
+    <a href="/environments/new" class="text-scout-600 hover:underline">Add your first one</a>.
+  </div>
+<% } %>
+</div>
+
+<%- include('footer') %>

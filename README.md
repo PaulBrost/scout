@@ -41,6 +41,7 @@ python manage.py createsuperuser
 python manage.py runserver
 
 # 6. In a separate terminal, start the task worker
+source /mnt/h/Brost/SCOUT/.venv/bin/activate
 python manage.py qcluster
 ```
 

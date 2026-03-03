@@ -1,0 +1,322 @@
+<%- include('header', { title: 'Review Queue', active: 'reviews' }) %>
+
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-2xl font-bold text-gray-900">Review Queue</h1>
+  <%- include('partials/help-modal', {
+    helpTitle: 'Review Queue Help',
+    helpContent: '<p class="font-medium text-gray-900">What is the Review Queue?</p>' +
+      '<p>The review queue contains items flagged by AI analysis that need human verification. AI results are <strong>advisory only</strong> — they highlight potential issues but never auto-fail tests.</p>' +
+      '<p><strong>Severity</strong> — <em>High</em> (likely real issue), <em>Medium</em> (possible issue), <em>Low</em> (minor or cosmetic).</p>' +
+      '<p><strong>Type</strong> — The kind of issue detected: spelling error, layout shift, content mismatch, missing element, etc.</p>' +
+      '<p><strong>Approve</strong> — Marks the flagged item as "not an issue" (false positive). The test result remains as passed.</p>' +
+      '<p><strong>Confirm Issue</strong> — Marks it as a real issue. The associated test result is updated to reflect the failure.</p>' +
+      '<p><strong>Dismiss</strong> — Removes the item from the queue without changing test results.</p>'
+  }) %>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div class="flex items-center gap-2 text-sm text-gray-600">
+      <span>Show</span>
+      <select id="page-size" class="rounded border-gray-300 text-sm py-1 px-2 focus:ring-scout-500 focus:border-scout-500">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+      <span>entries</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="filter-status" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="pending" selected>Pending Review</option>
+        <option value="">All</option>
+        <option value="approved">Approved</option>
+        <option value="dismissed">Dismissed</option>
+        <option value="bug_filed">Bug Filed</option>
+      </select>
+      <select id="filter-type" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+        <option value="">All Types</option>
+        <option value="text">Text Analysis</option>
+        <option value="vision">Vision Analysis</option>
+        <option value="comparison">Comparison</option>
+      </select>
+      <input type="text" id="search-input" placeholder="Search items…"
+        class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500 w-44">
+      <button id="filter-btn" class="rounded-lg bg-scout-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-scout-700">Filter</button>
+    </div>
+  </div>
+
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="item">
+          Item <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="type">
+          Analysis <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="sortable px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="issues">
+          Issues <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase select-none">Summary</th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="flagged">
+          Flagged <span class="sort-arrow ml-1 text-gray-700">▼</span>
+        </th>
+        <th class="sortable px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 select-none" data-col="status">
+          Status <span class="sort-arrow ml-1 text-gray-300">▲</span>
+        </th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase select-none w-48">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="table-body" class="divide-y divide-gray-200"></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-600">
+    <div class="flex items-center gap-3">
+      <span id="page-info">Showing 0–0 of 0</span>
+      <div class="flex gap-1">
+        <button id="prev-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Previous</button>
+        <button id="next-btn" class="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+      <div>
+        <h2 id="modal-title" class="text-lg font-semibold text-gray-900"></h2>
+        <div id="modal-meta" class="text-sm text-gray-500 mt-0.5"></div>
+      </div>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <div class="px-6 py-4 overflow-y-auto flex-1">
+      <pre id="modal-output" class="bg-gray-50 p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap"></pre>
+    </div>
+    <div class="px-6 py-4 border-t border-gray-200">
+      <div class="mb-3">
+        <label class="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+        <input type="text" id="modal-notes" placeholder="Add reviewer notes…"
+          class="w-full rounded-md border-gray-300 text-sm px-3 py-1.5 border focus:ring-scout-500 focus:border-scout-500">
+      </div>
+      <div class="flex justify-between">
+        <button onclick="closeModal()" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Close</button>
+        <div class="flex gap-2">
+          <button onclick="submitAction('dismissed')" class="rounded-lg bg-gray-500 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600">
+            ✕ Dismiss
+          </button>
+          <button onclick="submitAction('approved')" class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+            ✓ Approve
+          </button>
+          <button onclick="submitAction('bug_filed')" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+            🐛 Confirm Bug
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var currentAnalysisId = null;
+
+// --- Modal ---
+function openModal(row) {
+  currentAnalysisId = row.id;
+  document.getElementById('modal-title').textContent = row.item_id;
+  document.getElementById('modal-meta').innerHTML =
+    '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">' + esc(row.analysis_type) + '</span> · ' +
+    '<span class="text-amber-600 font-medium">' + row.issue_count + ' issue(s)</span> · ' +
+    'Model: ' + esc(row.model);
+
+  // Try to pretty-print the output
+  var output = row.output || '';
+  try {
+    var parsed = JSON.parse(output);
+    if (parsed.issues) {
+      var lines = [];
+      parsed.issues.forEach(function(issue, idx) {
+        lines.push('Issue ' + (idx + 1) + ': [' + (issue.type || 'unknown') + ']');
+        if (issue.text) lines.push('  Text: "' + issue.text + '"');
+        if (issue.suggestion) lines.push('  Suggestion: "' + issue.suggestion + '"');
+        if (issue.context) lines.push('  Context: "' + issue.context + '"');
+        lines.push('');
+      });
+      output = lines.join('\n');
+    } else {
+      output = JSON.stringify(parsed, null, 2);
+    }
+  } catch(e) {}
+  document.getElementById('modal-output').textContent = output;
+  document.getElementById('modal-notes').value = '';
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.add('hidden');
+  currentAnalysisId = null;
+}
+
+function submitAction(action) {
+  if (!currentAnalysisId) return;
+  var notes = document.getElementById('modal-notes').value.trim();
+
+  fetch('/reviews/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ analysis_id: currentAnalysisId, action: action, notes: notes || null })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) { alert(data.error); return; }
+    closeModal();
+    load();
+  })
+  .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+// --- Server-side table ---
+var state = { page: 1, pageSize: 25, sort: 'flagged', dir: 'desc', search: '', status: 'pending', type: '' };
+var tbody = document.getElementById('table-body');
+
+function load() {
+  var params = new URLSearchParams({
+    page: state.page, pageSize: state.pageSize,
+    sort: state.sort, dir: state.dir
+  });
+  if (state.search) params.set('search', state.search);
+  if (state.status) params.set('status', state.status);
+  if (state.type) params.set('type', state.type);
+
+  fetch('/reviews/api/list?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) { render(data); })
+    .catch(function(e) { tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-red-500">' + e.message + '</td></tr>'; });
+}
+
+// Store rows for modal access
+var currentRows = [];
+
+function render(data) {
+  currentRows = data.rows;
+  var total = data.total;
+  var start = (data.page - 1) * data.pageSize;
+  var end = Math.min(start + data.rows.length, total);
+
+  if (data.rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">' +
+      '<div class="mb-2 text-2xl">🎉</div>No items match the current filters.</td></tr>';
+  } else {
+    var html = '';
+    for (var i = 0; i < data.rows.length; i++) {
+      var r = data.rows[i];
+      var statusCls = r.effective_status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                      r.effective_status === 'approved' ? 'bg-green-100 text-green-800' :
+                      r.effective_status === 'dismissed' ? 'bg-gray-100 text-gray-700' :
+                      r.effective_status === 'bug_filed' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700';
+      var statusLabel = r.effective_status === 'bug_filed' ? 'Bug Filed' :
+                        r.effective_status.charAt(0).toUpperCase() + r.effective_status.slice(1);
+      var typeCls = r.analysis_type === 'text' ? 'bg-blue-100 text-blue-800' :
+                    r.analysis_type === 'vision' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700';
+
+      // Parse summary from output
+      var summary = '';
+      try {
+        var parsed = JSON.parse(r.output);
+        if (parsed.issues && parsed.issues.length > 0) {
+          summary = parsed.issues[0].type + ': "' + (parsed.issues[0].text || '').substring(0, 40) + '"';
+          if (parsed.issues.length > 1) summary += ' (+' + (parsed.issues.length - 1) + ' more)';
+        }
+      } catch(e) {
+        summary = (r.output || '').substring(0, 60);
+      }
+
+      var flaggedText = r.created_at ? timeAgo(new Date(r.created_at)) : '—';
+
+      html += '<tr class="hover:bg-gray-50 cursor-pointer" onclick="openModal(currentRows[' + i + '])">' +
+        '<td class="px-4 py-3 text-sm font-medium text-gray-900">' + esc(r.item_id) + '</td>' +
+        '<td class="px-4 py-3"><span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ' + typeCls + '">' + esc(r.analysis_type) + '</span></td>' +
+        '<td class="px-4 py-3 text-sm text-amber-600 font-medium text-center">' + r.issue_count + '</td>' +
+        '<td class="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">' + esc(summary) + '</td>' +
+        '<td class="px-4 py-3 text-xs text-gray-500">' + esc(flaggedText) + '</td>' +
+        '<td class="px-4 py-3"><span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ' + statusCls + '">' + statusLabel + '</span></td>' +
+        '<td class="px-4 py-3 text-center">';
+
+      if (r.effective_status === 'pending') {
+        html += '<div class="flex justify-center gap-1">' +
+          '<button onclick="event.stopPropagation(); quickAction(\'' + r.id + '\', \'dismissed\')" class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200" title="Dismiss">✕</button>' +
+          '<button onclick="event.stopPropagation(); quickAction(\'' + r.id + '\', \'approved\')" class="rounded bg-green-100 px-2 py-1 text-xs text-green-700 hover:bg-green-200" title="Approve">✓</button>' +
+          '<button onclick="event.stopPropagation(); quickAction(\'' + r.id + '\', \'bug_filed\')" class="rounded bg-red-100 px-2 py-1 text-xs text-red-700 hover:bg-red-200" title="Confirm Bug">🐛</button>' +
+          '</div>';
+      } else {
+        html += '<span class="text-xs text-gray-400">' + (r.reviewer || '') + '</span>';
+      }
+
+      html += '</td></tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  document.getElementById('page-info').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : 'No results';
+  var pages = Math.max(1, Math.ceil(total / data.pageSize));
+  document.getElementById('prev-btn').disabled = data.page <= 1;
+  document.getElementById('next-btn').disabled = data.page >= pages;
+}
+
+function quickAction(analysisId, action) {
+  fetch('/reviews/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ analysis_id: analysisId, action: action })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) { if (data.error) alert(data.error); else load(); })
+  .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function timeAgo(date) {
+  var secs = Math.floor((new Date() - date) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+  return Math.floor(secs / 86400) + 'd ago';
+}
+
+// Page size
+document.getElementById('page-size').addEventListener('change', function() { state.pageSize = parseInt(this.value); state.page = 1; load(); });
+
+// Filters
+document.getElementById('filter-status').addEventListener('change', function() { state.status = this.value; state.page = 1; load(); });
+document.getElementById('filter-type').addEventListener('change', function() { state.type = this.value; state.page = 1; load(); });
+document.getElementById('filter-btn').addEventListener('click', function() { state.search = document.getElementById('search-input').value; state.page = 1; load(); });
+document.getElementById('search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') { state.search = this.value; state.page = 1; load(); } });
+
+// Sort
+document.querySelectorAll('.sortable').forEach(function(th) {
+  th.addEventListener('click', function() {
+    var col = th.dataset.col;
+    if (state.sort === col) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; } else { state.sort = col; state.dir = col === 'flagged' ? 'desc' : 'asc'; }
+    document.querySelectorAll('.sort-arrow').forEach(function(a) { a.textContent = '▲'; a.classList.add('text-gray-300'); a.classList.remove('text-gray-700'); });
+    var arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = state.dir === 'asc' ? '▲' : '▼';
+    arrow.classList.remove('text-gray-300'); arrow.classList.add('text-gray-700');
+    state.page = 1; load();
+  });
+});
+
+// Pagination
+document.getElementById('prev-btn').addEventListener('click', function() { state.page--; load(); });
+document.getElementById('next-btn').addEventListener('click', function() { state.page++; load(); });
+
+load();
+</script>
+
+<%- include('footer') %>

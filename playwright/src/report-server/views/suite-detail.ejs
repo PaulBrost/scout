@@ -1,0 +1,307 @@
+<%- include('header', { title: (locals.suite ? 'Edit Suite' : 'New Test Suite'), active: 'suites' }) %>
+
+<% var isEdit = !!(locals.suite && suite); %>
+<% var suiteName = isEdit ? suite.name : ''; %>
+<% var suiteDesc = isEdit ? (suite.description || '') : ''; %>
+<% var suiteBrowsers = isEdit ? (suite.browser_profiles || ['chrome-desktop']) : ['chrome-desktop']; %>
+<% var suiteScriptPaths = isEdit ? (suite.scriptPaths || []) : []; %>
+<% var suiteSchedule = null; %>
+<% if (isEdit && suite.schedule) { try { suiteSchedule = typeof suite.schedule === 'string' ? JSON.parse(suite.schedule) : suite.schedule; } catch(e) {} } %>
+
+<!-- Breadcrumb -->
+<div class="mb-6 flex items-center justify-between">
+  <div class="flex items-center gap-2 text-sm text-gray-500">
+    <a href="/suites" class="hover:text-scout-600">Test Suites</a>
+    <span>→</span>
+    <span class="text-gray-900 font-medium"><%= isEdit ? suiteName : 'New Suite' %></span>
+  </div>
+  <div class="flex items-center gap-3">
+    <%- include('partials/help-modal', {
+      helpTitle: 'Suite Editor Help',
+      helpContent: '<p class="font-medium text-gray-900">Creating & Editing Test Suites</p>' +
+        '<p><strong>Name & Description</strong> — Give your suite a descriptive name. The description helps others understand what the suite tests.</p>' +
+        '<p><strong>Browser Profiles</strong> — Select which browsers to run tests against. Each script executes once per selected profile.</p>' +
+        '<p><strong>Test Scripts</strong> — Check the scripts you want included. Scripts are organized by category (visual, content, feature, workflow, scoring).</p>' +
+        '<p><strong>Schedule</strong> — Optionally set a recurring schedule (daily, weekly) to automate execution.</p>' +
+        '<p><strong>Run Now</strong> — Immediately executes all selected scripts across all chosen browser profiles. Results appear on the Test Results page.</p>'
+    }) %>
+    <% if (isEdit) { %>
+    <div class="flex items-center gap-3">
+      <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none" title="Record video of all tests (not just failures)">
+        <input type="checkbox" id="record-video" class="rounded border-gray-300 text-scout-600 focus:ring-scout-500">
+        <span>🎥 Record all</span>
+      </label>
+      <button onclick="runSuite()" id="run-btn" class="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 shadow-sm">
+        ▶ Run Now
+      </button>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <!-- Left column: Suite config -->
+  <div class="lg:col-span-1 space-y-6">
+    <!-- Name & Description -->
+    <div class="bg-white rounded-lg shadow p-5">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase mb-3">Suite Details</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
+        <input type="text" id="suite-name" value="<%= suiteName %>" placeholder="e.g. Nightly Smoke Tests"
+          class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea id="suite-desc" rows="3" placeholder="Optional description…"
+          class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500"><%= suiteDesc %></textarea>
+      </div>
+    </div>
+
+    <!-- Browser Profiles -->
+    <div class="bg-white rounded-lg shadow p-5">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase mb-3">Browser Profiles</h2>
+      <p class="text-xs text-gray-500 mb-3">Select which browsers to run this suite against.</p>
+      <div class="space-y-2">
+        <% var allBrowsers = ['chrome-desktop', 'firefox-desktop', 'edge-desktop', 'webkit-desktop', 'chromebook', 'brave-desktop']; %>
+        <% allBrowsers.forEach(function(bp) { %>
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" class="browser-cb rounded border-gray-300 text-scout-600 focus:ring-scout-500"
+            value="<%= bp %>" <%= suiteBrowsers.indexOf(bp) >= 0 ? 'checked' : '' %>>
+          <span><%= bp %></span>
+        </label>
+        <% }); %>
+      </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="bg-white rounded-lg shadow p-5">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase mb-3">Schedule</h2>
+      <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-3">
+        <input type="checkbox" id="schedule-enabled" class="rounded border-gray-300 text-scout-600 focus:ring-scout-500"
+          <%= (suiteSchedule && suiteSchedule.enabled) ? 'checked' : '' %>>
+        <span>Enable scheduled runs</span>
+      </label>
+      <div id="schedule-config" class="<%= (suiteSchedule && suiteSchedule.enabled) ? '' : 'hidden' %> space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+          <select id="schedule-freq" class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+            <option value="daily" <%= (suiteSchedule && suiteSchedule.frequency === 'daily') ? 'selected' : '' %>>Daily</option>
+            <option value="weekly" <%= (suiteSchedule && suiteSchedule.frequency === 'weekly') ? 'selected' : '' %>>Weekly</option>
+            <option value="monthly" <%= (suiteSchedule && suiteSchedule.frequency === 'monthly') ? 'selected' : '' %>>Monthly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Time</label>
+          <input type="time" id="schedule-time" value="<%= (suiteSchedule && suiteSchedule.time) ? suiteSchedule.time : '02:00' %>"
+            class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+        </div>
+        <div id="schedule-day-section" class="<%= (suiteSchedule && suiteSchedule.frequency === 'weekly') ? '' : 'hidden' %>">
+          <label class="block text-xs font-medium text-gray-600 mb-1">Day of Week</label>
+          <select id="schedule-day" class="w-full rounded-md border-gray-300 text-sm px-3 py-2 border focus:ring-scout-500 focus:border-scout-500">
+            <% ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].forEach(function(d, idx) { %>
+            <option value="<%= idx + 1 %>" <%= (suiteSchedule && suiteSchedule.dayOfWeek == (idx + 1)) ? 'selected' : '' %>><%= d %></option>
+            <% }); %>
+          </select>
+        </div>
+        <p class="text-xs text-gray-400">Schedule is stored for future implementation. Runs are currently manual only.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column: Script picker -->
+  <div class="lg:col-span-2">
+    <div class="bg-white rounded-lg shadow p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase">Test Scripts</h2>
+        <span id="selected-count" class="text-xs text-gray-500">0 selected</span>
+      </div>
+
+      <!-- Search/filter bar -->
+      <div class="flex items-center gap-2 mb-3">
+        <input type="text" id="script-search" placeholder="Search scripts…"
+          class="flex-1 rounded-md border-gray-300 text-sm px-3 py-1.5 border focus:ring-scout-500 focus:border-scout-500">
+        <select id="script-type-filter" class="rounded-md border-gray-300 text-sm px-3 py-1.5 border focus:ring-scout-500 focus:border-scout-500">
+          <option value="">All Types</option>
+          <option value="visual">Visual Regression</option>
+          <option value="content">Content Validation</option>
+          <option value="feature">Feature</option>
+        </select>
+      </div>
+
+      <!-- Script list -->
+      <div id="script-list" class="max-h-[500px] overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+        <% if (locals.scripts) { %>
+          <% scripts.forEach(function(sc) { %>
+        <label class="script-row flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer" data-type="<%= sc.type %>" data-name="<%= sc.name.toLowerCase() %>" data-path="<%= sc.relativePath.toLowerCase() %>">
+          <input type="checkbox" class="script-cb rounded border-gray-300 text-scout-600 focus:ring-scout-500"
+            value="<%= sc.relativePath %>" <%= suiteScriptPaths.indexOf(sc.relativePath) >= 0 ? 'checked' : '' %>>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-gray-900 truncate"><%= sc.name %></div>
+            <div class="text-xs text-gray-500 font-mono truncate"><%= sc.relativePath %></div>
+          </div>
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium flex-shrink-0
+            <%= sc.type === 'visual' ? 'bg-purple-100 text-purple-800' : sc.type === 'content' ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800' %>">
+            <%= sc.typeLabel %>
+          </span>
+          <span class="text-xs text-gray-400 flex-shrink-0"><%= sc.testCount %> tests</span>
+        </label>
+          <% }); %>
+        <% } %>
+      </div>
+
+      <!-- Quick select buttons -->
+      <div class="flex items-center gap-2 mt-3">
+        <button onclick="selectAll()" class="text-xs text-scout-600 hover:underline">Select All</button>
+        <span class="text-gray-300">|</span>
+        <button onclick="selectNone()" class="text-xs text-scout-600 hover:underline">Select None</button>
+        <span class="text-gray-300">|</span>
+        <button onclick="selectByType('visual')" class="text-xs text-purple-600 hover:underline">All Visual</button>
+        <span class="text-gray-300">|</span>
+        <button onclick="selectByType('content')" class="text-xs text-sky-600 hover:underline">All Content</button>
+        <span class="text-gray-300">|</span>
+        <button onclick="selectByType('feature')" class="text-xs text-indigo-600 hover:underline">All Feature</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom action bar -->
+<div class="mt-6 flex items-center justify-end gap-3">
+  <a href="/suites" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Cancel</a>
+  <button onclick="saveSuite(false)" id="save-btn" class="rounded-lg bg-scout-600 px-4 py-2 text-sm font-medium text-white hover:bg-scout-700">Save</button>
+  <button onclick="saveSuite(true)" id="save-run-btn" class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Save & Run</button>
+</div>
+
+<!-- Run progress modal -->
+<div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6 text-center">
+    <div class="mb-3 text-4xl animate-spin inline-block">⚙️</div>
+    <h3 class="text-lg font-semibold text-gray-900 mb-1">Running Suite…</h3>
+    <p id="run-modal-text" class="text-sm text-gray-500">Executing test scripts. This may take a moment.</p>
+  </div>
+</div>
+
+<script>
+var suiteId = '<%= isEdit ? suite.id : '' %>';
+
+// Schedule toggle
+document.getElementById('schedule-enabled').addEventListener('change', function() {
+  document.getElementById('schedule-config').classList.toggle('hidden', !this.checked);
+});
+document.getElementById('schedule-freq').addEventListener('change', function() {
+  document.getElementById('schedule-day-section').classList.toggle('hidden', this.value !== 'weekly');
+});
+
+// Script filtering
+function filterScripts() {
+  var search = document.getElementById('script-search').value.toLowerCase();
+  var type = document.getElementById('script-type-filter').value;
+  document.querySelectorAll('.script-row').forEach(function(row) {
+    var matchType = !type || row.dataset.type === type;
+    var matchSearch = !search || row.dataset.name.indexOf(search) >= 0 || row.dataset.path.indexOf(search) >= 0;
+    row.style.display = matchType && matchSearch ? '' : 'none';
+  });
+}
+document.getElementById('script-search').addEventListener('input', filterScripts);
+document.getElementById('script-type-filter').addEventListener('change', filterScripts);
+
+// Selected count
+function updateCount() {
+  var count = document.querySelectorAll('.script-cb:checked').length;
+  document.getElementById('selected-count').textContent = count + ' selected';
+}
+document.querySelectorAll('.script-cb').forEach(function(cb) { cb.addEventListener('change', updateCount); });
+updateCount();
+
+// Quick select
+function selectAll() { document.querySelectorAll('.script-cb').forEach(function(cb) { cb.checked = true; }); updateCount(); }
+function selectNone() { document.querySelectorAll('.script-cb').forEach(function(cb) { cb.checked = false; }); updateCount(); }
+function selectByType(type) {
+  selectNone();
+  document.querySelectorAll('.script-row').forEach(function(row) {
+    if (row.dataset.type === type) row.querySelector('.script-cb').checked = true;
+  });
+  updateCount();
+}
+
+// Collect form data
+function getFormData() {
+  var name = document.getElementById('suite-name').value.trim();
+  var description = document.getElementById('suite-desc').value.trim();
+  var scripts = [];
+  document.querySelectorAll('.script-cb:checked').forEach(function(cb) { scripts.push(cb.value); });
+  var browser_profiles = [];
+  document.querySelectorAll('.browser-cb:checked').forEach(function(cb) { browser_profiles.push(cb.value); });
+
+  var schedule = { enabled: document.getElementById('schedule-enabled').checked };
+  if (schedule.enabled) {
+    schedule.frequency = document.getElementById('schedule-freq').value;
+    schedule.time = document.getElementById('schedule-time').value;
+    if (schedule.frequency === 'weekly') schedule.dayOfWeek = parseInt(document.getElementById('schedule-day').value);
+  }
+
+  return { name, description, scripts, browser_profiles, schedule };
+}
+
+// Save
+function saveSuite(andRun) {
+  var data = getFormData();
+  if (!data.name) { alert('Suite name is required.'); return; }
+  if (data.scripts.length === 0) { alert('Select at least one test script.'); return; }
+
+  var method = suiteId ? 'PUT' : 'POST';
+  var url = suiteId ? '/suites/' + suiteId : '/suites';
+
+  document.getElementById('save-btn').disabled = true;
+  document.getElementById('save-run-btn').disabled = true;
+
+  fetch(url, {
+    method: method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(result) {
+    if (result.error) { alert(result.error); return; }
+    var id = result.id || suiteId;
+    if (andRun) {
+      triggerRun(id);
+    } else {
+      window.location.href = '/suites/' + id;
+    }
+  })
+  .catch(function(e) { alert('Error: ' + e.message); })
+  .finally(function() {
+    document.getElementById('save-btn').disabled = false;
+    document.getElementById('save-run-btn').disabled = false;
+  });
+}
+
+// Run suite
+function runSuite() {
+  if (!suiteId) return;
+  triggerRun(suiteId);
+}
+
+function triggerRun(id) {
+  var recordAll = document.getElementById('record-video') && document.getElementById('record-video').checked;
+  document.getElementById('run-modal').classList.remove('hidden');
+  fetch('/suites/' + id + '/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recordAll: recordAll })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(result) {
+      if (result.error) { alert(result.error); document.getElementById('run-modal').classList.add('hidden'); return; }
+      document.getElementById('run-modal-text').textContent = 'Run started with ' + (result.scripts || 0) + ' scripts. Redirecting…';
+      setTimeout(function() { window.location.href = '/runs/' + result.runId; }, 3000);
+    })
+    .catch(function(e) {
+      alert('Error: ' + e.message);
+      document.getElementById('run-modal').classList.add('hidden');
+    });
+}
+</script>
+
+<%- include('footer') %>

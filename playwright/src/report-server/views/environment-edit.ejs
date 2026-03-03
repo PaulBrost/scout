@@ -1,0 +1,125 @@
+<%- include('header', { title: locals.env ? 'Edit Environment' : 'New Environment', active: 'environments' }) %>
+
+<%
+  var e = locals.env || {};
+  var creds = e.credentials || {};
+  var launcher = e.launcher_config || {};
+  var isEdit = !!locals.env;
+%>
+
+<div class="mb-6">
+  <nav class="text-sm text-gray-500 mb-2">
+    <a href="/environments" class="hover:underline">Environments</a> → <span class="text-gray-900"><%= isEdit ? 'Edit' : 'New' %></span>
+  </nav>
+  <h1 class="text-2xl font-bold text-gray-900"><%= isEdit ? 'Edit Environment' : 'New Environment' %></h1>
+</div>
+
+<form method="POST" action="<%= isEdit ? '/environments/' + e.id : '/environments' %>" class="max-w-2xl space-y-6">
+  <!-- Basic Info -->
+  <div class="bg-white rounded-lg shadow p-6 space-y-4">
+    <h2 class="text-lg font-medium text-gray-900 border-b pb-2">Basic Info</h2>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
+      <input type="text" name="name" value="<%= e.name || '' %>" required
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500"
+        placeholder="e.g., NAEP Review (Staging)">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Base URL <span class="text-red-500">*</span></label>
+      <input type="url" name="base_url" value="<%= e.base_url || '' %>" required
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-scout-500 focus:ring-1 focus:ring-scout-500"
+        placeholder="https://example.com/assessment">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+      <textarea name="notes" rows="2"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500"
+        placeholder="Optional description"><%= e.notes || '' %></textarea>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="checkbox" name="is_default" id="is_default" value="1" <%= e.is_default ? 'checked' : '' %>
+        class="rounded border-gray-300 text-scout-600 focus:ring-scout-500">
+      <label for="is_default" class="text-sm text-gray-700">Set as default environment</label>
+    </div>
+  </div>
+
+  <!-- Authentication -->
+  <div class="bg-white rounded-lg shadow p-6 space-y-4">
+    <h2 class="text-lg font-medium text-gray-900 border-b pb-2">Authentication</h2>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Auth Type</label>
+      <select name="auth_type" id="auth_type"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500"
+        onchange="toggleAuthFields()">
+        <option value="password_only" <%= (e.auth_type||'password_only') === 'password_only' ? 'selected' : '' %>>Password Only</option>
+        <option value="username_password" <%= e.auth_type === 'username_password' ? 'selected' : '' %>>Username + Password</option>
+        <option value="none" <%= e.auth_type === 'none' ? 'selected' : '' %>>None (Open Access)</option>
+      </select>
+    </div>
+    <div id="username-field" class="<%= e.auth_type === 'username_password' ? '' : 'hidden' %>">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+      <input type="text" name="username" value="<%= creds.username || '' %>"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+    </div>
+    <div id="password-field" class="<%= e.auth_type === 'none' ? 'hidden' : '' %>">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+      <input type="password" name="password" value="<%= creds.password || '' %>"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+    </div>
+    <div id="auth-selectors" class="<%= e.auth_type === 'none' ? 'hidden' : '' %> grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Password Field Selector</label>
+        <input type="text" name="password_selector" value="<%= creds.password_selector || '#_ctl0_Body_PasswordText' %>"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Submit Button Selector</label>
+        <input type="text" name="submit_selector" value="<%= creds.submit_selector || '#_ctl0_Body_SubmitButton' %>"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+      </div>
+    </div>
+  </div>
+
+  <!-- Launcher Config -->
+  <div class="bg-white rounded-lg shadow p-6 space-y-4">
+    <h2 class="text-lg font-medium text-gray-900 border-b pb-2">Launcher Configuration</h2>
+    <p class="text-xs text-gray-500">CSS selectors and config for navigating the assessment launcher after login.</p>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Test Frame Selector</label>
+        <input type="text" name="launcher_selector" value="<%= launcher.launcher_selector || '#TheTest' %>"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Launcher Submit Selector</label>
+        <input type="text" name="launcher_submit" value="<%= launcher.submit_selector || 'input[type=\"submit\"]' %>"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+      </div>
+    </div>
+    <div class="w-1/2">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Intro Screens to Skip</label>
+      <input type="number" name="intro_screens" value="<%= launcher.intro_screens || 5 %>" min="0" max="20"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-scout-500 focus:ring-1 focus:ring-scout-500">
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="rounded-lg bg-scout-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-scout-700 shadow-sm">
+      <%= isEdit ? 'Save Changes' : 'Create Environment' %>
+    </button>
+    <a href="/environments" class="rounded-lg bg-white px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm">
+      Cancel
+    </a>
+  </div>
+</form>
+
+<script>
+function toggleAuthFields() {
+  var type = document.getElementById('auth_type').value;
+  document.getElementById('username-field').classList.toggle('hidden', type !== 'username_password');
+  document.getElementById('password-field').classList.toggle('hidden', type === 'none');
+  document.getElementById('auth-selectors').classList.toggle('hidden', type === 'none');
+}
+</script>
+
+<%- include('footer') %>
