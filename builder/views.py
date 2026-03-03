@@ -1,4 +1,10 @@
 import json
+import os
+import subprocess
+import tempfile
+import threading
+import time
+import uuid
 from pathlib import Path
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -8,6 +14,10 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
 from core.mixins import get_user_env_ids
+
+# ── Recording session state (one at a time) ──
+_record_lock = threading.Lock()
+_recording_session = {}  # {session_id, process, output_file, started_at, base_url, last_code, status}
 
 
 @login_required(login_url='/login/')
@@ -163,7 +173,6 @@ def api_save(request):
             return JsonResponse({'error': 'No code to save'}, status=400)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR) / 'generated'
         tests_dir.mkdir(parents=True, exist_ok=True)
-        import time
         filename = f'generated-{int(time.time())}.spec.js'
         filepath = tests_dir / filename
         filepath.write_text(code, encoding='utf-8')
@@ -187,3 +196,163 @@ def api_save(request):
         return JsonResponse({'path': rel_path})
     except Exception as e:
         return JsonResponse({'error': str(e)})
+
+
+# ── Recording API endpoints ──
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_record_start(request):
+    global _recording_session
+    try:
+        data = json.loads(request.body)
+        environment_id = data.get('environment_id')
+        if not environment_id:
+            return JsonResponse({'error': 'environment_id is required'}, status=400)
+
+        # RBAC check
+        env_ids = get_user_env_ids(request.user)
+        if env_ids is not None and environment_id not in [str(e) for e in env_ids]:
+            return JsonResponse({'error': 'Access denied to this environment'}, status=403)
+
+        # Look up base_url from environments table
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT base_url FROM environments WHERE id = %s::uuid',
+                [environment_id]
+            )
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return JsonResponse({'error': 'Environment has no base_url configured'}, status=400)
+            base_url = row[0]
+
+        with _record_lock:
+            if _recording_session.get('status') == 'recording':
+                return JsonResponse({'error': 'Another recording is already active'}, status=409)
+
+            session_id = str(uuid.uuid4())
+            fd, output_file = tempfile.mkstemp(suffix='.spec.js')
+            os.close(fd)
+
+            tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+            cmd = [
+                'npx', 'playwright', 'codegen',
+                base_url,
+                '--output', output_file,
+                '--target', 'playwright-test',
+            ]
+
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(tests_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            _recording_session = {
+                'session_id': session_id,
+                'process': proc,
+                'output_file': output_file,
+                'started_at': time.time(),
+                'base_url': base_url,
+                'last_code': '',
+                'status': 'recording',
+            }
+
+            # Daemon thread that waits for the process to exit naturally
+            def _wait_for_exit():
+                global _recording_session
+                proc.wait()
+                with _record_lock:
+                    if _recording_session.get('session_id') == session_id:
+                        _recording_session['status'] = 'stopped'
+
+            t = threading.Thread(target=_wait_for_exit, daemon=True)
+            t.start()
+
+        return JsonResponse({
+            'session_id': session_id,
+            'status': 'recording',
+            'base_url': base_url,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required(login_url='/login/')
+def api_record_status(request):
+    with _record_lock:
+        if not _recording_session:
+            return JsonResponse({'active': False, 'status': 'idle'})
+
+        session = _recording_session
+        output_file = session.get('output_file', '')
+        code = ''
+        try:
+            if output_file and os.path.exists(output_file):
+                code = open(output_file, 'r', encoding='utf-8').read()
+        except Exception:
+            pass
+
+        changed = code != session.get('last_code', '')
+        if changed:
+            session['last_code'] = code
+
+        proc = session.get('process')
+        if proc and proc.poll() is not None:
+            session['status'] = 'stopped'
+
+        elapsed = time.time() - session.get('started_at', time.time())
+
+        return JsonResponse({
+            'active': session['status'] == 'recording',
+            'status': session['status'],
+            'code': code,
+            'changed': changed,
+            'elapsed_seconds': round(elapsed, 1),
+        })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_record_stop(request):
+    global _recording_session
+    with _record_lock:
+        if not _recording_session or _recording_session.get('status') not in ('recording', 'stopped'):
+            return JsonResponse({'ok': True, 'code': ''})
+
+        session = _recording_session
+        proc = session.get('process')
+        code = ''
+
+        # Terminate the process
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+        # Read final code
+        output_file = session.get('output_file', '')
+        try:
+            if output_file and os.path.exists(output_file):
+                code = open(output_file, 'r', encoding='utf-8').read()
+        except Exception:
+            pass
+
+        # Cleanup temp file
+        try:
+            if output_file and os.path.exists(output_file):
+                os.unlink(output_file)
+        except Exception:
+            pass
+
+        _recording_session = {}
+
+    return JsonResponse({'ok': True, 'code': code})

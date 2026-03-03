@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load core_filters %}
 {% block title %}Run Detail{% endblock %}
 {% block page_title %}Run Detail{% endblock %}
 
@@ -75,7 +76,7 @@
         <tr id="script-{{ sr.id }}">
           <td class="font-monospace small">{{ sr.script_path }}</td>
           <td class="script-status"><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
-          <td class="script-duration">{% if sr.duration_ms %}{{ sr.duration_ms }}ms{% else %}—{% endif %}</td>
+          <td class="script-duration">{% if sr.duration_ms %}{{ sr.duration_ms|duration }}{% else %}—{% endif %}</td>
           <td class="script-error text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             {% if sr.error_message %}
             <a href="#" class="text-danger text-decoration-none" data-error="{{ sr.error_message }}" onclick="showError(this.dataset.error); return false;" title="Click to view full error">{{ sr.error_message|truncatechars:120 }}</a>
@@ -168,7 +169,7 @@ function pollRunStatus() {
           var row = document.getElementById('script-' + s.id);
           if (!row) return;
           row.querySelector('.script-status').innerHTML = statusBadgeHtml(s.status);
-          row.querySelector('.script-duration').textContent = s.duration_ms ? (s.duration_ms + 'ms') : '\u2014';
+          row.querySelector('.script-duration').textContent = formatDuration(s.duration_ms);
 
           var errCell = row.querySelector('.script-error');
           if (s.error_message) {
@@ -204,6 +205,18 @@ function escapeHtml(text) {
   var d = document.createElement('div');
   d.textContent = text;
   return d.innerHTML;
+}
+
+function formatDuration(ms) {
+  if (!ms) return '\u2014';
+  if (ms < 1000) return ms + 'ms';
+  var total = Math.floor(ms / 1000);
+  var h = Math.floor(total / 3600);
+  var m = Math.floor((total % 3600) / 60);
+  var s = total % 60;
+  if (h) return h + 'h ' + String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
+  if (m) return m + 'm ' + String(s).padStart(2, '0') + 's';
+  return s + 's';
 }
 
 // Start polling if run is in progress

@@ -133,6 +133,12 @@
     <!-- Bottom action bar -->
     <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
       <span id="runStatus" class="text-muted small me-auto" style="min-height:1.2em"></span>
+      <button class="btn btn-sm btn-outline-danger" onclick="startRecording()" id="recordBtn">
+        <i class="bi bi-record-circle"></i> Record
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="stopRecording()" id="stopRecordBtn" style="display:none">
+        <i class="bi bi-stop-circle"></i> Stop Recording
+      </button>
       <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" id="dryRunBtn">
         <i class="bi bi-check2-circle"></i> Check
       </button>
@@ -179,7 +185,7 @@
             <tr>
               <td><span class="status-badge status-{{ rh.status }}">{{ rh.status }}</span></td>
               <td class="small">{{ rh.suite_name|default:rh.trigger_type|default:"—" }}</td>
-              <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms }}ms{% else %}—{% endif %}</td>
+              <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms|duration }}{% else %}—{% endif %}</td>
               <td class="small text-muted">{{ rh.completed_at|default:"—" }}</td>
               <td>
                 <a href="/runs/{{ rh.run_id }}/" class="btn btn-sm btn-outline-secondary" title="View run">
@@ -692,5 +698,158 @@ function updateRunButtons() {
 window.addEventListener('beforeunload', function(e) {
   if (isDirty) { e.preventDefault(); e.returnValue = ''; }
 });
+
+// ── Recording (Playwright Codegen) ──
+var recordingPollTimer = null;
+
+function getRecordingEnvId() {
+  // Use script's environment, or the env picker for new scripts
+  if (currentEnvironmentId) return currentEnvironmentId;
+  var picker = document.getElementById('envPicker');
+  return picker ? picker.value : '';
+}
+
+function startRecording() {
+  var envId = getRecordingEnvId();
+  if (!envId) {
+    alert('Please select an environment before recording. The environment\'s base URL will be used as the starting page.');
+    return;
+  }
+
+  var btn = document.getElementById('recordBtn');
+  btn.disabled = true;
+  setRunStatus('Starting recorder…', 'text-info');
+
+  fetch('/builder/api/record/start/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({environment_id: envId})
+  })
+  .then(r => r.json().then(d => ({status: r.status, data: d})))
+  .then(({status, data}) => {
+    if (status === 409) {
+      setRunStatus('Another recording is already active.', 'text-warning');
+      btn.disabled = false;
+      return;
+    }
+    if (data.error) {
+      setRunStatus('Record error: ' + data.error, 'text-danger');
+      btn.disabled = false;
+      return;
+    }
+    setRunStatus('Recording from ' + data.base_url + '…', 'text-danger');
+    enterRecordingMode();
+    pollRecordingStatus();
+  })
+  .catch(err => {
+    setRunStatus('Record error: ' + err.message, 'text-danger');
+    btn.disabled = false;
+  });
+}
+
+function enterRecordingMode() {
+  document.getElementById('recordBtn').style.display = 'none';
+  document.getElementById('stopRecordBtn').style.display = '';
+  // Disable other action buttons during recording
+  var ids = ['dryRunBtn', 'saveBtn', 'saveRunBtn', 'runUIBtn'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+  // Disable the dropdown toggle too
+  var saveRunBtn = document.getElementById('saveRunBtn');
+  if (saveRunBtn && saveRunBtn.nextElementSibling) saveRunBtn.nextElementSibling.disabled = true;
+}
+
+function exitRecordingMode() {
+  if (recordingPollTimer) {
+    clearTimeout(recordingPollTimer);
+    recordingPollTimer = null;
+  }
+  document.getElementById('recordBtn').style.display = '';
+  document.getElementById('recordBtn').disabled = false;
+  document.getElementById('stopRecordBtn').style.display = 'none';
+  // Re-enable action buttons
+  var ids = ['dryRunBtn', 'saveBtn'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  updateRunButtons();
+}
+
+function pollRecordingStatus() {
+  fetch('/builder/api/record/status/')
+  .then(r => r.json())
+  .then(d => {
+    if (!d.active && d.status === 'stopped') {
+      // Recording ended naturally (user closed codegen browser)
+      if (d.code) {
+        document.getElementById('codeEditor').value = d.code;
+        markDirty();
+      }
+      exitRecordingMode();
+      setRunStatus('Recording complete.', 'text-success');
+      // Clean up server-side session
+      fetch('/builder/api/record/stop/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+        body: '{}'
+      });
+      return;
+    }
+    if (!d.active && d.status === 'idle') {
+      exitRecordingMode();
+      setRunStatus('Recording ended.', 'text-muted');
+      return;
+    }
+    // Update editor if code changed
+    if (d.changed && d.code) {
+      document.getElementById('codeEditor').value = d.code;
+      markDirty();
+    }
+    // Update elapsed time in status
+    var mins = Math.floor(d.elapsed_seconds / 60);
+    var secs = Math.floor(d.elapsed_seconds % 60);
+    var elapsed = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+    setRunStatus('Recording… (' + elapsed + ')', 'text-danger');
+    // Poll again
+    recordingPollTimer = setTimeout(pollRecordingStatus, 1500);
+  })
+  .catch(err => {
+    // Network error — retry once more
+    recordingPollTimer = setTimeout(pollRecordingStatus, 3000);
+  });
+}
+
+function stopRecording() {
+  var btn = document.getElementById('stopRecordBtn');
+  btn.disabled = true;
+  setRunStatus('Stopping recorder…', 'text-info');
+
+  if (recordingPollTimer) {
+    clearTimeout(recordingPollTimer);
+    recordingPollTimer = null;
+  }
+
+  fetch('/builder/api/record/stop/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: '{}'
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.code) {
+      document.getElementById('codeEditor').value = d.code;
+      markDirty();
+    }
+    exitRecordingMode();
+    setRunStatus('Recording stopped.', 'text-success');
+  })
+  .catch(err => {
+    exitRecordingMode();
+    setRunStatus('Stop error: ' + err.message, 'text-danger');
+  });
+}
 </script>
 {% endblock %}

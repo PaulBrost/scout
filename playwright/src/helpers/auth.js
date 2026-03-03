@@ -48,6 +48,11 @@ async function login(page, options = {}) {
 
   if (authType === 'none') return;
 
+  // Check if we were redirected to a login page
+  var currentUrl = page.url();
+  var onLoginPage = currentUrl.includes('login') || currentUrl.includes('Login') || currentUrl.includes('Password');
+  if (!onLoginPage) return; // Already authenticated
+
   await page.waitForSelector(passwordSelector, { timeout: 15000 });
 
   if (authType === 'username_password' && username) {
@@ -63,7 +68,17 @@ async function login(page, options = {}) {
 
   await page.fill(passwordSelector, password);
   await page.click(submitSelector);
-  await page.waitForURL(url2 => !url2.toString().includes('Password'), { timeout: 30000 });
+
+  // Wait for navigation away from the login page
+  await page.waitForURL(url2 => {
+    var u = url2.toString();
+    return !u.includes('login') && !u.includes('Login') && !u.includes('Password');
+  }, { timeout: 30000 });
+
+  // If the login redirected elsewhere (e.g. dashboard), navigate back to the target URL
+  if (!page.url().startsWith(url)) {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+  }
 }
 
 /**
@@ -97,7 +112,8 @@ async function loginAndStartTest(page, options = {}) {
   // Try loading saved session state first
   if (await loadSession(page)) {
     await page.goto(checkUrl, { waitUntil: 'domcontentloaded' });
-    if (!page.url().includes('Password')) {
+    var sessionUrl = page.url();
+    if (!sessionUrl.includes('Password') && !sessionUrl.includes('login') && !sessionUrl.includes('Login')) {
       await startTestSession(page, formKey, envConfig);
       if (skipIntro) await skipIntroScreens(page, undefined, envConfig);
       return;
