@@ -1,8 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Items{% endblock %}
-{% block page_title %}Assessment Items{% endblock %}
+{% block page_title %}Items{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
+{% endblock %}
 
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">About Items</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p><strong>What are Items?</strong></p>
+        <p>Items are individual test targets within an assessment, such as a specific question, stimulus, or interactive element. Each item has an ID, title, category, tier, and may be linked to an assessment and environment.</p>
+
+        <p><strong>Managing Items</strong></p>
+        <ul>
+          <li>Use the <strong>search bar</strong> to find items by ID or title.</li>
+          <li>Click a column header to sort the table.</li>
+          <li>Select rows using the checkboxes, choose a bulk action, and click <strong>Apply</strong> to act on multiple items at once.</li>
+          <li>Click an item ID to open its detail page, where you can edit its details or delete it.</li>
+        </ul>
+
+        <p><strong>Creating Test Scripts</strong></p>
+        <p>Test scripts are managed from the item detail page. Click on any item to view its linked scripts. Use the <strong>New Test Script</strong> button in the Test Scripts section to create a new script for that item.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex align-items-center gap-2">
     <label class="text-muted small mb-0">Show</label>
@@ -10,6 +45,11 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
   </div>
   <form method="get" class="d-flex gap-2">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -24,9 +64,10 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th><a href="?sort=numeric_id&dir={% if sort == 'numeric_id' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}"># {% if sort == 'numeric_id' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
           <th><a href="?sort=item_id&dir={% if sort == 'item_id' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Item ID {% if sort == 'item_id' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=title&dir={% if sort == 'title' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Title {% if sort == 'title' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th><a href="?sort=environment&dir={% if sort == 'environment' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Environment {% if sort == 'environment' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Assessment</th>
           <th><a href="?sort=category&dir={% if sort == 'category' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Category {% if sort == 'category' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Tier</th>
@@ -35,15 +76,22 @@
       <tbody>
         {% for item in items %}
         <tr>
-          <td class="text-muted small">{{ item.numeric_id }}</td>
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ item.numeric_id }}" onchange="updateSelection()"></td>
           <td><a href="/items/{{ item.numeric_id }}/">{{ item.item_id }}</a></td>
           <td>{{ item.title|default:"—" }}</td>
-          <td>{% if item.assessment_id %}<a href="/assessments/{{ item.assessment_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</td>
+          <td class="small">
+            {% if item.environment_name %}
+            <span class="badge bg-info text-dark">{{ item.environment_name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</td>
           <td><span class="badge bg-light text-dark">{{ item.category|default:"—" }}</span></td>
           <td>{{ item.tier|default:"—" }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-5">No items found.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-5">No items found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -67,6 +115,43 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = checked; });
+  updateSelection();
+}
+
+function updateSelection() {
+  var checked = document.querySelectorAll('.row-check:checked');
+  var count = checked.length;
+  var total = document.querySelectorAll('.row-check').length;
+  document.getElementById('selectAll').checked = count > 0 && count === total;
+  document.getElementById('selectAll').indeterminate = count > 0 && count < total;
+}
+
+function applyBulkAction() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Please select a bulk action.'); return; }
+  var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return parseInt(cb.value); });
+  if (ids.length === 0) { alert('No rows selected.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected item' + (ids.length === 1 ? '' : 's') + '? This will permanently remove the items and any associated data. This cannot be undone.')) return;
+    fetch('/items/api/delete-items/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: ids})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+  }
 }
 </script>
 {% endblock %}

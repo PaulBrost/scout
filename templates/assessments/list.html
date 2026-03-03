@@ -2,7 +2,42 @@
 {% block title %}Assessments{% endblock %}
 {% block page_title %}Assessments{% endblock %}
 
+{% block topbar_actions %}
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
+{% endblock %}
+
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">About Assessments</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p><strong>What are Assessments?</strong></p>
+        <p>Assessments represent test sessions or forms that group related items together. Each assessment defines a scope for testing, such as a specific form, module, or content area. Assessments have a subject, grade level, year, and are linked to an environment.</p>
+
+        <p><strong>Managing Assessments</strong></p>
+        <ul>
+          <li>Use the <strong>search bar</strong> to find assessments by name.</li>
+          <li>Click a column header to sort the table.</li>
+          <li>Select rows using the checkboxes, choose a bulk action, and click <strong>Apply</strong> to act on multiple assessments at once.</li>
+          <li>Click an assessment name to open its detail page, where you can edit its details or delete it.</li>
+        </ul>
+
+        <p><strong>Creating Test Scripts</strong></p>
+        <p>Test scripts are managed from the assessment detail page. Click on any assessment to view its items and associated scripts. Use the <strong>New Test Script</strong> button in the Test Scripts section to create a new script linked to that assessment.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex align-items-center gap-2">
     <label class="text-muted small mb-0">Show</label>
@@ -10,6 +45,11 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
   </div>
   <form method="get" class="d-flex gap-2">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -24,6 +64,7 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
           <th><a href="?sort=name&dir={% if sort == 'name' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Name {% if sort == 'name' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Subject</th>
           <th>Grade</th>
@@ -35,7 +76,8 @@
       <tbody>
         {% for a in assessments %}
         <tr>
-          <td><a href="/assessments/{{ a.id }}/">{{ a.name }}</a></td>
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ a.id }}" onchange="updateSelection()"></td>
+          <td><a href="/assessments/{{ a.numeric_id }}/">{{ a.name }}</a></td>
           <td>{{ a.subject|default:"—" }}</td>
           <td>{{ a.grade|default:"—" }}</td>
           <td>{{ a.year|default:"—" }}</td>
@@ -43,7 +85,7 @@
           <td>{{ a.environment_name|default:"—" }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-5">No assessments found.</td></tr>
+        <tr><td colspan="7" class="text-muted text-center py-5">No assessments found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -67,6 +109,43 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = checked; });
+  updateSelection();
+}
+
+function updateSelection() {
+  var checked = document.querySelectorAll('.row-check:checked');
+  var count = checked.length;
+  var total = document.querySelectorAll('.row-check').length;
+  document.getElementById('selectAll').checked = count > 0 && count === total;
+  document.getElementById('selectAll').indeterminate = count > 0 && count < total;
+}
+
+function applyBulkAction() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Please select a bulk action.'); return; }
+  var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return cb.value; });
+  if (ids.length === 0) { alert('No rows selected.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected assessment' + (ids.length === 1 ? '' : 's') + '? This will also delete all items in these assessments. This cannot be undone.')) return;
+    fetch('/assessments/api/delete-assessments/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: ids})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+  }
 }
 </script>
 {% endblock %}

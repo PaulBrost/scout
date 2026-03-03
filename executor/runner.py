@@ -203,10 +203,60 @@ def execute_script(script_path, project='', timeout=None, env_vars=None):
     }
 
 
+def prepare_test_data(run_id, environment_id):
+    """Serialize TestDataSets for the environment into a temp JSON file.
+    Returns the path to the temp file, or None if no data sets exist."""
+    if not environment_id:
+        return None
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT name, data_type, data, assessment_id, description
+            FROM test_data_sets
+            WHERE environment_id = %s
+            ORDER BY data_type, name
+        """, [str(environment_id)])
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if not rows:
+        return None
+
+    # Organize by data_type
+    test_data = {}
+    for row in rows:
+        dt = row['data_type']
+        if dt not in test_data:
+            test_data[dt] = []
+        test_data[dt].append({
+            'name': row['name'],
+            'assessment_id': row['assessment_id'],
+            'description': row['description'],
+            'entries': row['data'] if isinstance(row['data'], list) else [],
+        })
+
+    # Write to temp file
+    data_file = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.json', prefix=f'scout-data-{str(run_id)[:8]}-',
+        delete=False
+    )
+    json.dump(test_data, data_file, default=str)
+    data_file.close()
+    return data_file.name
+
+
 def execute_run(run_id, script_paths, options=None):
     """Execute all scripts in a run sequentially, updating DB as each completes."""
     options = options or {}
     passed = failed = errors = 0
+
+    # Prepare test data if environment is set on the run
+    test_data_path = None
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT environment_id FROM test_runs WHERE id = %s', [run_id])
+        row = cursor.fetchone()
+        if row and row[0]:
+            test_data_path = prepare_test_data(run_id, row[0])
 
     for script_path in script_paths:
         with connection.cursor() as cursor:
@@ -216,10 +266,14 @@ def execute_run(run_id, script_paths, options=None):
             )
 
         try:
+            env_vars = dict(options.get('env') or {})
+            if test_data_path:
+                env_vars['SCOUT_TEST_DATA'] = test_data_path
+
             result = execute_script(
                 script_path,
                 project=options.get('project', ''),
-                env_vars=options.get('env'),
+                env_vars=env_vars if env_vars else None,
             )
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -255,5 +309,12 @@ def execute_run(run_id, script_paths, options=None):
             "UPDATE test_runs SET status = %s, completed_at = now(), summary = %s WHERE id = %s",
             [run_status, summary, run_id]
         )
+
+    # Clean up temp test data file
+    if test_data_path:
+        try:
+            os.unlink(test_data_path)
+        except OSError:
+            pass
 
     print(f'[Executor] Run {str(run_id)[:8]} complete: {passed} passed, {failed} failed, {errors} errors')

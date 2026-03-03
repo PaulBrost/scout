@@ -44,6 +44,7 @@ class UserEnvironment(models.Model):
 
 class Assessment(models.Model):
     id = models.TextField(primary_key=True)
+    numeric_id = models.IntegerField(unique=True, editable=False)
     environment = models.ForeignKey(
         Environment, on_delete=models.CASCADE, related_name='assessments',
         null=True, blank=True
@@ -54,6 +55,7 @@ class Assessment(models.Model):
     year = models.TextField(null=True, blank=True)
     item_count = models.IntegerField(null=True, blank=True)
     form_value = models.TextField(null=True, blank=True)
+    intro_screens = models.IntegerField(default=5)
     description = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -73,10 +75,15 @@ class Item(models.Model):
     item_id = models.TextField(unique=True)
     # Keep 'id' as an alias for item_id for legacy compatibility
     title = models.TextField(null=True, blank=True)
+    environment = models.ForeignKey(
+        Environment, on_delete=models.CASCADE, related_name='items',
+        db_column='environment_id'
+    )
     assessment = models.ForeignKey(
         Assessment, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='items', db_column='assessment_id'
     )
+    position = models.IntegerField(null=True, blank=True)
     category = models.TextField(null=True, blank=True)
     tier = models.TextField(null=True, blank=True)
     languages = models.JSONField(default=list)
@@ -96,6 +103,10 @@ class Baseline(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='baselines',
                              db_column='item_id', to_field='item_id')
+    environment = models.ForeignKey(
+        Environment, on_delete=models.CASCADE, related_name='baselines',
+        null=True, blank=True
+    )
     browser = models.TextField()
     device_profile = models.TextField()
     version = models.TextField()
@@ -151,6 +162,10 @@ class TestRun(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     suite = models.ForeignKey(
         TestSuite, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='runs'
+    )
+    environment = models.ForeignKey(
+        Environment, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='runs'
     )
     status = models.TextField(default='running', choices=STATUS_CHOICES)
@@ -216,13 +231,24 @@ class TestResult(models.Model):
 
 
 class AIAnalysis(models.Model):
+    ANALYSIS_TYPE_CHOICES = [
+        ('text_content', 'Text Content'),
+        ('visual_layout', 'Visual Layout'),
+        ('screenshot_diff', 'Screenshot Diff'),
+        ('screenshot', 'Screenshot'),  # Legacy
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     run = models.ForeignKey(TestRun, on_delete=models.CASCADE, related_name='ai_analyses')
     item = models.ForeignKey(
         Item, on_delete=models.SET_NULL, null=True, blank=True,
         db_column='item_id', to_field='item_id'
     )
-    analysis_type = models.TextField()
+    test_result = models.ForeignKey(
+        TestResult, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ai_analyses'
+    )
+    analysis_type = models.TextField(choices=ANALYSIS_TYPE_CHOICES)
     status = models.TextField(default='pending')
     issues_found = models.BooleanField(default=False)
     issues = models.JSONField(default=list)
@@ -257,9 +283,20 @@ class Review(models.Model):
 
 
 class TestScript(models.Model):
+    TEST_TYPE_CHOICES = [
+        ('functional', 'Functional'),
+        ('visual_regression', 'Visual Regression'),
+        ('ai_content', 'AI Content Analysis'),
+        ('ai_visual', 'AI Visual Analysis'),
+    ]
+
     id = models.AutoField(primary_key=True)
     script_path = models.TextField(unique=True)
     description = models.TextField(null=True, blank=True)
+    environment = models.ForeignKey(
+        Environment, on_delete=models.CASCADE, related_name='test_scripts',
+        db_column='environment_id'
+    )
     item = models.ForeignKey(
         Item, on_delete=models.SET_NULL, null=True, blank=True,
         db_column='item_id', to_field='item_id'
@@ -268,6 +305,8 @@ class TestScript(models.Model):
         Assessment, on_delete=models.SET_NULL, null=True, blank=True,
         db_column='assessment_id'
     )
+    test_type = models.TextField(default='functional', choices=TEST_TYPE_CHOICES)
+    tags = models.JSONField(default=list)
     category = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -305,6 +344,37 @@ class AITool(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TestDataSet(models.Model):
+    DATA_TYPE_CHOICES = [
+        ('credentials', 'Credentials'),
+        ('inputs', 'Test Inputs'),
+        ('items', 'Item List'),
+        ('custom', 'Custom'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.TextField()
+    environment = models.ForeignKey(
+        Environment, on_delete=models.CASCADE, related_name='test_data_sets'
+    )
+    assessment = models.ForeignKey(
+        Assessment, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='test_data_sets'
+    )
+    data_type = models.TextField(choices=DATA_TYPE_CHOICES)
+    data = models.JSONField(default=list)
+    description = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'test_data_sets'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.data_type})"
 
 
 class AIConversation(models.Model):

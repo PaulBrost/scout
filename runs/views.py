@@ -41,9 +41,24 @@ def index(request):
 
     where = []
     params = []
+
+    # RBAC scoping via environment
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return render(request, 'runs/list.html', {
+                'runs': [], 'total': 0, 'page': 1, 'page_size': page_size,
+                'page_size_options': [10, 25, 50, 100],
+                'sort': sort, 'direction': 'asc' if direction == 'ASC' else 'desc',
+                'search': search, 'status_filter': status_filter,
+                'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
+            })
+        params.append(tuple(str(e) for e in env_ids))
+        where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
+
     if status_filter:
         params.append(status_filter)
-        where.append(f'r.status = %s')
+        where.append('r.status = %s')
     if search:
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(r.notes) LIKE %s OR LOWER(s.name) LIKE %s)')
@@ -168,6 +183,15 @@ def api_list(request):
 
     where = []
     params = []
+
+    # RBAC scoping via environment
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size})
+        params.append(tuple(str(e) for e in env_ids))
+        where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
+
     if status_filter:
         params.append(status_filter)
         where.append('r.status = %s')

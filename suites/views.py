@@ -1,12 +1,9 @@
 import json
-import os
-from pathlib import Path
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.conf import settings
 from django.db import connection
 from core.mixins import get_user_env_ids
 
@@ -25,61 +22,6 @@ def build_page_range(page, total_pages):
         result.append(p)
         prev = p
     return result
-
-
-# Script file cache
-_script_cache = None
-_script_cache_time = 0
-CACHE_TTL = 30
-
-
-def get_test_scripts():
-    """Scan PLAYWRIGHT_TESTS_DIR for .spec.js files."""
-    import time
-    global _script_cache, _script_cache_time
-    now = time.time()
-    if _script_cache is not None and now - _script_cache_time < CACHE_TTL:
-        return _script_cache
-
-    tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
-    scripts = []
-
-    def scan(directory, prefix=''):
-        if not directory.exists():
-            return
-        for entry in sorted(directory.iterdir()):
-            if entry.is_dir():
-                scan(entry, f"{prefix}{entry.name}/" if prefix else f"{entry.name}/")
-            elif entry.name.endswith('.spec.js'):
-                rel_path = f"{prefix}{entry.name}"
-                try:
-                    content = entry.read_text(encoding='utf-8', errors='replace')
-                except Exception:
-                    content = ''
-                test_count = content.count('test(')
-                script_type = 'feature'
-                type_label = 'Feature'
-                if 'visual-regression' in rel_path or '@visual' in content:
-                    script_type = 'visual'
-                    type_label = 'Visual Regression'
-                elif 'content-validation' in rel_path or '@content' in content:
-                    script_type = 'content'
-                    type_label = 'Content Validation'
-                import re
-                desc_match = re.search(r"test\.describe\s*\(\s*['\"`]([^'\"`]+)", content)
-                name = desc_match.group(1) if desc_match else entry.name.replace('.spec.js', '')
-                scripts.append({
-                    'name': name,
-                    'type': script_type,
-                    'typeLabel': type_label,
-                    'testCount': test_count,
-                    'relativePath': rel_path,
-                })
-
-    scan(tests_dir)
-    _script_cache = scripts
-    _script_cache_time = now
-    return scripts
 
 
 @login_required(login_url='/login/')
@@ -167,14 +109,33 @@ def index(request):
     })
 
 
+def _get_scripts_for_environment(env_id):
+    """Query DB for test scripts belonging to an environment."""
+    if not env_id:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT ts.script_path, ts.description, ts.category, ts.test_type
+            FROM test_scripts ts
+            WHERE ts.environment_id = %s::uuid
+            ORDER BY ts.script_path
+        """, [str(env_id)])
+        cols = [c[0] for c in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+
 @login_required(login_url='/login/')
 def suite_new(request):
     from core.models import Environment
-    environments = list(Environment.objects.values('id', 'name').order_by('name'))
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is None:
+        environments = list(Environment.objects.values('id', 'name').order_by('name'))
+    else:
+        environments = list(Environment.objects.filter(id__in=env_ids).values('id', 'name').order_by('name'))
     return render(request, 'suites/detail.html', {
         'suite': None,
         'suite_scripts': [],
-        'available_scripts': get_test_scripts(),
+        'available_scripts': [],
         'environments': environments,
     })
 
@@ -201,12 +162,19 @@ def suite_detail(request, suite_id):
         suite_scripts = [row[0] for row in cursor.fetchall()]
 
     from core.models import Environment
-    environments = list(Environment.objects.values('id', 'name').order_by('name'))
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is None:
+        environments = list(Environment.objects.values('id', 'name').order_by('name'))
+    else:
+        environments = list(Environment.objects.filter(id__in=env_ids).values('id', 'name').order_by('name'))
+
+    # Load scripts for the suite's environment from DB
+    available_scripts = _get_scripts_for_environment(suite.get('environment_id'))
 
     return render(request, 'suites/detail.html', {
         'suite': suite,
         'suite_scripts': suite_scripts,
-        'available_scripts': get_test_scripts(),
+        'available_scripts': available_scripts,
         'environments': environments,
     })
 
@@ -317,9 +285,10 @@ def suite_run(request, suite_id):
         # Create run
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_runs (status, trigger_type, suite_id, config, notes)
-                   VALUES ('running', 'dashboard', %s, %s, %s) RETURNING id""",
-                [suite_id, json.dumps({'browser_profiles': suite.get('browser_profiles', [])}),
+                """INSERT INTO test_runs (status, trigger_type, suite_id, environment_id, config, notes)
+                   VALUES ('running', 'dashboard', %s, %s, %s, %s) RETURNING id""",
+                [suite_id, suite.get('environment_id'),
+                 json.dumps({'browser_profiles': suite.get('browser_profiles', [])}),
                  f"Suite: {suite['name']}"]
             )
             run_id = cursor.fetchone()[0]
@@ -407,3 +376,19 @@ def api_list(request):
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
     return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, default=str)
+
+
+@login_required(login_url='/login/')
+def api_scripts_by_environment(request):
+    """Return test scripts for a given environment (with RBAC)."""
+    env_id = request.GET.get('environment_id', '').strip()
+    if not env_id:
+        return JsonResponse({'scripts': []})
+
+    # RBAC check
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None and env_id not in [str(e) for e in env_ids]:
+        return JsonResponse({'scripts': []})
+
+    scripts = _get_scripts_for_environment(env_id)
+    return JsonResponse({'scripts': scripts}, default=str)

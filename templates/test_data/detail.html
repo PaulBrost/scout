@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{% if dataset %}Edit Data Set{% else %}New Data Set{% endif %}{% endblock %}
+{% block page_title %}{% if dataset %}Edit Data Set{% else %}New Data Set{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+<a href="/test-data/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+{% if dataset %}
+<button class="btn btn-sm btn-outline-danger" onclick="deleteDataset()"><i class="bi bi-trash"></i></button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Data Set Details</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Name *</label>
+          <input type="text" id="dsName" class="form-control" value="{{ dataset.name|default:'' }}" placeholder="e.g. Student accounts">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Environment *</label>
+          <select id="dsEnv" class="form-select">
+            <option value="">— Select —</option>
+            {% for env in environments %}
+            <option value="{{ env.id }}" {% if dataset and dataset.environment_id|stringformat:'s' == env.id %}selected{% endif %}>{{ env.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Assessment</label>
+          <select id="dsAssessment" class="form-select">
+            <option value="">— None —</option>
+            {% for a in assessments %}
+            <option value="{{ a.id }}" {% if dataset and dataset.assessment_id|stringformat:'s' == a.id %}selected{% endif %}>{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Data Type</label>
+          <select id="dsType" class="form-select">
+            <option value="credentials" {% if dataset.data_type == 'credentials' %}selected{% endif %}>Credentials</option>
+            <option value="inputs" {% if dataset.data_type == 'inputs' %}selected{% endif %}>Test Inputs</option>
+            <option value="items" {% if dataset.data_type == 'items' %}selected{% endif %}>Item List</option>
+            <option value="custom" {% if dataset.data_type == 'custom' or not dataset %}selected{% endif %}>Custom</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea id="dsDesc" class="form-control" rows="2">{{ dataset.description|default:'' }}</textarea>
+        </div>
+        <button class="btn btn-primary" onclick="saveDataset()">
+          <i class="bi bi-save"></i> {% if dataset %}Save Changes{% else %}Create Data Set{% endif %}
+        </button>
+        <span id="saveStatus" class="ms-2 small text-muted"></span>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Data (JSON Array)</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="formatJson()"><i class="bi bi-code"></i> Format</button>
+      </div>
+      <div class="card-body p-0">
+        <textarea id="dataEditor" class="form-control font-monospace border-0 rounded-0"
+          style="min-height:50vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
+          spellcheck="false">{{ data_json }}</textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+function formatJson() {
+  var editor = document.getElementById('dataEditor');
+  try {
+    var parsed = JSON.parse(editor.value);
+    editor.value = JSON.stringify(parsed, null, 2);
+  } catch (e) {
+    alert('Invalid JSON: ' + e.message);
+  }
+}
+
+function saveDataset() {
+  var name = document.getElementById('dsName').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  var envId = document.getElementById('dsEnv').value;
+  if (!envId) { alert('Environment is required'); return; }
+
+  var dataRaw = document.getElementById('dataEditor').value;
+  var data;
+  try {
+    data = JSON.parse(dataRaw);
+    if (!Array.isArray(data)) { alert('Data must be a JSON array'); return; }
+  } catch (e) {
+    alert('Invalid JSON: ' + e.message);
+    return;
+  }
+
+  var payload = {
+    name: name,
+    environment_id: envId,
+    assessment_id: document.getElementById('dsAssessment').value || null,
+    data_type: document.getElementById('dsType').value,
+    description: document.getElementById('dsDesc').value.trim() || null,
+    data: data
+  };
+
+  {% if dataset %}
+  var url = '/test-data/api/save/{{ dataset.id }}/';
+  {% else %}
+  var url = '/test-data/api/save/';
+  {% endif %}
+
+  document.getElementById('saveStatus').textContent = 'Saving…';
+  fetch(url, {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { document.getElementById('saveStatus').textContent = 'Error: ' + d.error; return; }
+    if (d.redirect) window.location = d.redirect;
+    else document.getElementById('saveStatus').textContent = 'Saved.';
+  });
+}
+
+{% if dataset %}
+function deleteDataset() {
+  if (!confirm('Delete this data set? This cannot be undone.')) return;
+  fetch('/test-data/api/delete/{{ dataset.id }}/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken')}
+  }).then(() => { window.location = '/test-data/'; });
+}
+{% endif %}
+</script>
+{% endblock %}

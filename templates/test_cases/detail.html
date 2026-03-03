@@ -11,7 +11,7 @@
       <dt class="col-sm-3">Item</dt>
       <dd class="col-sm-9">{% if script.item %}<a href="/items/{{ script.item.numeric_id }}/">{{ script.item.item_id }}</a>{% else %}—{% endif %}</dd>
       <dt class="col-sm-3">Assessment</dt>
-      <dd class="col-sm-9">{% if script.assessment %}<a href="/assessments/{{ script.assessment.id }}/">{{ script.assessment.name }}</a>{% else %}—{% endif %}</dd>
+      <dd class="col-sm-9">{% if script.assessment %}<a href="/assessments/{{ script.assessment.numeric_id }}/">{{ script.assessment.name }}</a>{% else %}—{% endif %}</dd>
       <dt class="col-sm-3">Category</dt>
       <dd class="col-sm-9">{{ script.category|default:"—" }}</dd>
       <dt class="col-sm-3">Description</dt>

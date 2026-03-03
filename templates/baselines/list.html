@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Baselines{% endblock %}
+{% block page_title %}Baselines{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('status',this.value)">
+      <option value="">All Status</option>
+      <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+      <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+    </select>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
+      <option value="">All Environments</option>
+      {% for env in environments %}
+      <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span class="text-muted small">{{ baselines|length }} baseline{{ baselines|length|pluralize }}</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Item</th>
+          <th>Environment</th>
+          <th>Browser</th>
+          <th>Device Profile</th>
+          <th>Version</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bl in baselines %}
+        <tr>
+          <td class="small">
+            <span class="fw-semibold">{{ bl.item_id }}</span>
+            {% if bl.item_title %}<div class="text-muted" style="font-size:.75rem">{{ bl.item_title|truncatechars:40 }}</div>{% endif %}
+          </td>
+          <td class="small">
+            {% if bl.environment_name %}
+            <span class="badge bg-info text-dark">{{ bl.environment_name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ bl.browser }}</td>
+          <td class="small">{{ bl.device_profile }}</td>
+          <td class="small">{{ bl.version }}</td>
+          <td>
+            {% if bl.approved_at %}
+            <span class="status-badge status-approved">Approved</span>
+            <div class="text-muted" style="font-size:.7rem">by {{ bl.approved_by }}</div>
+            {% else %}
+            <span class="status-badge status-pending">Pending</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ bl.created_at|date:"M d, Y H:i" }}</td>
+          <td class="text-nowrap">
+            {% if bl.screenshot_path %}
+            <button class="btn btn-sm btn-outline-secondary" onclick="previewScreenshot('{{ bl.screenshot_path|escapejs }}')" title="Preview">
+              <i class="bi bi-image"></i>
+            </button>
+            {% endif %}
+            {% if not bl.approved_at and is_admin %}
+            <button class="btn btn-sm btn-outline-success" onclick="approveBaseline('{{ bl.id }}')" title="Approve">
+              <i class="bi bi-check-lg"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="rejectBaseline('{{ bl.id }}')" title="Reject">
+              <i class="bi bi-x-lg"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted text-center py-5">No baselines found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Screenshot preview modal -->
+<div class="modal fade" id="screenshotModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Screenshot Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img id="screenshotImg" src="" class="img-fluid border" style="max-height:70vh">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateParam(key, val) {
+  var url = new URL(window.location); url.searchParams.set(key, val); window.location = url;
+}
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+function previewScreenshot(path) {
+  document.getElementById('screenshotImg').src = '/static/playwright/' + path;
+  new bootstrap.Modal(document.getElementById('screenshotModal')).show();
+}
+
+function approveBaseline(id) {
+  if (!confirm('Approve this baseline?')) return;
+  fetch('/baselines/api/approve/' + id + '/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken')}
+  }).then(r => r.json()).then(d => {
+    if (d.ok) location.reload();
+    else alert('Error: ' + d.error);
+  });
+}
+
+function rejectBaseline(id) {
+  if (!confirm('Reject and delete this baseline? This cannot be undone.')) return;
+  fetch('/baselines/api/reject/' + id + '/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken')}
+  }).then(r => r.json()).then(d => {
+    if (d.ok) location.reload();
+    else alert('Error: ' + d.error);
+  });
+}
+</script>
+{% endblock %}

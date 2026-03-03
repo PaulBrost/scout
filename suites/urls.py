@@ -11,4 +11,5 @@ urlpatterns = [
     path('<uuid:suite_id>/run/', views.suite_run, name='suite_run'),
     path('run-script/', views.run_script, name='run_script'),
     path('api/list/', views.api_list, name='api_suites_list'),
+    path('api/scripts/', views.api_scripts_by_environment, name='api_scripts_by_environment'),
 ]

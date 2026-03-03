@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
+from core.mixins import get_user_env_ids
 
 
 @login_required(login_url='/login/')
@@ -19,6 +20,7 @@ def builder_view(request):
     assessment = None
     items = []
     assessments = []
+    environments = []
 
     tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
 
@@ -34,10 +36,11 @@ def builder_view(request):
             with connection.cursor() as cursor:
                 cursor.execute(
                     """SELECT ts.*, i.title AS item_title, i.numeric_id AS item_numeric_id,
-                              a.name AS assessment_name
+                              a.name AS assessment_name, e.name AS environment_name
                        FROM test_scripts ts
                        LEFT JOIN items i ON ts.item_id = i.item_id
                        LEFT JOIN assessments a ON ts.assessment_id = a.id
+                       LEFT JOIN environments e ON ts.environment_id = e.id
                        WHERE ts.script_path = %s""",
                     [file_path]
                 )
@@ -97,6 +100,21 @@ def builder_view(request):
     except Exception:
         pass
 
+    # Load environments for the user (RBAC-scoped)
+    env_ids = get_user_env_ids(request.user)
+    try:
+        with connection.cursor() as cursor:
+            if env_ids is None:
+                cursor.execute('SELECT id, name FROM environments ORDER BY name')
+            else:
+                cursor.execute(
+                    'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name',
+                    [tuple(str(e) for e in env_ids)]
+                )
+            environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+    except Exception:
+        pass
+
     return render(request, 'builder/builder.html', {
         'file_content': file_content,
         'file_path': file_path,
@@ -106,6 +124,7 @@ def builder_view(request):
         'assessment': assessment,
         'items': items,
         'assessments': assessments,
+        'environments': environments,
         'test_type': request.GET.get('type'),
         'baseline_version': request.GET.get('baseline'),
     })
@@ -139,6 +158,7 @@ def api_save(request):
     try:
         data = json.loads(request.body)
         code = data.get('code')
+        environment_id = data.get('environment_id')
         if not code:
             return JsonResponse({'error': 'No code to save'}, status=400)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR) / 'generated'
@@ -147,12 +167,23 @@ def api_save(request):
         filename = f'generated-{int(time.time())}.spec.js'
         filepath = tests_dir / filename
         filepath.write_text(code, encoding='utf-8')
-        # Register in DB
+        # Register in DB with environment
+        rel_path = f'generated/{filename}'
         with connection.cursor() as cursor:
-            cursor.execute(
-                'INSERT INTO test_scripts (script_path) VALUES (%s) ON CONFLICT (script_path) DO UPDATE SET updated_at = now()',
-                [f'generated/{filename}']
-            )
-        return JsonResponse({'path': f'generated/{filename}'})
+            if environment_id:
+                cursor.execute(
+                    """INSERT INTO test_scripts (script_path, environment_id)
+                       VALUES (%s, %s::uuid)
+                       ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
+                    [rel_path, environment_id]
+                )
+            else:
+                cursor.execute(
+                    """INSERT INTO test_scripts (script_path)
+                       VALUES (%s)
+                       ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
+                    [rel_path]
+                )
+        return JsonResponse({'path': rel_path})
     except Exception as e:
         return JsonResponse({'error': str(e)})

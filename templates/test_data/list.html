@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Test Data{% endblock %}
+{% block page_title %}Test Data{% endblock %}
+
+{% block topbar_actions %}
+<a href="/test-data/new/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Data Set</a>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
+      <option value="">All Environments</option>
+      {% for env in environments %}
+      <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('data_type',this.value)">
+      <option value="">All Types</option>
+      <option value="credentials" {% if type_filter == 'credentials' %}selected{% endif %}>Credentials</option>
+      <option value="inputs" {% if type_filter == 'inputs' %}selected{% endif %}>Test Inputs</option>
+      <option value="items" {% if type_filter == 'items' %}selected{% endif %}>Item List</option>
+      <option value="custom" {% if type_filter == 'custom' %}selected{% endif %}>Custom</option>
+    </select>
+  </div>
+  <span class="text-muted small">{{ datasets|length }} data set{{ datasets|length|pluralize }}</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Environment</th>
+          <th>Assessment</th>
+          <th>Type</th>
+          <th>Entries</th>
+          <th>Description</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ds in datasets %}
+        <tr>
+          <td class="fw-semibold small">
+            <a href="/test-data/{{ ds.id }}/">{{ ds.name }}</a>
+          </td>
+          <td class="small">
+            {% if ds.environment_name %}
+            <span class="badge bg-info text-dark">{{ ds.environment_name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ ds.assessment_name|default:"—" }}</td>
+          <td>
+            {% if ds.data_type == 'credentials' %}
+            <span class="badge bg-danger">Credentials</span>
+            {% elif ds.data_type == 'inputs' %}
+            <span class="badge bg-warning text-dark">Inputs</span>
+            {% elif ds.data_type == 'items' %}
+            <span class="badge bg-info text-dark">Items</span>
+            {% else %}
+            <span class="badge bg-secondary">Custom</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ ds.entry_count }}</td>
+          <td class="small text-muted">{{ ds.description|default:"—"|truncatechars:50 }}</td>
+          <td class="text-nowrap">
+            <a href="/test-data/{{ ds.id }}/" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-pencil-square"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-5">
+          No test data sets found. <a href="/test-data/new/">Create one</a>.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function updateParam(key, val) {
+  var url = new URL(window.location); url.searchParams.set(key, val); window.location = url;
+}
+</script>
+{% endblock %}

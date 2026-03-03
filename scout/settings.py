@@ -27,6 +27,8 @@ INSTALLED_APPS = [
     'test_cases',
     'builder',
     'admin_config',
+    'baselines',
+    'test_data',
 ]
 
 MIDDLEWARE = [

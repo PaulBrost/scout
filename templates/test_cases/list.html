@@ -14,18 +14,31 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
-    {% if category_filter %}
-    <a href="?page_size={{ page_size }}&search={{ search }}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-x"></i> {{ category_filter }}
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('test_type',this.value)">
+      <option value="">All Types</option>
+      {% for val, label in test_types %}
+      <option value="{{ val }}" {% if test_type_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {% if test_type_filter %}
+    <a href="?page_size={{ page_size }}&search={{ search }}&environment={{ env_filter }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-x"></i> Clear type
     </a>
     {% endif %}
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
+      <option value="">All Environments</option>
+      {% for env in environments %}
+      <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+      {% endfor %}
+    </select>
   </div>
   <form method="get" class="d-flex gap-2">
     <input type="hidden" name="page_size" value="{{ page_size }}">
-    {% if category_filter %}<input type="hidden" name="category" value="{{ category_filter }}">{% endif %}
+    {% if test_type_filter %}<input type="hidden" name="test_type" value="{{ test_type_filter }}">{% endif %}
+    {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
     <input type="text" name="search" class="form-control form-control-sm" placeholder="Search scripts…" value="{{ search }}" style="width:240px">
     <button class="btn btn-sm btn-outline-secondary">Search</button>
-    {% if search %}<a href="?page_size={{ page_size }}{% if category_filter %}&category={{ category_filter }}{% endif %}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
+    {% if search %}<a href="?page_size={{ page_size }}{% if test_type_filter %}&test_type={{ test_type_filter }}{% endif %}{% if env_filter %}&environment={{ env_filter }}{% endif %}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
   </form>
 </div>
 
@@ -35,10 +48,10 @@
       <thead class="table-light">
         <tr>
           <th>Script Path</th>
+          <th>Environment</th>
           <th>Item</th>
-          <th>Category</th>
+          <th>Type</th>
           <th>Description</th>
-          <th>Source</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -47,6 +60,13 @@
         <tr>
           <td class="font-monospace small">
             <a href="/builder/?file={{ sc.script_path|urlencode }}">{{ sc.script_path }}</a>
+          </td>
+          <td class="small">
+            {% if sc.environment_name %}
+            <span class="badge bg-info text-dark">{{ sc.environment_name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
           </td>
           <td class="small">
             {% if sc.item_id %}
@@ -59,20 +79,24 @@
             {% endif %}
           </td>
           <td>
-            {% if sc.category %}
-            <a href="?category={{ sc.category }}&page_size={{ page_size }}" class="badge bg-light text-dark text-decoration-none">{{ sc.category }}</a>
+            {% if sc.test_type == 'visual_regression' %}
+            <span class="badge bg-purple text-white" style="background:#7c3aed">Visual Reg</span>
+            {% elif sc.test_type == 'ai_content' %}
+            <span class="badge bg-warning text-dark">AI Content</span>
+            {% elif sc.test_type == 'ai_visual' %}
+            <span class="badge bg-info text-dark">AI Visual</span>
+            {% elif sc.test_type == 'functional' %}
+            <span class="badge bg-success">Functional</span>
             {% else %}
-            <span class="text-muted">—</span>
+            <span class="badge bg-secondary">{{ sc.test_type|default:"—" }}</span>
+            {% endif %}
+            {% if sc.tags %}
+              {% for tag in sc.tags %}
+              <span class="badge bg-light text-dark border" style="font-size:.65rem">{{ tag }}</span>
+              {% endfor %}
             {% endif %}
           </td>
           <td class="small text-muted">{{ sc.description|default:"—"|truncatechars:60 }}</td>
-          <td>
-            {% if sc.source == 'registered' %}
-            <span class="badge bg-success">registered</span>
-            {% else %}
-            <span class="badge bg-light text-dark">filesystem</span>
-            {% endif %}
-          </td>
           <td class="text-nowrap">
             <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i> Edit
@@ -81,8 +105,8 @@
         </tr>
         {% empty %}
         <tr><td colspan="6" class="text-muted text-center py-5">No test scripts found.
-          {% if not search and not category_filter %}
-          <a href="/builder/">Create one in the Builder</a>.
+          {% if not search and not test_type_filter and not env_filter %}
+          <a href="/builder/">Create one in the Script Editor</a>.
           {% endif %}
         </td></tr>
         {% endfor %}
@@ -95,13 +119,13 @@
   <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">«</a></li>
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">«</a></li>
     {% for pg in page_range %}
     {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">{{ pg }}</a></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">{{ pg }}</a></li>
     {% endif %}
     {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">»</a></li>
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">»</a></li>
   </ul></nav>
   {% endif %}
 </div>

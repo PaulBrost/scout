@@ -1,174 +1,248 @@
 {% extends "base.html" %}
-{% block title %}Test Builder{% endblock %}
-{% block page_title %}AI Test Builder{% endblock %}
+{% load core_filters %}
+{% block title %}Script Editor{% endblock %}
+{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Scripts</a> <span class="text-muted mx-1">/</span> {{ script_meta.description|default:filename|default:"New Script" }}{% endblock %}
 
-{% block topbar_actions %}
-<a href="/test-cases/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list"></i> All Scripts</a>
-{% if file_path %}
-<a href="/builder/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus"></i> New</a>
-{% endif %}
+{% block extra_head %}
+<style>
+  #aiPanel {
+    transition: width 0.3s ease, opacity 0.3s ease, margin-right 0.3s ease;
+    overflow: hidden;
+    opacity: 1;
+    width: 40%;
+    min-width: 320px;
+  }
+  #aiPanel.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    opacity: 0;
+    margin-right: 0 !important;
+  }
+  #aiPanel.collapsed > * {
+    display: none;
+  }
+  #editorPanel {
+    transition: flex 0.3s ease;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="row g-3 h-100">
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDesign" type="button" role="tab">
+      <i class="bi bi-code-slash me-1"></i>Design
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabResults" type="button" role="tab">
+      <i class="bi bi-journal-text me-1"></i>Results{% if run_history %} ({{ run_history|length }}){% endif %}
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDetails" type="button" role="tab">
+      <i class="bi bi-info-circle me-1"></i>Details
+    </button>
+  </li>
+</ul>
 
-  <!-- Left: Chat panel -->
-  <div class="col-md-5 d-flex flex-column" style="min-height:70vh">
-    {% if assessment %}
-    <div class="alert alert-info alert-sm py-2 px-3 mb-2 small">
-      <i class="bi bi-info-circle"></i>
-      Context: <strong>{{ assessment.name }}</strong>
-      {% if assessment.subject %} · {{ assessment.subject }}{% endif %}
-      {% if assessment.grade %} · Grade {{ assessment.grade }}{% endif %}
-    </div>
-    {% endif %}
+<div class="tab-content">
 
-    <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
-      <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-robot me-1"></i> AI Chat</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()" title="New conversation">
-          <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
+  <!-- ═══ DESIGN TAB ═══ -->
+  <div class="tab-pane fade show active" id="tabDesign" role="tabpanel">
+
+    <!-- AI Assist toggle -->
+    <div class="d-flex align-items-center mb-3">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" id="aiToggle" checked onchange="toggleAI()">
+        <label class="form-check-label small fw-semibold" for="aiToggle">AI Assist</label>
       </div>
-
-      <!-- Message history -->
-      <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
-        <div class="text-muted text-center small py-4" id="chatPlaceholder">
-          Describe the test you want to create, or ask for help modifying the script on the right.
-        </div>
-      </div>
-
-      <!-- Input area -->
-      <div class="card-footer bg-white border-top p-2">
-        <div class="d-flex gap-2">
-          <textarea id="chatInput" class="form-control form-control-sm" rows="2"
-            placeholder="e.g. Write a visual regression test for item 1234…"
-            onkeydown="handleKey(event)"></textarea>
-          <button class="btn btn-primary btn-sm align-self-end" onclick="sendMessage()" id="sendBtn">
-            <i class="bi bi-send"></i>
-          </button>
-        </div>
-        <div id="chatStatus" class="text-muted small mt-1" style="min-height:1.2em"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right: Code editor panel -->
-  <div class="col-md-7 d-flex flex-column" style="min-height:70vh">
-    <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
-      <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2">
-        <div class="d-flex align-items-center gap-2 flex-grow-1">
-          <span class="fw-semibold font-monospace small" id="fileLabel">
-            {{ filename|default:"untitled.spec.js" }}
-          </span>
-          <span id="dirtyIndicator" class="text-warning small" style="display:none">● unsaved</span>
-        </div>
-        <div class="d-flex gap-1">
-          <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" title="Syntax check" id="dryRunBtn">
-            <i class="bi bi-check2-circle"></i> Check
-          </button>
-          <button class="btn btn-sm btn-outline-primary" onclick="copyCode()" title="Copy to clipboard">
-            <i class="bi bi-clipboard"></i>
-          </button>
-          <button class="btn btn-sm btn-success" onclick="saveFile()" id="saveBtn">
-            <i class="bi bi-save"></i> Save
-          </button>
-        </div>
-      </div>
-
-      <div class="flex-grow-1 d-flex flex-column p-0">
-        <textarea id="codeEditor" class="form-control font-monospace border-0 flex-grow-1 rounded-0"
-          style="min-height:55vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
-          spellcheck="false"
-          oninput="markDirty()"
-          placeholder="// AI-generated test code will appear here…">{{ file_content|default:'' }}</textarea>
-      </div>
-
-      <div id="dryRunResult" class="card-footer bg-white border-top py-2 px-3 small" style="display:none"></div>
+      {% if not file_path %}
+      <select id="envPicker" class="form-select form-select-sm ms-auto" style="width:auto;max-width:180px" title="Environment (required for new scripts)">
+        <option value="">Environment…</option>
+        {% for env in environments %}
+        <option value="{{ env.id }}">{{ env.name }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
     </div>
 
-    <!-- Meta / history accordion -->
-    {% if file_path %}
-    <div class="accordion mt-2 border-0 shadow-sm" id="metaAccordion">
-      <div class="accordion-item border-0">
-        <h2 class="accordion-header">
-          <button class="accordion-button collapsed py-2 small fw-semibold" type="button"
-            data-bs-toggle="collapse" data-bs-target="#metaPanel">
-            Script Details &amp; Run History ({{ run_history|length }})
-          </button>
-        </h2>
-        <div id="metaPanel" class="accordion-collapse collapse">
-          <div class="accordion-body pt-0 pb-2">
-            <div class="row g-2 mb-2">
-              <div class="col-md-6">
-                <label class="form-label small fw-semibold mb-1">Item ID</label>
-                <select id="metaItemId" class="form-select form-select-sm">
-                  <option value="">— None —</option>
-                  {% for item in items %}
-                  <option value="{{ item.item_id }}"
-                    {% if script_meta and script_meta.item_id == item.item_id %}selected{% endif %}>
-                    {{ item.item_id }}{% if item.title %} — {{ item.title|truncatechars:40 }}{% endif %}
-                  </option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label small fw-semibold mb-1">Assessment</label>
-                <select id="metaAssessmentId" class="form-select form-select-sm">
-                  <option value="">— None —</option>
-                  {% for a in assessments %}
-                  <option value="{{ a.id }}"
-                    {% if script_meta and script_meta.assessment_id == a.id|stringformat:"s" %}selected{% endif %}>
-                    {{ a.name }}
-                  </option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small fw-semibold mb-1">Category</label>
-                <select id="metaCategory" class="form-select form-select-sm">
-                  <option value="">— None —</option>
-                  {% for cat in "visual_regression,content_validation,feature_functional,workflow,scoring_validation"|split:"," %}
-                  <option value="{{ cat }}" {% if script_meta and script_meta.category == cat %}selected{% endif %}>{{ cat }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="col-md-8">
-                <label class="form-label small fw-semibold mb-1">Description</label>
-                <input type="text" id="metaDescription" class="form-control form-control-sm"
-                  value="{{ script_meta.description|default:'' }}" placeholder="Brief description">
-              </div>
-              <div class="col-12">
-                <button class="btn btn-sm btn-outline-secondary" onclick="saveMeta()">
-                  <i class="bi bi-save"></i> Save Metadata
-                </button>
-                <span id="metaSaveStatus" class="text-muted small ms-2"></span>
-              </div>
+    <!-- Editor area: chat + code side by side -->
+    <div class="d-flex" style="min-height:65vh">
+
+      <!-- Left: AI chat panel -->
+      <div id="aiPanel" class="d-flex flex-column me-3">
+        {% if assessment %}
+        <div class="alert alert-info alert-sm py-2 px-3 mb-2 small">
+          <i class="bi bi-info-circle"></i>
+          Context: <strong>{{ assessment.name }}</strong>
+          {% if assessment.subject %} · {{ assessment.subject }}{% endif %}
+          {% if assessment.grade %} · Grade {{ assessment.grade }}{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+          <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+            <span class="fw-semibold small">Chat</span>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="clearChat()" title="New conversation">
+              <i class="bi bi-arrow-counterclockwise small"></i>
+            </button>
+          </div>
+
+          <!-- Message history -->
+          <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
+            <div class="text-muted text-center small py-4" id="chatPlaceholder">
+              Describe the test you want to create, or ask for help modifying the script.
             </div>
+          </div>
 
-            {% if run_history %}
-            <table class="table table-sm table-hover mb-0">
-              <thead class="table-light"><tr><th>Status</th><th>Suite</th><th>Duration</th><th>Ran</th></tr></thead>
-              <tbody>
-                {% for rh in run_history %}
-                <tr>
-                  <td><span class="status-badge status-{{ rh.status }}">{{ rh.status }}</span></td>
-                  <td class="small text-muted">{{ rh.suite_name|default:rh.trigger_type|default:"—" }}</td>
-                  <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms }}ms{% else %}—{% endif %}</td>
-                  <td class="small text-muted">{{ rh.completed_at|default:"—" }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% else %}
-            <p class="text-muted small mb-0">No run history for this script.</p>
-            {% endif %}
+          <!-- Input area -->
+          <div class="card-footer bg-white border-top p-2">
+            <div class="d-flex gap-2">
+              <textarea id="chatInput" class="form-control form-control-sm" rows="2"
+                placeholder="e.g. Write a visual regression test for item 1234…"
+                onkeydown="handleKey(event)"></textarea>
+              <button class="btn btn-primary btn-sm align-self-end" onclick="sendMessage()" id="sendBtn">
+                <i class="bi bi-send"></i>
+              </button>
+            </div>
+            <div id="chatStatus" class="text-muted small mt-1" style="min-height:1.2em"></div>
           </div>
         </div>
       </div>
+
+      <!-- Right: Code editor panel -->
+      <div id="editorPanel" class="d-flex flex-column flex-grow-1">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+          <div class="flex-grow-1 d-flex flex-column p-0 position-relative">
+            <span id="dirtyIndicator" class="text-warning small position-absolute" style="display:none; top:0.5rem; right:0.75rem; z-index:1">● unsaved</span>
+            <textarea id="codeEditor" class="form-control font-monospace border-0 flex-grow-1 rounded-0"
+              style="min-height:55vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
+              spellcheck="false"
+              oninput="markDirty()"
+              placeholder="// AI-generated test code will appear here…">{{ file_content|default:'' }}</textarea>
+          </div>
+          <div id="dryRunResult" class="card-footer bg-white border-top py-2 px-3 small" style="display:none"></div>
+        </div>
+      </div>
     </div>
-    {% endif %}
+
+    <!-- Bottom action bar -->
+    <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+      <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" id="dryRunBtn">
+        <i class="bi bi-check2-circle"></i> Check
+      </button>
+      <button class="btn btn-sm btn-success" onclick="saveFile()" id="saveBtn">
+        <i class="bi bi-save"></i> Save
+      </button>
+    </div>
   </div>
+
+  <!-- ═══ RESULTS TAB ═══ -->
+  <div class="tab-pane fade" id="tabResults" role="tabpanel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Run History</div>
+      <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Status</th>
+              <th>Suite / Trigger</th>
+              <th>Duration</th>
+              <th>Completed</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rh in run_history %}
+            <tr>
+              <td><span class="status-badge status-{{ rh.status }}">{{ rh.status }}</span></td>
+              <td class="small">{{ rh.suite_name|default:rh.trigger_type|default:"—" }}</td>
+              <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms }}ms{% else %}—{% endif %}</td>
+              <td class="small text-muted">{{ rh.completed_at|default:"—" }}</td>
+              <td>
+                <a href="/runs/{{ rh.run_id }}/" class="btn btn-sm btn-outline-secondary" title="View run">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted text-center py-4">No run history for this script.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DETAILS TAB ═══ -->
+  <div class="tab-pane fade" id="tabDetails" role="tabpanel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Script Details</div>
+      <div class="card-body">
+        {% if file_path %}
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small text-muted mb-1">File Name</label>
+            <div class="font-monospace small">{{ filename|default:"—" }}</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted mb-1">Environment</label>
+            <div>{{ script_meta.environment_name|default:"—" }}</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Item ID</label>
+            <select id="metaItemId" class="form-select form-select-sm">
+              <option value="">— None —</option>
+              {% for item in items %}
+              <option value="{{ item.item_id }}"
+                {% if script_meta and script_meta.item_id == item.item_id %}selected{% endif %}>
+                {{ item.item_id }}{% if item.title %} — {{ item.title|truncatechars:40 }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Assessment</label>
+            <select id="metaAssessmentId" class="form-select form-select-sm">
+              <option value="">— None —</option>
+              {% for a in assessments %}
+              <option value="{{ a.id }}"
+                {% if script_meta and script_meta.assessment_id == a.id|stringformat:"s" %}selected{% endif %}>
+                {{ a.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold mb-1">Test Type</label>
+            <select id="metaTestType" class="form-select form-select-sm">
+              <option value="functional" {% if script_meta and script_meta.test_type == 'functional' %}selected{% endif %}>Functional</option>
+              <option value="visual_regression" {% if script_meta and script_meta.test_type == 'visual_regression' %}selected{% endif %}>Visual Regression</option>
+              <option value="ai_content" {% if script_meta and script_meta.test_type == 'ai_content' %}selected{% endif %}>AI Content Analysis</option>
+              <option value="ai_visual" {% if script_meta and script_meta.test_type == 'ai_visual' %}selected{% endif %}>AI Visual Analysis</option>
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold mb-1">Description</label>
+            <input type="text" id="metaDescription" class="form-control form-control-sm"
+              value="{{ script_meta.description|default:'' }}" placeholder="Brief description">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-primary" onclick="saveMeta()">
+              <i class="bi bi-check-lg"></i> Save Details
+            </button>
+            <span id="metaSaveStatus" class="text-muted small ms-2"></span>
+          </div>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">Save the script first to edit its details.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -183,6 +257,16 @@ function getCookie(name) {
 function markDirty() {
   isDirty = true;
   document.getElementById('dirtyIndicator').style.display = '';
+}
+
+function toggleAI() {
+  var panel = document.getElementById('aiPanel');
+  var on = document.getElementById('aiToggle').checked;
+  if (on) {
+    panel.classList.remove('collapsed');
+  } else {
+    panel.classList.add('collapsed');
+  }
 }
 
 function handleKey(e) {
@@ -240,7 +324,7 @@ function sendMessage() {
       message: msg,
       conversationId: conversationId,
       currentCode: code,
-      filename: document.getElementById('fileLabel').textContent.trim()
+      filename: currentFilePath || 'untitled.spec.js'
     })
   })
   .then(r => r.json())
@@ -274,7 +358,7 @@ function sendMessage() {
 function clearChat() {
   conversationId = null;
   var msgs = document.getElementById('chatMessages');
-  msgs.innerHTML = '<div class="text-muted text-center small py-4" id="chatPlaceholder">Describe the test you want to create, or ask for help modifying the script on the right.</div>';
+  msgs.innerHTML = '<div class="text-muted text-center small py-4" id="chatPlaceholder">Describe the test you want to create, or ask for help modifying the script.</div>';
   setStatus('', '');
 }
 
@@ -282,11 +366,19 @@ function saveFile() {
   var code = document.getElementById('codeEditor').value;
   if (!code.trim()) { alert('No code to save.'); return; }
 
+  var envPicker = document.getElementById('envPicker');
+  var envId = envPicker ? envPicker.value : '';
+  if (!currentFilePath && !envId) {
+    alert('Please select an environment before saving a new script.');
+    return;
+  }
+
   var saveBtn = document.getElementById('saveBtn');
   saveBtn.disabled = true;
 
   var payload = {code: code};
   if (currentFilePath) payload.path = currentFilePath;
+  if (envId) payload.environment_id = envId;
 
   fetch('/test-cases/api/save/', {
     method: 'POST',
@@ -301,7 +393,6 @@ function saveFile() {
     document.getElementById('dirtyIndicator').style.display = 'none';
     if (d.path) {
       currentFilePath = d.path;
-      document.getElementById('fileLabel').textContent = d.path.split('/').pop();
     }
     setStatus('Saved to ' + (d.path || currentFilePath), 'text-success');
     setTimeout(() => setStatus('', ''), 3000);
@@ -342,20 +433,13 @@ function dryRun() {
   });
 }
 
-function copyCode() {
-  var code = document.getElementById('codeEditor').value;
-  navigator.clipboard.writeText(code).then(() => {
-    setStatus('Copied to clipboard.', 'text-success');
-    setTimeout(() => setStatus('', ''), 2000);
-  });
-}
-
 function saveMeta() {
   var path = currentFilePath;
   if (!path) { alert('Save the file first.'); return; }
   var statusEl = document.getElementById('metaSaveStatus');
   statusEl.textContent = 'Saving…';
 
+  var envPicker = document.getElementById('envPicker');
   fetch('/test-cases/api/associate/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
@@ -363,8 +447,9 @@ function saveMeta() {
       scriptPath: path,
       itemId: document.getElementById('metaItemId')?.value || null,
       assessmentId: document.getElementById('metaAssessmentId')?.value || null,
-      category: document.getElementById('metaCategory')?.value || null,
-      description: document.getElementById('metaDescription')?.value || null
+      testType: document.getElementById('metaTestType')?.value || null,
+      description: document.getElementById('metaDescription')?.value || null,
+      environmentId: envPicker ? envPicker.value || null : null
     })
   })
   .then(r => r.json())

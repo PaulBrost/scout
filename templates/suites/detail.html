@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load core_filters %}
 {% block title %}{% if suite %}{{ suite.name }}{% else %}New Suite{% endif %}{% endblock %}
 {% block page_title %}{% if suite %}Edit Suite{% else %}New Suite{% endif %}{% endblock %}
 
@@ -26,7 +27,7 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Environment</label>
-          <select id="suiteEnv" class="form-select">
+          <select id="suiteEnv" class="form-select" onchange="loadScriptsForEnv(this.value)">
             <option value="">— None —</option>
             {% for env in environments %}
             <option value="{{ env.id }}" {% if suite and suite.environment_id == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
@@ -65,15 +66,17 @@
         <div id="scriptList" style="max-height:420px;overflow-y:auto">
           {% for script in available_scripts %}
           <label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom script-item hover-bg" style="cursor:pointer;margin:0">
-            <input type="checkbox" class="form-check-input script-check flex-shrink-0" value="{{ script.relativePath }}"
-              {% if script.relativePath in suite_scripts %}checked{% endif %}>
+            <input type="checkbox" class="form-check-input script-check flex-shrink-0" value="{{ script.script_path }}"
+              {% if script.script_path in suite_scripts %}checked{% endif %}>
             <div class="min-width-0" style="overflow:hidden">
-              <div class="small fw-semibold text-truncate">{{ script.name }}</div>
-              <div class="text-muted text-truncate" style="font-size:.7rem">{{ script.relativePath }} · {{ script.typeLabel }} · {{ script.testCount }} test{{ script.testCount|pluralize }}</div>
+              <div class="small fw-semibold text-truncate">{{ script.script_path }}</div>
+              <div class="text-muted text-truncate" style="font-size:.7rem">{% if script.test_type %}<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">{{ script.test_type }}</span>{% endif %}{% if script.description %}{{ script.description|truncatechars:60 }}{% endif %}</div>
             </div>
           </label>
           {% empty %}
-          <div class="text-muted text-center py-4 small">No test scripts found in PLAYWRIGHT_TESTS_DIR</div>
+          <div class="text-muted text-center py-4 small" id="noScriptsMsg">
+            {% if suite and suite.environment_id %}No test scripts registered for this environment.{% else %}Select an environment to see available scripts.{% endif %}
+          </div>
           {% endfor %}
         </div>
       </div>
@@ -82,6 +85,8 @@
 </div>
 
 <script>
+var suiteScripts = {{ suite_scripts|safe }};
+
 function updateCount() {
   var n = document.querySelectorAll('.script-check:checked').length;
   document.getElementById('scriptCount').textContent = n;
@@ -95,6 +100,47 @@ function filterScripts(q) {
     el.style.display = (q === '' || el.textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
 }
+
+function loadScriptsForEnv(envId) {
+  var container = document.getElementById('scriptList');
+  if (!envId) {
+    container.innerHTML = '<div class="text-muted text-center py-4 small">Select an environment to see available scripts.</div>';
+    updateCount();
+    return;
+  }
+  container.innerHTML = '<div class="text-muted text-center py-4 small">Loading scripts…</div>';
+  fetch('/suites/api/scripts/?environment_id=' + encodeURIComponent(envId))
+    .then(r => r.json())
+    .then(d => {
+      if (!d.scripts || d.scripts.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center py-4 small">No test scripts registered for this environment.</div>';
+        updateCount();
+        return;
+      }
+      var html = '';
+      d.scripts.forEach(function(s) {
+        var checked = suiteScripts.indexOf(s.script_path) !== -1 ? 'checked' : '';
+        var desc = '';
+        if (s.test_type) desc += '<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">' + escapeHtml(s.test_type) + '</span>';
+        if (s.description) desc += escapeHtml(s.description.substring(0, 60));
+        html += '<label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom script-item hover-bg" style="cursor:pointer;margin:0">' +
+          '<input type="checkbox" class="form-check-input script-check flex-shrink-0" value="' + escapeAttr(s.script_path) + '" ' + checked + '>' +
+          '<div class="min-width-0" style="overflow:hidden">' +
+          '<div class="small fw-semibold text-truncate">' + escapeHtml(s.script_path) + '</div>' +
+          '<div class="text-muted text-truncate" style="font-size:.7rem">' + desc + '</div>' +
+          '</div></label>';
+      });
+      container.innerHTML = html;
+      document.querySelectorAll('.script-check').forEach(c => c.addEventListener('change', updateCount));
+      updateCount();
+    })
+    .catch(function() {
+      container.innerHTML = '<div class="text-danger text-center py-4 small">Failed to load scripts.</div>';
+    });
+}
+
+function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeAttr(t) { return t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function saveSuite() {
   var name = document.getElementById('suiteName').value.trim();

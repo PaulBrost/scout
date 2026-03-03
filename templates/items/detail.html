@@ -1,75 +1,239 @@
 {% extends "base.html" %}
-{% block title %}Item {{ item.item_id }}{% endblock %}
-{% block page_title %}Item: {{ item.item_id }}{% endblock %}
-
-{% block topbar_actions %}
-<a href="/items/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
-<a href="/builder/?assessment={{ item.assessment_id|default:'' }}" class="btn btn-sm btn-primary">
-  <i class="bi bi-robot"></i> AI Builder
-</a>
-{% endblock %}
+{% block title %}{{ item.item_id }}{% endblock %}
+{% block page_title %}<a href="/items/" class="text-decoration-none text-muted">Items</a> <span class="text-muted mx-1">/</span> <span id="pageTitleName">{{ item.title|default:item.item_id }}</span>{% endblock %}
 
 {% block content %}
-<div class="row g-4">
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">Item Details</div>
-      <div class="card-body">
-        <dl class="row mb-0">
-          <dt class="col-5 small text-muted">Item ID</dt>
-          <dd class="col-7 font-monospace small">{{ item.item_id }}</dd>
-          <dt class="col-5 small text-muted">Title</dt>
-          <dd class="col-7">{{ item.title|default:"—" }}</dd>
-          <dt class="col-5 small text-muted">Assessment</dt>
-          <dd class="col-7">{% if item.assessment_id %}<a href="/assessments/{{ item.assessment_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</dd>
-          <dt class="col-5 small text-muted">Category</dt>
-          <dd class="col-7">{{ item.category|default:"—" }}</dd>
-          <dt class="col-5 small text-muted">Tier</dt>
-          <dd class="col-7">{{ item.tier|default:"—" }}</dd>
-          <dt class="col-5 small text-muted">Languages</dt>
-          <dd class="col-7">{{ item.languages|default:"—" }}</dd>
-        </dl>
+<!-- Item Details -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold">Item Details</div>
+  <div class="card-body">
+    <!-- View mode -->
+    <div id="viewMode">
+      <div class="mb-2">
+        <div class="small text-muted">Item ID</div>
+        <div class="font-monospace small">{{ item.item_id }}</div>
+      </div>
+      <div class="mb-2">
+        <div class="small text-muted">Title</div>
+        <div id="viewTitle">{{ item.title|default:"—" }}</div>
+      </div>
+      <div class="mb-2">
+        <div class="small text-muted">Environment</div>
+        <div>{{ item.environment_name|default:"—" }}</div>
+      </div>
+      <div class="mb-2">
+        <div class="small text-muted">Assessment</div>
+        <div>{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</div>
+      </div>
+      <div class="mb-2">
+        <div class="small text-muted">Category</div>
+        <div id="viewCategory">{{ item.category|default:"—" }}</div>
+      </div>
+      <div class="mb-2">
+        <div class="small text-muted">Tier</div>
+        <div id="viewTier">{{ item.tier|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="small text-muted">Languages</div>
+        <div id="viewLanguages">{{ item.languages|default:"—" }}</div>
+      </div>
+    </div>
+    <!-- Edit mode -->
+    <div id="editMode" style="display:none">
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Item ID</label>
+        <div class="font-monospace small">{{ item.item_id }}</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Title</label>
+        <input type="text" class="form-control form-control-sm" id="editTitle" value="{{ item.title|default_if_none:'' }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Environment</label>
+        <div>{{ item.environment_name|default:"—" }}</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Assessment</label>
+        <div>{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Category</label>
+        <input type="text" class="form-control form-control-sm" id="editCategory" value="{{ item.category|default_if_none:'' }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Tier</label>
+        <input type="text" class="form-control form-control-sm" id="editTier" value="{{ item.tier|default_if_none:'' }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-muted mb-1">Languages</label>
+        <input type="text" class="form-control form-control-sm" id="editLanguages" value="{{ item.languages|default_if_none:'' }}" placeholder="e.g. en, es">
+      </div>
+      <div>
+        <button class="btn btn-sm btn-primary" onclick="saveDetails()" id="saveBtn">
+          <i class="bi bi-check-lg"></i> Save
+        </button>
+        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="toggleEdit()">Cancel</button>
+        <span id="saveStatus" class="ms-2 small"></span>
       </div>
     </div>
   </div>
-  <div class="col-md-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-        Test Scripts
-        <span class="badge bg-secondary">{{ scripts|length }}</span>
+</div>
+
+<!-- Actions bar -->
+<div class="d-flex justify-content-end gap-2 mb-4">
+  <button class="btn btn-sm btn-outline-primary" id="editBtn" onclick="toggleEdit()">
+    <i class="bi bi-pencil"></i> Edit
+  </button>
+  <button class="btn btn-sm btn-outline-danger" onclick="deleteItem()">
+    <i class="bi bi-trash"></i> Delete Item
+  </button>
+</div>
+
+<!-- Test Scripts -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+    Test Scripts ({{ scripts|length }})
+    <button class="btn btn-sm btn-primary" onclick="showNewScriptModal()">
+      <i class="bi bi-plus"></i> New Test Script
+    </button>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr><th>Script</th><th>Category</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="scriptsTableBody">
+        {% for s in scripts %}
+        <tr>
+          <td class="font-monospace small">
+            <a href="/builder/?file={{ s.script_path|urlencode }}">{{ s.script_path }}</a>
+          </td>
+          <td>{{ s.category|default:"—" }}</td>
+          <td class="text-nowrap">
+            <a href="/builder/?file={{ s.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-pencil"></i> Edit
+            </a>
+            <button class="btn btn-sm btn-success" onclick="runScript('{{ s.script_path|escapejs }}')">
+              <i class="bi bi-play-fill"></i>
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr id="noScriptsRow"><td colspan="3" class="text-muted text-center py-4">
+          No test scripts linked to this item.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- New Script Modal -->
+<div class="modal fade" id="newScriptModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New Test Script</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="card-body p-0">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr><th>Script</th><th>Category</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {% for s in scripts %}
-            <tr>
-              <td class="font-monospace small">{{ s.script_path }}</td>
-              <td>{{ s.category|default:"—" }}</td>
-              <td class="text-nowrap">
-                <a href="/builder/?file={{ s.script_path }}" class="btn btn-sm btn-outline-primary">
-                  <i class="bi bi-pencil"></i> Edit
-                </a>
-                <button class="btn btn-sm btn-success" onclick="runScript('{{ s.script_path|escapejs }}')">
-                  <i class="bi bi-play-fill"></i>
-                </button>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="3" class="text-muted text-center py-4">
-              No test scripts linked. <a href="/builder/?assessment={{ item.assessment_id }}">Create one in AI Builder</a>.
-            </td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Script Name *</label>
+          <input type="text" id="newScriptName" class="form-control" placeholder="e.g. smoke-test-login" autofocus>
+          <div class="form-text">Will be saved as <code><span id="scriptNamePreview">name</span>.spec.js</code></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Item</label>
+          <input type="text" class="form-control form-control-sm" value="{{ item.item_id }}{% if item.title %} — {{ item.title }}{% endif %}" disabled>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Environment</label>
+          <input type="text" class="form-control form-control-sm" value="{{ item.environment_name|default:'—' }}" disabled>
+        </div>
+        <div id="newScriptError" class="text-danger small" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createScript()" id="createScriptBtn">
+          <i class="bi bi-plus"></i> Create &amp; Open Editor
+        </button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+function getCookie(n) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(n + '='))?.split('=')[1] || '';
+}
+
+var editing = false;
+function toggleEdit() {
+  editing = !editing;
+  document.getElementById('viewMode').style.display = editing ? 'none' : '';
+  document.getElementById('editMode').style.display = editing ? '' : 'none';
+  document.getElementById('editBtn').style.display = editing ? 'none' : '';
+  document.getElementById('saveStatus').textContent = '';
+}
+
+function saveDetails() {
+  var btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving…';
+  document.getElementById('saveStatus').textContent = '';
+
+  var langVal = document.getElementById('editLanguages').value.trim();
+  var languages = langVal ? langVal.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+  fetch('/items/api/update-item/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      numeric_id: {{ item.numeric_id }},
+      title: document.getElementById('editTitle').value.trim(),
+      category: document.getElementById('editCategory').value.trim(),
+      tier: document.getElementById('editTier').value.trim(),
+      languages: languages
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+    if (d.ok) {
+      var title = document.getElementById('editTitle').value.trim();
+      document.getElementById('viewTitle').textContent = title || '—';
+      document.getElementById('viewCategory').textContent = document.getElementById('editCategory').value.trim() || '—';
+      document.getElementById('viewTier').textContent = document.getElementById('editTier').value.trim() || '—';
+      document.getElementById('viewLanguages').textContent = langVal || '—';
+      document.getElementById('pageTitleName').textContent = title || '{{ item.item_id|escapejs }}';
+      toggleEdit();
+    } else {
+      document.getElementById('saveStatus').innerHTML = '<span class="text-danger">' + (d.error || 'Error') + '</span>';
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+    document.getElementById('saveStatus').innerHTML = '<span class="text-danger">Network error: ' + err.message + '</span>';
+  });
+}
+
+function deleteItem() {
+  if (!confirm('Delete item "{{ item.item_id|escapejs }}"? This will permanently remove the item and any associated data. This cannot be undone.')) return;
+  fetch('/items/api/delete-item/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({numeric_id: {{ item.numeric_id }}})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) window.location = '/items/';
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  })
+  .catch(err => alert('Error: ' + err.message));
+}
+
 function runScript(path) {
   if (!confirm('Run script: ' + path + '?')) return;
   fetch('/suites/run-script/', {
@@ -81,8 +245,67 @@ function runScript(path) {
     else alert(d.error || 'Error');
   });
 }
-function getCookie(n) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(n + '='))?.split('=')[1] || '';
+
+var newScriptModal;
+function showNewScriptModal() {
+  document.getElementById('newScriptName').value = '';
+  document.getElementById('newScriptError').style.display = 'none';
+  document.getElementById('scriptNamePreview').textContent = 'name';
+  if (!newScriptModal) {
+    newScriptModal = new bootstrap.Modal(document.getElementById('newScriptModal'));
+  }
+  newScriptModal.show();
+  setTimeout(function() { document.getElementById('newScriptName').focus(); }, 300);
+}
+
+document.getElementById('newScriptName').addEventListener('input', function() {
+  var val = this.value.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+  document.getElementById('scriptNamePreview').textContent = val || 'name';
+});
+
+document.getElementById('newScriptName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); createScript(); }
+});
+
+function createScript() {
+  var name = document.getElementById('newScriptName').value.trim();
+  var errEl = document.getElementById('newScriptError');
+  if (!name) {
+    errEl.textContent = 'Please enter a script name.';
+    errEl.style.display = '';
+    return;
+  }
+  errEl.style.display = 'none';
+  var btn = document.getElementById('createScriptBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating…';
+
+  fetch('/items/api/create-script/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      item_id: '{{ item.item_id|escapejs }}',
+      environment_id: '{{ item.environment_id|default:""|escapejs }}'
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create & Open Editor';
+    if (d.error) {
+      errEl.textContent = d.error;
+      errEl.style.display = '';
+      return;
+    }
+    window.location = '/builder/?file=' + encodeURIComponent(d.path);
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create & Open Editor';
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = '';
+  });
 }
 </script>
 {% endblock %}

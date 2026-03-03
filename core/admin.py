@@ -3,6 +3,7 @@ from .models import (
     Environment, UserEnvironment, Assessment, Item, Baseline,
     TestSuite, TestSuiteScript, TestRun, TestRunScript, TestResult,
     AIAnalysis, Review, TestScript, AISetting, AITool, AIConversation,
+    TestDataSet,
 )
 
 @admin.register(Environment)
@@ -23,9 +24,9 @@ class AssessmentAdmin(admin.ModelAdmin):
 
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
-    list_display = ['numeric_id', 'item_id', 'title', 'assessment', 'category', 'tier']
+    list_display = ['numeric_id', 'item_id', 'title', 'environment', 'assessment', 'category', 'tier']
     search_fields = ['item_id', 'title']
-    list_filter = ['category', 'tier', 'assessment']
+    list_filter = ['environment', 'category', 'tier', 'assessment']
 
 @admin.register(TestSuite)
 class TestSuiteAdmin(admin.ModelAdmin):
@@ -33,10 +34,16 @@ class TestSuiteAdmin(admin.ModelAdmin):
     list_filter = ['environment']
     search_fields = ['name']
 
+@admin.register(Baseline)
+class BaselineAdmin(admin.ModelAdmin):
+    list_display = ['id', 'item', 'environment', 'browser', 'device_profile', 'version', 'approved_by', 'approved_at']
+    list_filter = ['environment', 'browser']
+    search_fields = ['item__item_id']
+
 @admin.register(TestRun)
 class TestRunAdmin(admin.ModelAdmin):
-    list_display = ['id', 'suite', 'status', 'trigger_type', 'started_at', 'completed_at']
-    list_filter = ['status', 'trigger_type']
+    list_display = ['id', 'suite', 'environment', 'status', 'trigger_type', 'started_at', 'completed_at']
+    list_filter = ['status', 'trigger_type', 'environment']
 
 @admin.register(TestRunScript)
 class TestRunScriptAdmin(admin.ModelAdmin):
@@ -55,8 +62,8 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(TestScript)
 class TestScriptAdmin(admin.ModelAdmin):
-    list_display = ['script_path', 'item', 'assessment', 'category', 'updated_at']
-    list_filter = ['category']
+    list_display = ['script_path', 'environment', 'item', 'assessment', 'test_type', 'category', 'updated_at']
+    list_filter = ['environment', 'test_type', 'category']
     search_fields = ['script_path']
 
 @admin.register(AISetting)
@@ -67,6 +74,12 @@ class AISettingAdmin(admin.ModelAdmin):
 class AIToolAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'category', 'enabled']
     list_filter = ['category', 'enabled']
+
+@admin.register(TestDataSet)
+class TestDataSetAdmin(admin.ModelAdmin):
+    list_display = ['name', 'environment', 'assessment', 'data_type', 'created_at']
+    list_filter = ['environment', 'data_type']
+    search_fields = ['name']
 
 @admin.register(AIConversation)
 class AIConversationAdmin(admin.ModelAdmin):

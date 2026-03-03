@@ -13,128 +13,302 @@
   Settings saved successfully.
   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
+{% elif success == 'text' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  Grammar &amp; spelling settings saved successfully.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% elif success == 'vision' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  Visual analysis settings saved successfully.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
 {% endif %}
 
-<div class="row g-4">
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if tab == 'prompt' %}active{% endif %}" id="tab-prompt" data-bs-toggle="tab"
+      data-bs-target="#pane-prompt" type="button" role="tab">System Prompt</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if tab == 'text' %}active{% endif %}" id="tab-text" data-bs-toggle="tab"
+      data-bs-target="#pane-text" type="button" role="tab">Grammar &amp; Spelling</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if tab == 'vision' %}active{% endif %}" id="tab-vision" data-bs-toggle="tab"
+      data-bs-target="#pane-vision" type="button" role="tab">Visual Analysis</button>
+  </li>
+</ul>
 
-  <!-- System Prompt -->
-  <div class="col-lg-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">System Prompt</div>
-      <div class="card-body">
-        <form method="post" action="/admin-config/ai/prompt/">
-          {% csrf_token %}
-          <div class="mb-3">
-            <label class="form-label small text-muted">
-              This prompt is prepended to every AI chat session. Use it to set tone, describe the NAEP system, and list constraints.
-            </label>
-            <textarea name="prompt" class="form-control font-monospace" rows="16" style="font-size:0.8rem">{% if settings.system_prompt %}{{ settings.system_prompt|slice:"1:-1" }}{% endif %}</textarea>
+<div class="tab-content">
+
+  <!-- ═══ Tab 1: System Prompt ═══ -->
+  <div class="tab-pane fade {% if tab == 'prompt' %}show active{% endif %}" id="pane-prompt" role="tabpanel">
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white fw-semibold">System Prompt</div>
+          <div class="card-body">
+            <form method="post" action="/admin-config/ai/prompt/">
+              {% csrf_token %}
+              <div class="mb-3">
+                <label class="form-label small text-muted">
+                  This prompt is prepended to every AI chat session. Use it to set tone, describe the NAEP system, and list constraints.
+                </label>
+                <textarea name="prompt" class="form-control font-monospace" rows="16" style="font-size:0.8rem">{% if settings.system_prompt %}{{ settings.system_prompt|slice:"1:-1" }}{% endif %}</textarea>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Save Prompt</button>
+            </form>
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-save"></i> Save Prompt
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right column: provider info + misc settings -->
-  <div class="col-lg-4">
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white fw-semibold">Provider</div>
-      <div class="card-body">
-        <div class="d-flex align-items-center gap-2 mb-3">
-          <span class="badge {% if provider == 'azure' %}bg-primary{% elif provider == 'ollama' %}bg-success{% else %}bg-secondary{% endif %} fs-6">
-            {{ provider }}
-          </span>
-          <span class="text-muted small">Set via <code>AI_PROVIDER</code> env var</span>
         </div>
-        <form method="post" action="/admin-config/ai/settings/">
-          {% csrf_token %}
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Max Conversation Turns</label>
-            <input type="number" name="max_conversation_turns" class="form-control form-control-sm"
-              value="{{ settings.max_conversation_turns|default:'50' }}" min="1" max="200">
-            <div class="form-text">Max AI exchanges before starting a new conversation.</div>
-          </div>
-          <div class="mb-3 form-check">
-            <input type="checkbox" name="tool_calling_enabled" id="toolCallingEnabled"
-              class="form-check-input" value="true"
-              {% if settings.tool_calling_enabled != 'false' %}checked{% endif %}>
-            <label class="form-check-label small" for="toolCallingEnabled">Enable tool calling</label>
-            <div class="form-text">Allow AI to use tools (read/write files, search tests, etc.)</div>
-          </div>
-          <button type="submit" class="btn btn-sm btn-primary">Save</button>
-        </form>
       </div>
-    </div>
 
-    <!-- Quick stats -->
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">Quick Info</div>
-      <div class="card-body p-0">
-        <ul class="list-group list-group-flush small">
-          <li class="list-group-item d-flex justify-content-between">
-            <span class="text-muted">Provider</span>
-            <code>{{ provider }}</code>
-          </li>
-          {% if provider == 'azure' %}
-          <li class="list-group-item d-flex justify-content-between">
-            <span class="text-muted">Endpoint</span>
-            <span class="font-monospace text-truncate ms-2" style="max-width:160px" title="{{ settings.azure_endpoint|default:'not set' }}">
-              {{ settings.azure_endpoint|default:"not set" }}
-            </span>
-          </li>
-          {% elif provider == 'ollama' %}
-          <li class="list-group-item d-flex justify-content-between">
-            <span class="text-muted">Ollama Host</span>
-            <code>{{ settings.ollama_host|default:"localhost:11434" }}</code>
-          </li>
-          {% endif %}
-        </ul>
+      <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white fw-semibold">Provider</div>
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <span class="badge {% if provider == 'azure' %}bg-primary{% elif provider == 'ollama' %}bg-success{% else %}bg-secondary{% endif %} fs-6">
+                {{ provider }}
+              </span>
+              <span class="text-muted small">Set via <code>AI_PROVIDER</code> env var</span>
+            </div>
+            <form method="post" action="/admin-config/ai/settings/">
+              {% csrf_token %}
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Max Conversation Turns</label>
+                <input type="number" name="max_conversation_turns" class="form-control form-control-sm"
+                  value="{{ settings.max_conversation_turns|default:'50' }}" min="1" max="200">
+                <div class="form-text">Max AI exchanges before starting a new conversation.</div>
+              </div>
+              <div class="mb-3 form-check">
+                <input type="checkbox" name="tool_calling_enabled" id="toolCallingEnabled"
+                  class="form-check-input" value="true"
+                  {% if settings.tool_calling_enabled != 'false' %}checked{% endif %}>
+                <label class="form-check-label small" for="toolCallingEnabled">Enable tool calling</label>
+                <div class="form-text">Allow AI to use tools (read/write files, search tests, etc.)</div>
+              </div>
+              <button type="submit" class="btn btn-sm btn-primary">Save</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white fw-semibold">Quick Info</div>
+          <div class="card-body p-0">
+            <ul class="list-group list-group-flush small">
+              <li class="list-group-item d-flex justify-content-between">
+                <span class="text-muted">Provider</span>
+                <code>{{ provider }}</code>
+              </li>
+              {% if provider == 'azure' %}
+              <li class="list-group-item d-flex justify-content-between">
+                <span class="text-muted">Endpoint</span>
+                <span class="font-monospace text-truncate ms-2" style="max-width:160px" title="{{ settings.azure_endpoint|default:'not set' }}">
+                  {{ settings.azure_endpoint|default:"not set" }}
+                </span>
+              </li>
+              {% elif provider == 'ollama' %}
+              <li class="list-group-item d-flex justify-content-between">
+                <span class="text-muted">Ollama Host</span>
+                <code>{{ settings.ollama_host|default:"localhost:11434" }}</code>
+              </li>
+              {% endif %}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Tools -->
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+            <span>AI Tools</span>
+            <span class="text-muted small">{{ tools|length }} tool{{ tools|length|pluralize }}</span>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Tool</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th class="text-center">Enabled</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for tool in tools %}
+                <tr>
+                  <td class="font-monospace small fw-semibold">{{ tool.name }}</td>
+                  <td>{{ tool.category|default:"—" }}</td>
+                  <td class="small text-muted">{{ tool.description|default:"—" }}</td>
+                  <td class="text-center">
+                    <div class="form-check form-switch d-inline-block mb-0">
+                      <input class="form-check-input" type="checkbox" role="switch"
+                        id="tool-{{ tool.id }}"
+                        {% if tool.enabled %}checked{% endif %}
+                        onchange="toggleTool('{{ tool.id }}', this)">
+                    </div>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-muted text-center py-4">No tools configured.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- AI Tools -->
-  <div class="col-12">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
-        <span>AI Tools</span>
-        <span class="text-muted small">{{ tools|length }} tool{{ tools|length|pluralize }}</span>
+  <!-- ═══ Tab 2: Grammar & Spelling ═══ -->
+  <div class="tab-pane fade {% if tab == 'text' %}show active{% endif %}" id="pane-text" role="tabpanel">
+    <form method="post" action="/admin-config/ai/text-analysis/">
+      {% csrf_token %}
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">Text Analysis Prompt</div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label small text-muted">
+                  This prompt is sent to the AI when analyzing assessment text for spelling errors, homophone misuse, and grammar issues.
+                  Use <code>{text}</code> as the placeholder for the content being analyzed and <code>{language}</code> for the target language.
+                </label>
+                <textarea name="text_analysis_prompt" class="form-control font-monospace" rows="14" style="font-size:0.8rem"
+                  placeholder="Leave blank to use the default prompt">{% if settings.text_analysis_prompt %}{{ settings.text_analysis_prompt|slice:"1:-1" }}{% endif %}</textarea>
+              </div>
+              <div class="small text-muted">
+                <strong>Default prompt (used when blank):</strong><br>
+                Analyzes text for spelling errors, homophone misuse, and grammar issues. Returns a JSON array with type, text, suggestion, and context for each issue found.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-semibold">Settings</div>
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input type="checkbox" name="text_analysis_enabled" id="textAnalysisEnabled"
+                  class="form-check-input" value="true"
+                  {% if settings.text_analysis_enabled == True or settings.text_analysis_enabled == 'true' %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="textAnalysisEnabled">Enable text analysis</label>
+                <div class="form-text">Run grammar and spelling checks on assessment content after test execution.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Default Language</label>
+                <input type="text" name="text_analysis_language" class="form-control form-control-sm"
+                  value="{% if settings.text_analysis_language %}{{ settings.text_analysis_language|slice:'1:-1' }}{% else %}English{% endif %}"
+                  placeholder="English">
+                <div class="form-text">Language used for analysis when not specified per assessment.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">What This Checks</div>
+            <div class="card-body small text-muted">
+              <ul class="mb-0 ps-3">
+                <li><strong>Spelling errors</strong> — misspelled words in assessment content</li>
+                <li><strong>Homophone misuse</strong> — words that sound alike but are used incorrectly (e.g., their/there/they're)</li>
+                <li><strong>Grammar issues</strong> — subject-verb agreement, tense consistency, punctuation</li>
+              </ul>
+              <div class="mt-2">
+                Analysis runs automatically after test execution for scripts with <code>ai_content</code> test type. Issues are routed to the Reviews queue.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="card-body p-0">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Tool</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th class="text-center">Enabled</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for tool in tools %}
-            <tr id="tool-row-{{ tool.id }}">
-              <td class="font-monospace small fw-semibold">{{ tool.name }}</td>
-              <td><span class="badge bg-light text-dark">{{ tool.category|default:"—" }}</span></td>
-              <td class="small text-muted">{{ tool.description|default:"—" }}</td>
-              <td class="text-center">
-                <div class="form-check form-switch d-inline-block mb-0">
-                  <input class="form-check-input" type="checkbox" role="switch"
-                    id="tool-{{ tool.id }}"
-                    {% if tool.enabled %}checked{% endif %}
-                    onchange="toggleTool('{{ tool.id }}', this)">
+
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary btn-sm">Save Grammar &amp; Spelling Settings</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ═══ Tab 3: Visual Analysis ═══ -->
+  <div class="tab-pane fade {% if tab == 'vision' %}show active{% endif %}" id="pane-vision" role="tabpanel">
+    <form method="post" action="/admin-config/ai/vision-analysis/">
+      {% csrf_token %}
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">Visual Analysis Prompt</div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label small text-muted">
+                  This prompt is sent to the AI when analyzing screenshots for visual quality issues.
+                  Use <code>{context}</code> as the placeholder for additional context about the screenshot being analyzed.
+                </label>
+                <textarea name="vision_analysis_prompt" class="form-control font-monospace" rows="14" style="font-size:0.8rem"
+                  placeholder="Leave blank to use the default prompt">{% if settings.vision_analysis_prompt %}{{ settings.vision_analysis_prompt|slice:"1:-1" }}{% endif %}</textarea>
+              </div>
+              <div class="small text-muted">
+                <strong>Default prompt (used when blank):</strong><br>
+                Analyzes screenshots for text readability, layout problems, missing content, contrast issues, and rendering artifacts. Returns a JSON array with type, detail, and severity for each issue found.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-semibold">Settings</div>
+            <div class="card-body">
+              <div class="mb-3 form-check form-switch">
+                <input type="checkbox" name="vision_analysis_enabled" id="visionAnalysisEnabled"
+                  class="form-check-input" value="true"
+                  {% if settings.vision_analysis_enabled == True or settings.vision_analysis_enabled == 'true' %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="visionAnalysisEnabled">Enable visual analysis</label>
+                <div class="form-text">Run AI-powered visual checks on screenshots after test execution.</div>
+              </div>
+              <hr>
+              <div class="mb-3 form-check form-switch">
+                <input type="checkbox" name="baseline_comparison_enabled" id="baselineComparisonEnabled"
+                  class="form-check-input" value="true"
+                  {% if settings.baseline_comparison_enabled == True or settings.baseline_comparison_enabled == 'true' %}checked{% endif %}>
+                <label class="form-check-label small fw-semibold" for="baselineComparisonEnabled">Enable baseline comparison</label>
+                <div class="form-text">Compare screenshots against approved baselines for visual regression detection.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Diff Threshold</label>
+                <div class="input-group input-group-sm">
+                  <input type="number" name="baseline_diff_threshold" class="form-control form-control-sm"
+                    value="{{ settings.baseline_diff_threshold|default:'0.01' }}"
+                    min="0" max="1" step="0.001">
                 </div>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="4" class="text-muted text-center py-4">No tools configured.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                <div class="form-text">Pixel difference ratio (0–1) above which a visual regression is flagged. Lower values are stricter. Default: 0.01 (1%).</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">What This Checks</div>
+            <div class="card-body small text-muted">
+              <ul class="mb-0 ps-3">
+                <li><strong>Layout issues</strong> — overlapping elements, misaligned content, broken layouts</li>
+                <li><strong>Contrast &amp; readability</strong> — low-contrast text, unreadable fonts, color issues</li>
+                <li><strong>Missing content</strong> — blank areas, images that failed to load, truncated text</li>
+                <li><strong>Rendering artifacts</strong> — visual glitches, incorrect rendering</li>
+                <li><strong>Baseline regression</strong> — pixel differences between current screenshots and approved baselines</li>
+              </ul>
+              <div class="mt-2">
+                Visual analysis runs for scripts with <code>ai_visual</code> test type. Baseline comparison runs for <code>visual_regression</code> test type. Issues are routed to the Reviews queue.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary btn-sm">Save Visual Analysis Settings</button>
+      </div>
+    </form>
   </div>
 
 </div>

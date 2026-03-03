@@ -20,7 +20,7 @@
       <tbody>
         {% for a in assessments %}
         <tr>
-          <td><a href="/assessments/{{ a.id }}/">{{ a.id }}</a></td>
+          <td><a href="/assessments/{{ a.numeric_id }}/">{{ a.id }}</a></td>
           <td>{{ a.name }}</td>
           <td>{{ a.environment.name|default:"—" }}</td>
           <td>{{ a.subject|default:"—" }}</td>

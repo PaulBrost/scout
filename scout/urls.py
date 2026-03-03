@@ -17,6 +17,8 @@ urlpatterns = [
     path('environments/', include('environments.urls')),
     path('test-cases/', include('test_cases.urls')),
     path('builder/', include('builder.urls')),
+    path('baselines/', include('baselines.urls')),
+    path('test-data/', include('test_data.urls')),
     path('admin-config/', include('admin_config.urls')),
     path('api/', include('runs.api_urls')),
 ]
