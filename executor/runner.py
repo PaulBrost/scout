@@ -283,11 +283,24 @@ def execute_run(run_id, script_paths, options=None):
             )
             env_row = cursor.fetchone()
             if env_row:
+                # Raw SQL returns JSON columns as strings; parse them
+                creds = env_row[2]
+                if isinstance(creds, str):
+                    try:
+                        creds = json.loads(creds)
+                    except (json.JSONDecodeError, TypeError):
+                        creds = {}
+                launcher = env_row[3]
+                if isinstance(launcher, str):
+                    try:
+                        launcher = json.loads(launcher)
+                    except (json.JSONDecodeError, TypeError):
+                        launcher = {}
                 env_config = {
                     'base_url': env_row[0],
                     'auth_type': env_row[1],
-                    'credentials': env_row[2] if isinstance(env_row[2], dict) else {},
-                    'launcher_config': env_row[3] if isinstance(env_row[3], dict) else {},
+                    'credentials': creds if isinstance(creds, dict) else {},
+                    'launcher_config': launcher if isinstance(launcher, dict) else {},
                 }
                 env_config_json = json.dumps(env_config, default=str)
 

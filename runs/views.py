@@ -166,7 +166,7 @@ def script_detail(request, run_id, script_id):
         row = cursor.fetchone()
     if not row:
         return JsonResponse({'error': 'Not found'}, status=404)
-    return JsonResponse(dict(zip(cols, row)), default=str)
+    return JsonResponse(dict(zip(cols, row)), json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
@@ -204,7 +204,7 @@ def api_run_status(request, run_id):
         'status': run_status,
         'summary': summary,
         'scripts': scripts,
-    }, default=str)
+    }, json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
