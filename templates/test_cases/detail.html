@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ script.script_path }}{% endblock %}
+{% block page_title %}Test Script{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Script Path</dt>
+      <dd class="col-sm-9"><code>{{ script.script_path }}</code></dd>
+      <dt class="col-sm-3">Item</dt>
+      <dd class="col-sm-9">{% if script.item %}<a href="/items/{{ script.item.numeric_id }}/">{{ script.item.item_id }}</a>{% else %}—{% endif %}</dd>
+      <dt class="col-sm-3">Assessment</dt>
+      <dd class="col-sm-9">{% if script.assessment %}<a href="/assessments/{{ script.assessment.id }}/">{{ script.assessment.name }}</a>{% else %}—{% endif %}</dd>
+      <dt class="col-sm-3">Category</dt>
+      <dd class="col-sm-9">{{ script.category|default:"—" }}</dd>
+      <dt class="col-sm-3">Description</dt>
+      <dd class="col-sm-9">{{ script.description|default:"—" }}</dd>
+      <dt class="col-sm-3">Created</dt>
+      <dd class="col-sm-9">{{ script.created_at }}</dd>
+      <dt class="col-sm-3">Updated</dt>
+      <dd class="col-sm-9">{{ script.updated_at }}</dd>
+    </dl>
+  </div>
+</div>
+{% endblock %}

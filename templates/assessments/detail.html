@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ assessment.name }}{% endblock %}
+{% block page_title %}{{ assessment.name }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="/assessments/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+<a href="/builder/?assessment={{ assessment.id }}" class="btn btn-sm btn-primary"><i class="bi bi-robot"></i> AI Builder</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Assessment Details</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5 small text-muted">ID</dt>
+          <dd class="col-7 font-monospace small">{{ assessment.id }}</dd>
+          <dt class="col-5 small text-muted">Subject</dt>
+          <dd class="col-7">{{ assessment.subject|default:"—" }}</dd>
+          <dt class="col-5 small text-muted">Grade</dt>
+          <dd class="col-7">{{ assessment.grade|default:"—" }}</dd>
+          <dt class="col-5 small text-muted">Year</dt>
+          <dd class="col-7">{{ assessment.year|default:"—" }}</dd>
+          <dt class="col-5 small text-muted">Environment</dt>
+          <dd class="col-7">{{ assessment.environment_name|default:"—" }}</dd>
+          <dt class="col-5 small text-muted">Items</dt>
+          <dd class="col-7">{{ items|length }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Items ({{ items|length }})</div>
+      <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>#</th><th>Item ID</th><th>Title</th><th>Category</th><th>Tier</th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td class="text-muted small">{{ item.numeric_id }}</td>
+              <td><a href="/items/{{ item.numeric_id }}/">{{ item.item_id }}</a></td>
+              <td>{{ item.title|default:"—" }}</td>
+              <td><span class="badge bg-light text-dark">{{ item.category|default:"—" }}</span></td>
+              <td>{{ item.tier|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted text-center py-4">No items in this assessment.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

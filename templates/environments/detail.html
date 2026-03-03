@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ environment.name }}{% endblock %}
+{% block page_title %}Environment: {{ environment.name }}{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Name</dt>
+      <dd class="col-sm-9">{{ environment.name }}</dd>
+      <dt class="col-sm-3">Base URL</dt>
+      <dd class="col-sm-9"><code>{{ environment.base_url }}</code></dd>
+      <dt class="col-sm-3">Auth Type</dt>
+      <dd class="col-sm-9">{{ environment.get_auth_type_display }}</dd>
+      <dt class="col-sm-3">Default</dt>
+      <dd class="col-sm-9">{% if environment.is_default %}Yes{% else %}No{% endif %}</dd>
+      <dt class="col-sm-3">Notes</dt>
+      <dd class="col-sm-9">{{ environment.notes|default:"—" }}</dd>
+      <dt class="col-sm-3">Created</dt>
+      <dd class="col-sm-9">{{ environment.created_at }}</dd>
+    </dl>
+  </div>
+</div>
+{% endblock %}

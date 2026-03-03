@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}AI Builder{% endblock %}
+{% block page_title %}AI Test Builder{% endblock %}
+
+{% block extra_head %}
+<style>
+  #chat-container {
+    height: 60vh; overflow-y: auto; background: #f8f9fa;
+    border: 1px solid #dee2e6; border-radius: .375rem; padding: 1rem;
+  }
+  .chat-message { margin-bottom: 1rem; }
+  .chat-message.user .bubble { background: #0d6efd; color: #fff; margin-left: auto; }
+  .chat-message.assistant .bubble { background: #fff; border: 1px solid #dee2e6; }
+  .bubble { padding: .5rem 1rem; border-radius: .5rem; max-width: 75%; display: inline-block; }
+  pre { background: #1e2a3a; color: #e0e8f0; padding: 1rem; border-radius: .375rem; overflow-x: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-robot me-2"></i>AI Chat
+      </div>
+      <div class="card-body p-2">
+        <div id="chat-container"></div>
+      </div>
+      <div class="card-footer bg-white">
+        <form id="chat-form" class="d-flex gap-2">
+          {% csrf_token %}
+          <input type="text" id="chat-input" class="form-control" placeholder="Describe the test you want to build..." required>
+          <button type="submit" class="btn btn-primary" id="send-btn">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Generated Script</div>
+      <div class="card-body p-2">
+        <pre id="script-output" class="mb-0" style="min-height:200px; font-size:.8rem;">No script generated yet.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const chatContainer = document.getElementById('chat-container');
+const chatForm = document.getElementById('chat-form');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+const scriptOutput = document.getElementById('script-output');
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+function appendMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = `chat-message ${role}`;
+  div.innerHTML = `<div class="bubble">${text.replace(/\n/g, '<br>')}</div>`;
+  chatContainer.appendChild(div);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const message = chatInput.value.trim();
+  if (!message) return;
+  appendMessage('user', message);
+  chatInput.value = '';
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending…';
+  try {
+    const resp = await fetch('/builder/chat/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+      body: JSON.stringify({message}),
+    });
+    const data = await resp.json();
+    appendMessage('assistant', data.reply || 'No response.');
+    if (data.script) {
+      scriptOutput.textContent = data.script;
+    }
+  } catch (err) {
+    appendMessage('assistant', 'Error: ' + err.message);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+    chatInput.focus();
+  }
+});
+</script>
+{% endblock %}

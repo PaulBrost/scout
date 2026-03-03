@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Suites{% endblock %}
+{% block page_title %}Test Suites{% endblock %}
+
+{% block topbar_actions %}
+<a href="/suites/new/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Suite</a>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+    </select>
+    <span class="text-muted small">entries</span>
+  </div>
+  <form method="get" class="d-flex gap-2">
+    <input type="hidden" name="page_size" value="{{ page_size }}">
+    <input type="text" name="search" class="form-control form-control-sm" placeholder="Search…" value="{{ search }}" style="width:220px">
+    <button class="btn btn-sm btn-outline-secondary">Search</button>
+    {% if search %}<a href="?page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
+  </form>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th><a href="?sort=name&dir={% if sort == 'name' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Name {% if sort == 'name' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th>Environment</th>
+          <th><a href="?sort=scripts&dir={% if sort == 'scripts' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Scripts {% if sort == 'scripts' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th>Last Run</th>
+          <th>Last Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for suite in suites %}
+        <tr>
+          <td>
+            <a href="/suites/{{ suite.id }}/">{{ suite.name }}</a>
+            {% if suite.description %}<div class="text-muted small">{{ suite.description|truncatechars:60 }}</div>{% endif %}
+          </td>
+          <td>{{ suite.environment_name|default:"—" }}</td>
+          <td>{{ suite.script_count }}</td>
+          <td class="text-muted small">{{ suite.last_run_at|default:"Never" }}</td>
+          <td>
+            {% if suite.last_run_status %}
+            <span class="status-badge status-{{ suite.last_run_status }}">{{ suite.last_run_status }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="/suites/{{ suite.id }}/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+            <button class="btn btn-sm btn-success" onclick="runSuite('{{ suite.id }}', '{{ suite.name|escapejs }}')">
+              <i class="bi bi-play-fill"></i> Run
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-5">No suites yet. <a href="/suites/new/">Create one</a>.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
+  {% if total_pages > 1 %}
+  <nav><ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">«</a></li>
+    {% for pg in page_range %}
+    {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">{{ pg }}</a></li>
+    {% endif %}
+    {% endfor %}
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">»</a></li>
+  </ul></nav>
+  {% endif %}
+</div>
+
+<script>
+function updateParam(key, val) {
+  var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function runSuite(id, name) {
+  if (!confirm('Run suite: ' + name + '?')) return;
+  fetch('/suites/' + id + '/run/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(r => r.json()).then(d => {
+    if (d.runId) window.location = '/runs/' + d.runId + '/';
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  });
+}
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+</script>
+{% endblock %}

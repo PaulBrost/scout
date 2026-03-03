@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Test Scripts{% endblock %}
+{% block page_title %}Test Scripts{% endblock %}
+
+{% block topbar_actions %}
+<a href="/builder/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Script</a>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+    </select>
+    <span class="text-muted small">entries</span>
+    {% if category_filter %}
+    <a href="?page_size={{ page_size }}&search={{ search }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-x"></i> {{ category_filter }}
+    </a>
+    {% endif %}
+  </div>
+  <form method="get" class="d-flex gap-2">
+    <input type="hidden" name="page_size" value="{{ page_size }}">
+    {% if category_filter %}<input type="hidden" name="category" value="{{ category_filter }}">{% endif %}
+    <input type="text" name="search" class="form-control form-control-sm" placeholder="Search scripts…" value="{{ search }}" style="width:240px">
+    <button class="btn btn-sm btn-outline-secondary">Search</button>
+    {% if search %}<a href="?page_size={{ page_size }}{% if category_filter %}&category={{ category_filter }}{% endif %}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
+  </form>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Script Path</th>
+          <th>Item</th>
+          <th>Category</th>
+          <th>Description</th>
+          <th>Source</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sc in scripts %}
+        <tr>
+          <td class="font-monospace small">
+            <a href="/builder/?file={{ sc.script_path|urlencode }}">{{ sc.script_path }}</a>
+          </td>
+          <td class="small">
+            {% if sc.item_id %}
+            <a href="/items/{{ sc.item_numeric_id|default:sc.item_id }}/">{{ sc.item_id }}</a>
+            {% if sc.item_title %}<div class="text-muted">{{ sc.item_title|truncatechars:40 }}</div>{% endif %}
+            {% elif sc.assessment_id %}
+            <span class="text-muted">assessment</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if sc.category %}
+            <a href="?category={{ sc.category }}&page_size={{ page_size }}" class="badge bg-light text-dark text-decoration-none">{{ sc.category }}</a>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ sc.description|default:"—"|truncatechars:60 }}</td>
+          <td>
+            {% if sc.source == 'registered' %}
+            <span class="badge bg-success">registered</span>
+            {% else %}
+            <span class="badge bg-light text-dark">filesystem</span>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-pencil-square"></i> Edit
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-5">No test scripts found.
+          {% if not search and not category_filter %}
+          <a href="/builder/">Create one in the Builder</a>.
+          {% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
+  {% if total_pages > 1 %}
+  <nav><ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">«</a></li>
+    {% for pg in page_range %}
+    {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">{{ pg }}</a></li>
+    {% endif %}
+    {% endfor %}
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&category={{ category_filter }}">»</a></li>
+  </ul></nav>
+  {% endif %}
+</div>
+
+<script>
+function updateParam(key, val) {
+  var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+</script>
+{% endblock %}

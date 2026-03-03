@@ -1,0 +1,31 @@
+{# Reusable table controls: page-size select + search input (top-right) #}
+{# Expects context: page_size, search, url (current URL base) #}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updatePageSize(this.value)">
+      {% for size in page_size_options %}
+      <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+    <span class="text-muted small">entries</span>
+  </div>
+  <form method="get" class="d-flex gap-2">
+    {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+    {% if direction %}<input type="hidden" name="dir" value="{{ direction }}">{% endif %}
+    <input type="hidden" name="page_size" value="{{ page_size }}">
+    <input type="text" name="search" class="form-control form-control-sm" placeholder="Search..." value="{{ search|default:'' }}" style="width:220px">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Search</button>
+    {% if search %}
+    <a href="?{% if sort %}sort={{ sort }}&dir={{ direction }}&{% endif %}page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">Clear</a>
+    {% endif %}
+  </form>
+</div>
+<script>
+function updatePageSize(size) {
+  var url = new URL(window.location);
+  url.searchParams.set('page_size', size);
+  url.searchParams.set('page', 1);
+  window.location = url.toString();
+}
+</script>

@@ -1,0 +1,259 @@
+"""SCOUT — Playwright Execution Engine
+Spawns Playwright test processes, captures output, parses results.
+"""
+import os
+import subprocess
+import json
+import time
+import tempfile
+import re
+from pathlib import Path
+from django.conf import settings
+from django.db import connection
+
+
+def find_artifacts(script_path):
+    """Scan test-results/ for trace and video artifacts."""
+    results_dir = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / 'test-results'
+    trace_path = None
+    video_path = None
+
+    try:
+        if not results_dir.exists():
+            return trace_path, video_path
+
+        basename = Path(script_path).stem.replace('.', '-')
+        for entry in results_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            if not entry.name.lower().startswith(basename.lower()):
+                continue
+            for f in entry.iterdir():
+                if not trace_path and f.name == 'trace.zip':
+                    trace_path = f'test-results/{entry.name}/trace.zip'
+                if not video_path and f.suffix in ('.webm', '.mp4'):
+                    video_path = f'test-results/{entry.name}/{f.name}'
+    except Exception:
+        pass
+
+    return trace_path, video_path
+
+
+def extract_error_message(stdout, stderr, json_report):
+    """Extract a meaningful error from Playwright output."""
+    if json_report and json_report.get('suites'):
+        errors = []
+
+        def walk_suites(suites):
+            for suite in suites:
+                for spec in suite.get('specs', []):
+                    for test in spec.get('tests', []):
+                        for result in test.get('results', []):
+                            if result.get('status') in ('failed', 'timedOut'):
+                                msg = (result.get('error') or {}).get('message', '')
+                                if msg:
+                                    errors.append(f"{spec['title']}: {msg.split(chr(10))[0]}")
+                walk_suites(suite.get('suites', []))
+
+        walk_suites(json_report['suites'])
+        if errors:
+            return '; '.join(errors)[:500]
+
+    # Fallback: extract from stdout
+    error_lines = []
+    capturing = False
+    for line in stdout.split('\n'):
+        if re.search(r'Error:|AssertionError:|TimeoutError:|expect\(', line):
+            capturing = True
+        if capturing:
+            error_lines.append(line.strip())
+            if len(error_lines) >= 5:
+                break
+    if error_lines:
+        return '\n'.join(error_lines)[:500]
+
+    if stderr.strip():
+        return stderr.strip().split('\n')[0][:500]
+
+    return 'Test failed (see execution log for details)'
+
+
+def execute_script(script_path, project='', timeout=None, env_vars=None):
+    """Execute a single Playwright test script."""
+    if timeout is None:
+        timeout = settings.SCOUT_SCRIPT_TIMEOUT / 1000  # convert ms to seconds
+
+    tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+    project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
+    full_path = tests_dir / script_path
+
+    if not full_path.exists():
+        return {
+            'status': 'error',
+            'duration_ms': 0,
+            'error_message': f'Script not found: {full_path}',
+            'execution_log': f'Error: Script file does not exist at {full_path}',
+            'json_report': None,
+            'trace_path': None,
+            'video_path': None,
+        }
+
+    results_dir = project_root / 'test-results'
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
+
+    args = ['npx', 'playwright', 'test', str(full_path), '--reporter=list,json', '--retries=0']
+    if project:
+        args.append(f'--project={project}')
+
+    env = os.environ.copy()
+    env['PLAYWRIGHT_JSON_OUTPUT_NAME'] = str(json_file)
+    env['FORCE_COLOR'] = '0'
+    env['CI'] = '1'
+    if env_vars:
+        env.update(env_vars)
+
+    start_time = time.time()
+    timed_out = False
+
+    try:
+        proc = subprocess.Popen(
+            args,
+            cwd=str(project_root),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout_bytes, stderr_bytes = proc.communicate()
+            exit_code = -1
+            timed_out = True
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        return {
+            'status': 'error',
+            'duration_ms': duration_ms,
+            'error_message': f'Process error: {e}',
+            'execution_log': f'Failed to spawn process: {e}',
+            'json_report': None,
+            'trace_path': None,
+            'video_path': None,
+        }
+
+    duration_ms = int((time.time() - start_time) * 1000)
+    stdout = stdout_bytes.decode('utf-8', errors='replace')
+    stderr = stderr_bytes.decode('utf-8', errors='replace')
+
+    # Build execution log
+    log_lines = [
+        f'[0ms] Running: {" ".join(args)}',
+        f'[0ms] CWD: {project_root}',
+        '',
+    ]
+    if stdout.strip():
+        log_lines += ['-- Playwright Output -----------------', stdout.strip()]
+    if stderr.strip():
+        log_lines += ['', '-- Stderr ----------------------------', stderr.strip()]
+    log_lines += ['']
+    if timed_out:
+        log_lines.append(f'[{duration_ms}ms] TIMED OUT ({timeout}s limit)')
+    elif exit_code == 0:
+        log_lines.append(f'[{duration_ms}ms] Passed ({duration_ms / 1000:.1f}s)')
+    else:
+        log_lines.append(f'[{duration_ms}ms] Failed (exit code {exit_code}) ({duration_ms / 1000:.1f}s)')
+
+    execution_log = '\n'.join(log_lines)
+
+    # Parse JSON report
+    json_report = None
+    try:
+        if json_file.exists():
+            json_report = json.loads(json_file.read_text())
+            json_file.unlink()
+    except Exception:
+        pass
+
+    # Determine status
+    if timed_out:
+        status = 'error'
+        error_message = f'Timeout: Script exceeded {timeout}s limit'
+    elif exit_code == 0:
+        status = 'passed'
+        error_message = None
+    else:
+        status = 'failed'
+        error_message = extract_error_message(stdout, stderr, json_report)
+
+    trace_path, video_path = find_artifacts(script_path)
+
+    return {
+        'status': status,
+        'duration_ms': duration_ms,
+        'error_message': error_message,
+        'execution_log': execution_log,
+        'json_report': json_report,
+        'exit_code': exit_code,
+        'trace_path': trace_path,
+        'video_path': video_path,
+    }
+
+
+def execute_run(run_id, script_paths, options=None):
+    """Execute all scripts in a run sequentially, updating DB as each completes."""
+    options = options or {}
+    passed = failed = errors = 0
+
+    for script_path in script_paths:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE test_run_scripts SET status = 'running', started_at = now() WHERE run_id = %s AND script_path = %s",
+                [run_id, script_path]
+            )
+
+        try:
+            result = execute_script(
+                script_path,
+                project=options.get('project', ''),
+                env_vars=options.get('env'),
+            )
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE test_run_scripts
+                       SET status = %s, duration_ms = %s, error_message = %s,
+                           execution_log = %s, trace_path = %s, video_path = %s, completed_at = now()
+                       WHERE run_id = %s AND script_path = %s""",
+                    [result['status'], result['duration_ms'], result['error_message'],
+                     result['execution_log'], result['trace_path'], result['video_path'],
+                     run_id, script_path]
+                )
+            if result['status'] == 'passed':
+                passed += 1
+            elif result['status'] == 'error':
+                errors += 1
+            else:
+                failed += 1
+        except Exception as e:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE test_run_scripts
+                       SET status = 'error', error_message = %s, execution_log = %s, completed_at = now()
+                       WHERE run_id = %s AND script_path = %s""",
+                    [f'Execution engine error: {e}', f'Internal error: {e}', run_id, script_path]
+                )
+            errors += 1
+
+    run_status = 'completed' if (failed + errors) == 0 else 'failed'
+    summary = json.dumps({'passed': passed, 'failed': failed, 'errors': errors, 'total': len(script_paths)})
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE test_runs SET status = %s, completed_at = now(), summary = %s WHERE id = %s",
+            [run_status, summary, run_id]
+        )
+
+    print(f'[Executor] Run {str(run_id)[:8]} complete: {passed} passed, {failed} failed, {errors} errors')

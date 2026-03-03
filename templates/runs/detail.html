@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Run Detail{% endblock %}
+{% block page_title %}Run Detail{% endblock %}
+
+{% block topbar_actions %}
+{% if run.suite_id %}
+<a href="/suites/{{ run.suite_id }}/" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-collection"></i> {{ run.suite_name }}
+</a>
+{% endif %}
+<a href="/runs/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Status</div>
+        <div class="mt-1"><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Trigger</div>
+        <div class="fw-semibold mt-1">{{ run.trigger_type }}</div>
+      </div>
+    </div>
+  </div>
+  {% if run.summary %}
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Results</div>
+        <div class="mt-1">
+          <span class="text-success fw-bold">{{ run.summary.passed|default:0 }} passed</span>
+          / <span class="text-danger fw-bold">{{ run.summary.failed|default:0 }} failed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Run ID</div>
+        <div class="mt-1 font-monospace" style="font-size:.72rem">{{ run.id }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if run.notes %}
+<div class="alert alert-secondary py-2 small mb-4">{{ run.notes }}</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+    Script Results
+    <span class="badge bg-secondary">{{ script_results|length }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Script</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Error</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sr in script_results %}
+        <tr>
+          <td class="font-monospace small">{{ sr.script_path }}</td>
+          <td><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
+          <td>{% if sr.duration_ms %}{{ sr.duration_ms }}ms{% else %}—{% endif %}</td>
+          <td class="text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ sr.error_message|default:'' }}">
+            {{ sr.error_message|default:"" }}
+          </td>
+          <td class="text-nowrap">
+            {% if sr.execution_log %}
+            <button class="btn btn-sm btn-outline-secondary" onclick="showLog('{{ sr.id }}')">
+              <i class="bi bi-terminal"></i> Log
+            </button>
+            {% endif %}
+            <a href="/builder/?file={{ sr.script_path }}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted text-center py-4">No script results yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Execution Log</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <pre id="logContent" class="p-3 mb-0" style="background:#1e2a3a;color:#cdd5e0;font-size:.78rem;max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showLog(id) {
+  fetch('/runs/{{ run.id }}/script/' + id + '/')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('logContent').textContent = d.execution_log || 'No log available.';
+      new bootstrap.Modal(document.getElementById('logModal')).show();
+    });
+}
+</script>
+{% endblock %}

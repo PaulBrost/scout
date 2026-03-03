@@ -1,0 +1,7 @@
+Django>=5.2
+psycopg2-binary
+django-q2
+python-decouple
+requests
+whitenoise
+dj-database-url

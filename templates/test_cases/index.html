@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Test Cases{% endblock %}
+{% block page_title %}Test Cases{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex gap-2 mb-3">
+  <input type="text" name="search" class="form-control form-control-sm" placeholder="Search scripts..." value="{{ search }}" style="max-width:300px">
+  <button type="submit" class="btn btn-sm btn-outline-secondary">Search</button>
+  {% if search %}<a href="/test-cases/" class="btn btn-sm btn-outline-danger">Clear</a>{% endif %}
+</form>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Script Path</th>
+          <th>Item</th>
+          <th>Assessment</th>
+          <th>Category</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for script in scripts %}
+        <tr>
+          <td><a href="/test-cases/{{ script.id }}/"><code>{{ script.script_path }}</code></a></td>
+          <td>{{ script.item.item_id|default:"—" }}</td>
+          <td>{{ script.assessment.name|default:"—" }}</td>
+          <td>{{ script.category|default:"—" }}</td>
+          <td>{{ script.updated_at|date:"Y-m-d" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted text-center py-4">No test scripts found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Review {{ review.id|slice:":8" }}{% endblock %}
+{% block page_title %}Review Detail{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Review ID</dt>
+      <dd class="col-sm-9"><code>{{ review.id }}</code></dd>
+      <dt class="col-sm-3">Status</dt>
+      <dd class="col-sm-9"><span class="status-badge status-{{ review.status }}">{{ review.status }}</span></dd>
+      <dt class="col-sm-3">Analysis Type</dt>
+      <dd class="col-sm-9">{{ review.analysis.analysis_type }}</dd>
+      <dt class="col-sm-3">Issues Found</dt>
+      <dd class="col-sm-9">{{ review.analysis.issues_found }}</dd>
+      <dt class="col-sm-3">Reviewer</dt>
+      <dd class="col-sm-9">{{ review.reviewer.username|default:"—" }}</dd>
+      <dt class="col-sm-3">Notes</dt>
+      <dd class="col-sm-9">{{ review.notes|default:"—" }}</dd>
+      <dt class="col-sm-3">Bug URL</dt>
+      <dd class="col-sm-9">{% if review.bug_url %}<a href="{{ review.bug_url }}" target="_blank">{{ review.bug_url }}</a>{% else %}—{% endif %}</dd>
+      <dt class="col-sm-3">Reviewed At</dt>
+      <dd class="col-sm-9">{{ review.reviewed_at|default:"—" }}</dd>
+    </dl>
+  </div>
+</div>
+{% endblock %}

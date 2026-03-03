@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block title %}Test Builder{% endblock %}
+{% block page_title %}AI Test Builder{% endblock %}
+
+{% block topbar_actions %}
+<a href="/test-cases/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list"></i> All Scripts</a>
+{% if file_path %}
+<a href="/builder/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus"></i> New</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 h-100">
+
+  <!-- Left: Chat panel -->
+  <div class="col-md-5 d-flex flex-column" style="min-height:70vh">
+    {% if assessment %}
+    <div class="alert alert-info alert-sm py-2 px-3 mb-2 small">
+      <i class="bi bi-info-circle"></i>
+      Context: <strong>{{ assessment.name }}</strong>
+      {% if assessment.subject %} · {{ assessment.subject }}{% endif %}
+      {% if assessment.grade %} · Grade {{ assessment.grade }}{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-robot me-1"></i> AI Chat</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()" title="New conversation">
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      </div>
+
+      <!-- Message history -->
+      <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
+        <div class="text-muted text-center small py-4" id="chatPlaceholder">
+          Describe the test you want to create, or ask for help modifying the script on the right.
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div class="card-footer bg-white border-top p-2">
+        <div class="d-flex gap-2">
+          <textarea id="chatInput" class="form-control form-control-sm" rows="2"
+            placeholder="e.g. Write a visual regression test for item 1234…"
+            onkeydown="handleKey(event)"></textarea>
+          <button class="btn btn-primary btn-sm align-self-end" onclick="sendMessage()" id="sendBtn">
+            <i class="bi bi-send"></i>
+          </button>
+        </div>
+        <div id="chatStatus" class="text-muted small mt-1" style="min-height:1.2em"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Code editor panel -->
+  <div class="col-md-7 d-flex flex-column" style="min-height:70vh">
+    <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
+          <span class="fw-semibold font-monospace small" id="fileLabel">
+            {{ filename|default:"untitled.spec.js" }}
+          </span>
+          <span id="dirtyIndicator" class="text-warning small" style="display:none">● unsaved</span>
+        </div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" title="Syntax check" id="dryRunBtn">
+            <i class="bi bi-check2-circle"></i> Check
+          </button>
+          <button class="btn btn-sm btn-outline-primary" onclick="copyCode()" title="Copy to clipboard">
+            <i class="bi bi-clipboard"></i>
+          </button>
+          <button class="btn btn-sm btn-success" onclick="saveFile()" id="saveBtn">
+            <i class="bi bi-save"></i> Save
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-grow-1 d-flex flex-column p-0">
+        <textarea id="codeEditor" class="form-control font-monospace border-0 flex-grow-1 rounded-0"
+          style="min-height:55vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
+          spellcheck="false"
+          oninput="markDirty()"
+          placeholder="// AI-generated test code will appear here…">{{ file_content|default:'' }}</textarea>
+      </div>
+
+      <div id="dryRunResult" class="card-footer bg-white border-top py-2 px-3 small" style="display:none"></div>
+    </div>
+
+    <!-- Meta / history accordion -->
+    {% if file_path %}
+    <div class="accordion mt-2 border-0 shadow-sm" id="metaAccordion">
+      <div class="accordion-item border-0">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed py-2 small fw-semibold" type="button"
+            data-bs-toggle="collapse" data-bs-target="#metaPanel">
+            Script Details &amp; Run History ({{ run_history|length }})
+          </button>
+        </h2>
+        <div id="metaPanel" class="accordion-collapse collapse">
+          <div class="accordion-body pt-0 pb-2">
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">Item ID</label>
+                <select id="metaItemId" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for item in items %}
+                  <option value="{{ item.item_id }}"
+                    {% if script_meta and script_meta.item_id == item.item_id %}selected{% endif %}>
+                    {{ item.item_id }}{% if item.title %} — {{ item.title|truncatechars:40 }}{% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold mb-1">Assessment</label>
+                <select id="metaAssessmentId" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for a in assessments %}
+                  <option value="{{ a.id }}"
+                    {% if script_meta and script_meta.assessment_id == a.id|stringformat:"s" %}selected{% endif %}>
+                    {{ a.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Category</label>
+                <select id="metaCategory" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for cat in "visual_regression,content_validation,feature_functional,workflow,scoring_validation"|split:"," %}
+                  <option value="{{ cat }}" {% if script_meta and script_meta.category == cat %}selected{% endif %}>{{ cat }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label small fw-semibold mb-1">Description</label>
+                <input type="text" id="metaDescription" class="form-control form-control-sm"
+                  value="{{ script_meta.description|default:'' }}" placeholder="Brief description">
+              </div>
+              <div class="col-12">
+                <button class="btn btn-sm btn-outline-secondary" onclick="saveMeta()">
+                  <i class="bi bi-save"></i> Save Metadata
+                </button>
+                <span id="metaSaveStatus" class="text-muted small ms-2"></span>
+              </div>
+            </div>
+
+            {% if run_history %}
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light"><tr><th>Status</th><th>Suite</th><th>Duration</th><th>Ran</th></tr></thead>
+              <tbody>
+                {% for rh in run_history %}
+                <tr>
+                  <td><span class="status-badge status-{{ rh.status }}">{{ rh.status }}</span></td>
+                  <td class="small text-muted">{{ rh.suite_name|default:rh.trigger_type|default:"—" }}</td>
+                  <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms }}ms{% else %}—{% endif %}</td>
+                  <td class="small text-muted">{{ rh.completed_at|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted small mb-0">No run history for this script.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+var conversationId = null;
+var currentFilePath = '{{ file_path|default:""|escapejs }}';
+var isDirty = false;
+
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+function markDirty() {
+  isDirty = true;
+  document.getElementById('dirtyIndicator').style.display = '';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function appendMessage(role, content) {
+  var placeholder = document.getElementById('chatPlaceholder');
+  if (placeholder) placeholder.remove();
+
+  var msgs = document.getElementById('chatMessages');
+  var div = document.createElement('div');
+  div.className = 'mb-3';
+
+  var isUser = role === 'user';
+  div.innerHTML = '<div class="d-flex ' + (isUser ? 'justify-content-end' : '') + '">' +
+    '<div class="p-2 rounded small" style="max-width:90%;' +
+    (isUser ? 'background:#0d6efd;color:#fff' : 'background:#f8f9fa;border:1px solid #dee2e6') + '">' +
+    '<pre style="white-space:pre-wrap;margin:0;font-family:inherit;font-size:inherit">' + escapeHtml(content) + '</pre>' +
+    '</div></div>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setStatus(msg, cls) {
+  var el = document.getElementById('chatStatus');
+  el.textContent = msg;
+  el.className = 'small mt-1 ' + (cls || 'text-muted');
+}
+
+function sendMessage() {
+  var input = document.getElementById('chatInput');
+  var msg = input.value.trim();
+  if (!msg) return;
+
+  var code = document.getElementById('codeEditor').value;
+  var sendBtn = document.getElementById('sendBtn');
+
+  appendMessage('user', msg);
+  input.value = '';
+  sendBtn.disabled = true;
+  setStatus('Thinking…', 'text-muted');
+
+  fetch('/builder/api/chat/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      message: msg,
+      conversationId: conversationId,
+      currentCode: code,
+      filename: document.getElementById('fileLabel').textContent.trim()
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    sendBtn.disabled = false;
+    if (d.error) {
+      setStatus('Error: ' + d.error, 'text-danger');
+      return;
+    }
+    conversationId = d.conversationId || conversationId;
+    appendMessage('assistant', d.response || '');
+
+    if (d.codeUpdate && d.codeUpdate.trim()) {
+      document.getElementById('codeEditor').value = d.codeUpdate;
+      markDirty();
+      setStatus('Code updated by AI.', 'text-success');
+    } else {
+      setStatus('', '');
+    }
+
+    if (d.toolsUsed && d.toolsUsed.length) {
+      setStatus('Tools used: ' + d.toolsUsed.join(', '), 'text-info');
+    }
+  })
+  .catch(err => {
+    sendBtn.disabled = false;
+    setStatus('Network error: ' + err.message, 'text-danger');
+  });
+}
+
+function clearChat() {
+  conversationId = null;
+  var msgs = document.getElementById('chatMessages');
+  msgs.innerHTML = '<div class="text-muted text-center small py-4" id="chatPlaceholder">Describe the test you want to create, or ask for help modifying the script on the right.</div>';
+  setStatus('', '');
+}
+
+function saveFile() {
+  var code = document.getElementById('codeEditor').value;
+  if (!code.trim()) { alert('No code to save.'); return; }
+
+  var saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+
+  var payload = {code: code};
+  if (currentFilePath) payload.path = currentFilePath;
+
+  fetch('/test-cases/api/save/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(d => {
+    saveBtn.disabled = false;
+    if (d.error) { alert('Save failed: ' + d.error); return; }
+    isDirty = false;
+    document.getElementById('dirtyIndicator').style.display = 'none';
+    if (d.path) {
+      currentFilePath = d.path;
+      document.getElementById('fileLabel').textContent = d.path.split('/').pop();
+    }
+    setStatus('Saved to ' + (d.path || currentFilePath), 'text-success');
+    setTimeout(() => setStatus('', ''), 3000);
+  })
+  .catch(err => {
+    saveBtn.disabled = false;
+    alert('Save error: ' + err.message);
+  });
+}
+
+function dryRun() {
+  var code = document.getElementById('codeEditor').value;
+  if (!code.trim()) return;
+
+  var btn = document.getElementById('dryRunBtn');
+  var result = document.getElementById('dryRunResult');
+  btn.disabled = true;
+  result.style.display = '';
+  result.innerHTML = '<span class="text-muted">Checking syntax…</span>';
+
+  fetch('/test-cases/api/dry-run/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({code: code})
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.success) {
+      result.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> ' + d.message + '</span>';
+    } else {
+      result.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> <pre class="d-inline" style="font-size:inherit">' + escapeHtml(d.error || 'Unknown error') + '</pre></span>';
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    result.innerHTML = '<span class="text-danger">Error: ' + err.message + '</span>';
+  });
+}
+
+function copyCode() {
+  var code = document.getElementById('codeEditor').value;
+  navigator.clipboard.writeText(code).then(() => {
+    setStatus('Copied to clipboard.', 'text-success');
+    setTimeout(() => setStatus('', ''), 2000);
+  });
+}
+
+function saveMeta() {
+  var path = currentFilePath;
+  if (!path) { alert('Save the file first.'); return; }
+  var statusEl = document.getElementById('metaSaveStatus');
+  statusEl.textContent = 'Saving…';
+
+  fetch('/test-cases/api/associate/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      scriptPath: path,
+      itemId: document.getElementById('metaItemId')?.value || null,
+      assessmentId: document.getElementById('metaAssessmentId')?.value || null,
+      category: document.getElementById('metaCategory')?.value || null,
+      description: document.getElementById('metaDescription')?.value || null
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    statusEl.textContent = d.ok ? 'Saved.' : ('Error: ' + d.error);
+    setTimeout(() => statusEl.textContent = '', 3000);
+  });
+}
+
+// Warn on unload if dirty
+window.addEventListener('beforeunload', function(e) {
+  if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+</script>
+{% endblock %}

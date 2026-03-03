@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{% if suite %}{{ suite.name }}{% else %}New Suite{% endif %}{% endblock %}
+{% block page_title %}{% if suite %}Edit Suite{% else %}New Suite{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+<a href="/suites/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+{% if suite %}
+<button class="btn btn-sm btn-success" onclick="runSuite()"><i class="bi bi-play-fill"></i> Run Now</button>
+<button class="btn btn-sm btn-outline-danger" onclick="deleteSuite()"><i class="bi bi-trash"></i></button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Suite Details</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Name *</label>
+          <input type="text" id="suiteName" class="form-control" value="{{ suite.name|default:'' }}" placeholder="e.g. Smoke Tests">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea id="suiteDesc" class="form-control" rows="2">{{ suite.description|default:'' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Environment</label>
+          <select id="suiteEnv" class="form-select">
+            <option value="">— None —</option>
+            {% for env in environments %}
+            <option value="{{ env.id }}" {% if suite and suite.environment_id == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Browser Profiles</label>
+          <div class="d-flex flex-wrap gap-3">
+            {% for profile in "chrome-desktop,firefox-desktop,edge-desktop,webkit-desktop,chromebook"|split:"," %}
+            <div class="form-check">
+              <input class="form-check-input browser-profile" type="checkbox" value="{{ profile }}" id="bp_{{ forloop.counter }}"
+                {% if suite and profile in suite.browser_profiles %}checked{% elif not suite and profile == 'chrome-desktop' %}checked{% endif %}>
+              <label class="form-check-label small" for="bp_{{ forloop.counter }}">{{ profile }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveSuite()">
+          <i class="bi bi-save"></i> {% if suite %}Save Changes{% else %}Create Suite{% endif %}
+        </button>
+        <span id="saveStatus" class="ms-2 small text-muted"></span>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+        Test Scripts
+        <span id="scriptCount" class="badge bg-secondary">0</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="p-2 border-bottom">
+          <input type="text" id="scriptSearch" class="form-control form-control-sm" placeholder="Filter scripts…" oninput="filterScripts(this.value)">
+        </div>
+        <div id="scriptList" style="max-height:420px;overflow-y:auto">
+          {% for script in available_scripts %}
+          <label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom script-item hover-bg" style="cursor:pointer;margin:0">
+            <input type="checkbox" class="form-check-input script-check flex-shrink-0" value="{{ script.relativePath }}"
+              {% if script.relativePath in suite_scripts %}checked{% endif %}>
+            <div class="min-width-0" style="overflow:hidden">
+              <div class="small fw-semibold text-truncate">{{ script.name }}</div>
+              <div class="text-muted text-truncate" style="font-size:.7rem">{{ script.relativePath }} · {{ script.typeLabel }} · {{ script.testCount }} test{{ script.testCount|pluralize }}</div>
+            </div>
+          </label>
+          {% empty %}
+          <div class="text-muted text-center py-4 small">No test scripts found in PLAYWRIGHT_TESTS_DIR</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateCount() {
+  var n = document.querySelectorAll('.script-check:checked').length;
+  document.getElementById('scriptCount').textContent = n;
+}
+document.querySelectorAll('.script-check').forEach(c => c.addEventListener('change', updateCount));
+updateCount();
+
+function filterScripts(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.script-item').forEach(el => {
+    el.style.display = (q === '' || el.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
+function saveSuite() {
+  var name = document.getElementById('suiteName').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  var data = {
+    name: name,
+    description: document.getElementById('suiteDesc').value.trim() || null,
+    scripts: [...document.querySelectorAll('.script-check:checked')].map(c => c.value),
+    browser_profiles: [...document.querySelectorAll('.browser-profile:checked')].map(c => c.value),
+    environment_id: document.getElementById('suiteEnv').value || null,
+  };
+  {% if suite %}
+  var url = '/suites/api/update/{{ suite.id }}/';
+  var method = 'PUT';
+  {% else %}
+  var url = '/suites/api/create/';
+  var method = 'POST';
+  {% endif %}
+  document.getElementById('saveStatus').textContent = 'Saving…';
+  fetch(url, {
+    method: method,
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { document.getElementById('saveStatus').textContent = 'Error: ' + d.error; return; }
+    if (d.redirect) window.location = d.redirect;
+    else document.getElementById('saveStatus').textContent = 'Saved ✓';
+  });
+}
+
+{% if suite %}
+function runSuite() {
+  if (!confirm('Run suite "{{ suite.name|escapejs }}" now?')) return;
+  fetch('/suites/{{ suite.id }}/run/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(r => r.json()).then(d => {
+    if (d.runId) window.location = '/runs/' + d.runId + '/';
+    else alert('Error: ' + (d.error || 'Unknown'));
+  });
+}
+function deleteSuite() {
+  if (!confirm('Delete suite "{{ suite.name|escapejs }}"? This cannot be undone.')) return;
+  fetch('/suites/api/delete/{{ suite.id }}/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(() => { window.location = '/suites/'; });
+}
+{% endif %}
+
+function getCookie(name) {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+</script>
+{% endblock %}

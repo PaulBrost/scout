@@ -1,0 +1,36 @@
+{# Reusable pagination: showing X-Y of N + Bootstrap pagination controls #}
+{# Expects context: page, page_size, total, total_pages #}
+{% if total > 0 %}
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small">
+    Showing {{ start_item }}–{{ end_item }} of {{ total }}
+  </div>
+  {% if total_pages > 1 %}
+  <nav>
+    <ul class="pagination pagination-sm mb-0">
+      <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+        <a class="page-link" href="?{% include 'partials/page_params.html' with p=1 %}">«</a>
+      </li>
+      <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+        <a class="page-link" href="?{% include 'partials/page_params.html' with p=page|add:'-1' %}">‹</a>
+      </li>
+      {% for pg in page_range %}
+      {% if pg == '...' %}
+      <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% else %}
+      <li class="page-item {% if pg == page %}active{% endif %}">
+        <a class="page-link" href="?{% include 'partials/page_params.html' with p=pg %}">{{ pg }}</a>
+      </li>
+      {% endif %}
+      {% endfor %}
+      <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+        <a class="page-link" href="?{% include 'partials/page_params.html' with p=page|add:'1' %}">›</a>
+      </li>
+      <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+        <a class="page-link" href="?{% include 'partials/page_params.html' with p=total_pages %}">»</a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}

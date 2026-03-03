@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCOUT — Login</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #1e2a3a; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-card { background: #fff; border-radius: .5rem; padding: 2.5rem; width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    .login-logo { text-align: center; margin-bottom: 1.5rem; font-size: 2rem; font-weight: 800; color: #1e2a3a; letter-spacing: .05em; }
+    .login-logo span { color: #4da3ff; }
+    .login-subtitle { text-align: center; color: #6c757d; font-size: .875rem; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-logo">SCOUT <span>v2</span></div>
+    <div class="login-subtitle">NAEP Automated Testing System</div>
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Username</label>
+        <input type="text" name="username" class="form-control" autofocus required>
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Password</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100">Sign In</button>
+    </form>
+  </div>
+</body>
+</html>
