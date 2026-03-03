@@ -100,11 +100,13 @@ DASHBOARD_AUTH = config('DASHBOARD_AUTH', default=True, cast=bool)
 AI_PROVIDER = config('AI_PROVIDER', default='mock')
 MOCK_AI_MODE = config('MOCK_AI_MODE', default='clean')
 
-AZURE_ENDPOINT = config('AZURE_ENDPOINT', default='')
-AZURE_API_KEY = config('AZURE_API_KEY', default='')
-AZURE_TEXT_DEPLOYMENT = config('AZURE_TEXT_DEPLOYMENT', default='gpt-4o')
-AZURE_VISION_DEPLOYMENT = config('AZURE_VISION_DEPLOYMENT', default='gpt-4o')
-AZURE_API_VERSION = config('AZURE_API_VERSION', default='2024-02-01')
+AZURE_ENDPOINT = config('AZURE_AI_ENDPOINT', default='')
+AZURE_API_KEY = config('AZURE_AI_API_KEY', default='')
+AZURE_TEXT_DEPLOYMENT = config('AZURE_AI_TEXT_DEPLOYMENT', default='gpt-4o')
+AZURE_VISION_DEPLOYMENT = config('AZURE_AI_VISION_DEPLOYMENT', default='gpt-4o')
+AZURE_API_VERSION = config('AZURE_AI_API_VERSION', default='2024-02-01')
+
+CSRF_TRUSTED_ORIGINS = [o for o in config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv()) if o]
 
 OLLAMA_HOST = config('OLLAMA_HOST', default='localhost:11434')
 OLLAMA_TEXT_MODEL = config('OLLAMA_TEXT_MODEL', default='qwen2.5:14b')

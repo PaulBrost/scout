@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install Playwright Chromium browser + OS dependencies
+RUN npx playwright install --with-deps chromium
+
 WORKDIR /app
 
 # Install Python dependencies
@@ -20,10 +23,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Collect static files (whitenoise serves them)
-RUN python manage.py collectstatic --noinput || true
+RUN SECRET_KEY=build-placeholder python manage.py collectstatic --noinput
+
+# Create mount point for Playwright project
+RUN mkdir -p /playwright-project
 
 # Non-root user for security
-RUN useradd -m scout && chown -R scout:scout /app
+RUN useradd -m scout && chown -R scout:scout /app /playwright-project
 USER scout
 
 EXPOSE 8000

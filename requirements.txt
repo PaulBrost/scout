@@ -5,3 +5,4 @@ python-decouple
 requests
 whitenoise
 dj-database-url
+gunicorn

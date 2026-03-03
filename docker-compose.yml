@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   db:
     image: postgres:16-alpine
@@ -25,11 +23,12 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://scout:${POSTGRES_PASSWORD:-scout}@db:5432/scout
+      PLAYWRIGHT_PROJECT_ROOT: /playwright-project
+      PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
     ports:
-      - "8000:8000"
+      - "${SCOUT_PORT:-8009}:8000"
     volumes:
-      - tests_dir:/tests
-      - baselines:/baselines
+      - ${PLAYWRIGHT_PROJECT_PATH:-./.playwright-placeholder}:/playwright-project
     command: >
       sh -c "python manage.py migrate --noinput &&
              gunicorn scout.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile -"
@@ -43,12 +42,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://scout:${POSTGRES_PASSWORD:-scout}@db:5432/scout
+      PLAYWRIGHT_PROJECT_ROOT: /playwright-project
+      PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
     volumes:
-      - tests_dir:/tests
-      - baselines:/baselines
+      - ${PLAYWRIGHT_PROJECT_PATH:-./.playwright-placeholder}:/playwright-project
     command: python manage.py qcluster
 
 volumes:
   pgdata:
-  tests_dir:
-  baselines:
