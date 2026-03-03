@@ -1,28 +1,9 @@
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: scout
-      POSTGRES_USER: scout
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scout}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U scout"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   web:
     build: .
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://scout:${POSTGRES_PASSWORD:-scout}@db:5432/scout
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
     ports:
@@ -36,12 +17,8 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://scout:${POSTGRES_PASSWORD:-scout}@db:5432/scout
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
     volumes:
@@ -51,6 +28,3 @@ services:
                npm install --prefix /playwright-project;
              fi &&
              python manage.py qcluster"
-
-volumes:
-  pgdata:
