@@ -9,34 +9,13 @@
   <div class="card-body">
     <!-- View mode -->
     <div id="viewMode">
-      <div class="mb-2">
-        <div class="small text-muted">ID</div>
-        <div class="font-monospace small">{{ assessment.id }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Name</div>
-        <div id="viewName">{{ assessment.name|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Subject</div>
-        <div id="viewSubject">{{ assessment.subject|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Grade</div>
-        <div id="viewGrade">{{ assessment.grade|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Year</div>
-        <div id="viewYear">{{ assessment.year|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Intro Screens</div>
-        <div id="viewIntroScreens">{{ assessment.intro_screens|default:"5" }}</div>
-      </div>
-      <div>
-        <div class="small text-muted">Environment</div>
-        <div>{{ assessment.environment_name|default:"—" }}</div>
-      </div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">ID</div><div class="small font-monospace">{{ assessment.id }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Name</div><div class="small" id="viewName">{{ assessment.name|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Subject</div><div class="small" id="viewSubject">{{ assessment.subject|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Grade</div><div class="small" id="viewGrade">{{ assessment.grade|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Year</div><div class="small" id="viewYear">{{ assessment.year|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Intro Screens</div><div class="small" id="viewIntroScreens">{{ assessment.intro_screens|default:"5" }}</div></div>
+      <div class="d-flex"><div class="small text-muted text-end me-2" style="min-width:110px">Environment</div><div class="small">{{ assessment.environment_name|default:"—" }}</div></div>
     </div>
     <!-- Edit mode -->
     <div id="editMode" style="display:none">

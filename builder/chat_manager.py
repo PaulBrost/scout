@@ -26,6 +26,11 @@ def build_tool_descriptions():
     lines = []
     for t in tools:
         params = t.get('parameters') or {}
+        if isinstance(params, str):
+            try:
+                params = json.loads(params)
+            except (json.JSONDecodeError, TypeError):
+                params = {}
         param_str = ''
         if params.get('required'):
             param_str = f" Parameters: {', '.join(params['required'])}"
@@ -327,8 +332,8 @@ def chat(message, conversation_id, current_code, filename):
     # Save conversation to DB
     with connection.cursor() as cursor:
         cursor.execute(
-            """INSERT INTO ai_conversations (id, messages, last_active_at)
-               VALUES (%s, %s, now())
+            """INSERT INTO ai_conversations (id, messages, created_at, last_active_at)
+               VALUES (%s, %s, now(), now())
                ON CONFLICT (id) DO UPDATE SET messages = EXCLUDED.messages, last_active_at = now()""",
             [conv_id, json.dumps(messages)]
         )

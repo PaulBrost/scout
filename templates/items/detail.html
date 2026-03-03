@@ -9,34 +9,13 @@
   <div class="card-body">
     <!-- View mode -->
     <div id="viewMode">
-      <div class="mb-2">
-        <div class="small text-muted">Item ID</div>
-        <div class="font-monospace small">{{ item.item_id }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Title</div>
-        <div id="viewTitle">{{ item.title|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Environment</div>
-        <div>{{ item.environment_name|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Assessment</div>
-        <div>{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Category</div>
-        <div id="viewCategory">{{ item.category|default:"—" }}</div>
-      </div>
-      <div class="mb-2">
-        <div class="small text-muted">Tier</div>
-        <div id="viewTier">{{ item.tier|default:"—" }}</div>
-      </div>
-      <div>
-        <div class="small text-muted">Languages</div>
-        <div id="viewLanguages">{{ item.languages|default:"—" }}</div>
-      </div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Item ID</div><div class="small font-monospace">{{ item.item_id }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Title</div><div class="small" id="viewTitle">{{ item.title|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Environment</div><div class="small">{{ item.environment_name|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Assessment</div><div class="small">{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Category</div><div class="small" id="viewCategory">{{ item.category|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Tier</div><div class="small" id="viewTier">{{ item.tier|default:"—" }}</div></div>
+      <div class="d-flex"><div class="small text-muted text-end me-2" style="min-width:110px">Languages</div><div class="small" id="viewLanguages">{{ item.languages|default:"—" }}</div></div>
     </div>
     <!-- Edit mode -->
     <div id="editMode" style="display:none">

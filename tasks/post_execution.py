@@ -121,7 +121,7 @@ def compare_baselines(run_id):
 
 def run_text_analysis(run_id):
     """Run AI text content analysis on test results for ai_content scripts."""
-    from ai.provider import get_provider
+    from ai.provider import get_provider_for_feature
 
     with connection.cursor() as cursor:
         # Get results for ai_content scripts
@@ -139,7 +139,7 @@ def run_text_analysis(run_id):
     if not results:
         return
 
-    provider = get_provider()
+    provider = get_provider_for_feature('text')
 
     for result in results:
         text = result.get('execution_log') or ''
@@ -165,7 +165,7 @@ def run_text_analysis(run_id):
 
 def run_visual_analysis(run_id):
     """Run AI visual layout analysis on screenshots for ai_visual scripts."""
-    from ai.provider import get_provider
+    from ai.provider import get_provider_for_feature
 
     project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
 
@@ -183,7 +183,7 @@ def run_visual_analysis(run_id):
     if not results:
         return
 
-    provider = get_provider()
+    provider = get_provider_for_feature('vision')
 
     for result in results:
         screenshot_path = project_root / result['screenshot_path']

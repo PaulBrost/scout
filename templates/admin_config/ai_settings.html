@@ -91,6 +91,12 @@
               </div>
               <button type="submit" class="btn btn-sm btn-primary">Save</button>
             </form>
+            <hr>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testProvider('chat')">
+              <span class="spinner-border spinner-border-sm d-none" id="test-spinner-chat"></span>
+              Test Connection
+            </button>
+            <div id="test-result-chat" class="mt-2"></div>
           </div>
         </div>
 
@@ -209,6 +215,68 @@
             </div>
           </div>
 
+          <!-- Per-feature Provider -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-semibold">Provider</div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Provider Type</label>
+                <select class="form-select form-select-sm" id="text-provider-type" onchange="onProviderTypeChange('text')">
+                  <option value="default" {% if text_provider_type == 'default' %}selected{% endif %}>Default (inherits global: {{ provider }})</option>
+                  <option value="azure" {% if text_provider_type == 'azure' %}selected{% endif %}>Azure</option>
+                  <option value="ollama" {% if text_provider_type == 'ollama' %}selected{% endif %}>Ollama</option>
+                  <option value="mock" {% if text_provider_type == 'mock' %}selected{% endif %}>Mock</option>
+                </select>
+              </div>
+              <div id="text-azure-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Endpoint URL</label>
+                  <input type="url" class="form-control form-control-sm" id="text-azure-endpoint" placeholder="https://your-resource.openai.azure.com">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">API Key</label>
+                  <input type="password" class="form-control form-control-sm" id="text-azure-apiKey" placeholder="API key">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Deployment</label>
+                  <input type="text" class="form-control form-control-sm" id="text-azure-deployment" placeholder="gpt-4o">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">API Version</label>
+                  <input type="text" class="form-control form-control-sm" id="text-azure-apiVersion" placeholder="2024-12-01-preview">
+                </div>
+              </div>
+              <div id="text-ollama-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Host</label>
+                  <input type="text" class="form-control form-control-sm" id="text-ollama-host" placeholder="localhost:11434">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Model</label>
+                  <input type="text" class="form-control form-control-sm" id="text-ollama-model" placeholder="llama3">
+                </div>
+              </div>
+              <div id="text-mock-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Mode</label>
+                  <select class="form-select form-select-sm" id="text-mock-mockAiMode">
+                    <option value="clean">Clean (no issues)</option>
+                    <option value="issues">Issues (returns sample issues)</option>
+                    <option value="error">Error (simulates failure)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-sm btn-primary" onclick="saveFeatureProvider('text')">Save Provider</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testProvider('text')">
+                  <span class="spinner-border spinner-border-sm d-none" id="test-spinner-text"></span>
+                  Test Connection
+                </button>
+              </div>
+              <div id="test-result-text" class="mt-2"></div>
+            </div>
+          </div>
+
           <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-semibold">What This Checks</div>
             <div class="card-body small text-muted">
@@ -287,6 +355,68 @@
             </div>
           </div>
 
+          <!-- Per-feature Provider -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-semibold">Provider</div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Provider Type</label>
+                <select class="form-select form-select-sm" id="vision-provider-type" onchange="onProviderTypeChange('vision')">
+                  <option value="default" {% if vision_provider_type == 'default' %}selected{% endif %}>Default (inherits global: {{ provider }})</option>
+                  <option value="azure" {% if vision_provider_type == 'azure' %}selected{% endif %}>Azure</option>
+                  <option value="ollama" {% if vision_provider_type == 'ollama' %}selected{% endif %}>Ollama</option>
+                  <option value="mock" {% if vision_provider_type == 'mock' %}selected{% endif %}>Mock</option>
+                </select>
+              </div>
+              <div id="vision-azure-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Endpoint URL</label>
+                  <input type="url" class="form-control form-control-sm" id="vision-azure-endpoint" placeholder="https://your-resource.openai.azure.com">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">API Key</label>
+                  <input type="password" class="form-control form-control-sm" id="vision-azure-apiKey" placeholder="API key">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Deployment</label>
+                  <input type="text" class="form-control form-control-sm" id="vision-azure-deployment" placeholder="gpt-4o">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">API Version</label>
+                  <input type="text" class="form-control form-control-sm" id="vision-azure-apiVersion" placeholder="2024-12-01-preview">
+                </div>
+              </div>
+              <div id="vision-ollama-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Host</label>
+                  <input type="text" class="form-control form-control-sm" id="vision-ollama-host" placeholder="localhost:11434">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small">Model</label>
+                  <input type="text" class="form-control form-control-sm" id="vision-ollama-model" placeholder="llava">
+                </div>
+              </div>
+              <div id="vision-mock-fields" class="d-none">
+                <div class="mb-2">
+                  <label class="form-label small">Mode</label>
+                  <select class="form-select form-select-sm" id="vision-mock-mockAiMode">
+                    <option value="clean">Clean (no issues)</option>
+                    <option value="issues">Issues (returns sample issues)</option>
+                    <option value="error">Error (simulates failure)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-sm btn-primary" onclick="saveFeatureProvider('vision')">Save Provider</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="testProvider('vision')">
+                  <span class="spinner-border spinner-border-sm d-none" id="test-spinner-vision"></span>
+                  Test Connection
+                </button>
+              </div>
+              <div id="test-result-vision" class="mt-2"></div>
+            </div>
+          </div>
+
           <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-semibold">What This Checks</div>
             <div class="card-body small text-muted">
@@ -337,5 +467,127 @@ function toggleTool(toolId, checkbox) {
     checkbox.checked = !checkbox.checked;
   });
 }
+
+/* ── Per-feature provider logic ── */
+
+function onProviderTypeChange(feature) {
+  var sel = document.getElementById(feature + '-provider-type').value;
+  ['azure', 'ollama', 'mock'].forEach(function(t) {
+    var el = document.getElementById(feature + '-' + t + '-fields');
+    if (el) el.classList.toggle('d-none', sel !== t);
+  });
+}
+
+function getProviderConfig(feature) {
+  var sel = document.getElementById(feature + '-provider-type').value;
+  if (sel === 'azure') {
+    return {
+      endpoint: document.getElementById(feature + '-azure-endpoint').value,
+      apiKey: document.getElementById(feature + '-azure-apiKey').value,
+      deployment: document.getElementById(feature + '-azure-deployment').value,
+      apiVersion: document.getElementById(feature + '-azure-apiVersion').value
+    };
+  } else if (sel === 'ollama') {
+    return {
+      host: document.getElementById(feature + '-ollama-host').value,
+      model: document.getElementById(feature + '-ollama-model').value
+    };
+  } else if (sel === 'mock') {
+    return {
+      mockAiMode: document.getElementById(feature + '-mock-mockAiMode').value
+    };
+  }
+  return {};
+}
+
+function showTestResult(feature, data) {
+  var el = document.getElementById('test-result-' + feature);
+  if (!el) return;
+  var ok = data.ok;
+  var ms = data.durationMs ? ' (' + data.durationMs + ' ms)' : '';
+  if (ok) {
+    el.innerHTML = '<div class="alert alert-success alert-sm py-1 px-2 mb-0 small">' + data.message + ms + '</div>';
+  } else {
+    el.innerHTML = '<div class="alert alert-danger alert-sm py-1 px-2 mb-0 small">' + (data.error || 'Unknown error') + ms + '</div>';
+  }
+}
+
+function saveFeatureProvider(feature) {
+  var providerType = document.getElementById(feature + '-provider-type').value;
+  var providerConfig = getProviderConfig(feature);
+  fetch('/admin-config/ai/feature-provider/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({feature: feature, providerType: providerType, providerConfig: providerConfig})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      showTestResult(feature, {ok: true, message: 'Provider saved successfully'});
+    } else {
+      showTestResult(feature, {ok: false, error: d.error || 'Save failed'});
+    }
+  })
+  .catch(function(e) {
+    showTestResult(feature, {ok: false, error: e.message});
+  });
+}
+
+function testProvider(feature) {
+  var spinner = document.getElementById('test-spinner-' + feature);
+  if (spinner) spinner.classList.remove('d-none');
+  var resultEl = document.getElementById('test-result-' + feature);
+  if (resultEl) resultEl.innerHTML = '';
+
+  var body = {feature: feature};
+  // For text/vision with an explicit provider selected, send the config so we can test before saving
+  if (feature === 'text' || feature === 'vision') {
+    var sel = document.getElementById(feature + '-provider-type');
+    if (sel) {
+      body.providerType = sel.value;
+      if (sel.value !== 'default') {
+        body.providerConfig = getProviderConfig(feature);
+      }
+    }
+  }
+
+  fetch('/admin-config/ai/test-provider/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (spinner) spinner.classList.add('d-none');
+    showTestResult(feature, d);
+  })
+  .catch(function(e) {
+    if (spinner) spinner.classList.add('d-none');
+    showTestResult(feature, {ok: false, error: e.message});
+  });
+}
+
+/* ── Init: load saved config into fields, show correct panels ── */
+document.addEventListener('DOMContentLoaded', function() {
+  var featureConfigs = {
+    text: {{ text_provider_config|safe }},
+    vision: {{ vision_provider_config|safe }}
+  };
+
+  ['text', 'vision'].forEach(function(feature) {
+    var cfg = featureConfigs[feature] || {};
+    var sel = document.getElementById(feature + '-provider-type');
+    if (!sel) return;
+    var type = sel.value;
+
+    // Populate fields from saved config
+    Object.keys(cfg).forEach(function(key) {
+      var input = document.getElementById(feature + '-' + type + '-' + key);
+      if (input) input.value = cfg[key];
+    });
+
+    onProviderTypeChange(feature);
+  });
+});
 </script>
 {% endblock %}

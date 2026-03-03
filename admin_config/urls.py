@@ -8,4 +8,6 @@ urlpatterns = [
     path('ai/settings/', views.update_settings, name='admin_update_settings'),
     path('ai/text-analysis/', views.update_text_analysis, name='admin_update_text_analysis'),
     path('ai/vision-analysis/', views.update_vision_analysis, name='admin_update_vision_analysis'),
+    path('ai/test-provider/', views.test_provider, name='admin_test_provider'),
+    path('ai/feature-provider/', views.save_feature_provider, name='admin_save_feature_provider'),
 ]

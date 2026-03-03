@@ -24,6 +24,16 @@
   #editorPanel {
     transition: flex 0.3s ease;
   }
+  .thinking-dots span {
+    animation: dotPulse 1.4s infinite;
+    opacity: 0.2;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dotPulse {
+    0%, 80%, 100% { opacity: 0.2; }
+    40% { opacity: 1; }
+  }
 </style>
 {% endblock %}
 
@@ -83,13 +93,6 @@
         {% endif %}
 
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
-          <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-            <span class="fw-semibold small">Chat</span>
-            <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="clearChat()" title="New conversation">
-              <i class="bi bi-arrow-counterclockwise small"></i>
-            </button>
-          </div>
-
           <!-- Message history -->
           <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
             <div class="text-muted text-center small py-4" id="chatPlaceholder">
@@ -99,13 +102,12 @@
 
           <!-- Input area -->
           <div class="card-footer bg-white border-top p-2">
-            <div class="d-flex gap-2">
-              <textarea id="chatInput" class="form-control form-control-sm" rows="2"
-                placeholder="e.g. Write a visual regression test for item 1234…"
-                onkeydown="handleKey(event)"></textarea>
-              <button class="btn btn-primary btn-sm align-self-end" onclick="sendMessage()" id="sendBtn">
-                <i class="bi bi-send"></i>
-              </button>
+            <textarea id="chatInput" class="form-control form-control-sm mb-2" rows="2"
+              placeholder="e.g. Write a visual regression test for item 1234…"
+              onkeydown="handleKey(event)"></textarea>
+            <div class="d-flex justify-content-between align-items-center">
+              <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()">Clear conversation</button>
+              <button class="btn btn-primary btn-sm" onclick="sendMessage()" id="sendBtn">Submit</button>
             </div>
             <div id="chatStatus" class="text-muted small mt-1" style="min-height:1.2em"></div>
           </div>
@@ -267,10 +269,22 @@ function toggleAI() {
   } else {
     panel.classList.add('collapsed');
   }
+  try { localStorage.setItem('scout_ai_assist', on ? '1' : '0'); } catch(e) {}
 }
 
+// Restore AI Assist toggle state from previous session
+(function() {
+  try {
+    var saved = localStorage.getItem('scout_ai_assist');
+    if (saved === '0') {
+      document.getElementById('aiToggle').checked = false;
+      document.getElementById('aiPanel').classList.add('collapsed');
+    }
+  } catch(e) {}
+})();
+
 function handleKey(e) {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
@@ -304,6 +318,24 @@ function setStatus(msg, cls) {
   el.className = 'small mt-1 ' + (cls || 'text-muted');
 }
 
+function showThinking() {
+  var placeholder = document.getElementById('chatPlaceholder');
+  if (placeholder) placeholder.remove();
+  var msgs = document.getElementById('chatMessages');
+  var div = document.createElement('div');
+  div.id = 'thinkingBubble';
+  div.className = 'mb-3';
+  div.innerHTML = '<div class="d-flex"><div class="p-2 rounded small" style="background:#f8f9fa;border:1px solid #dee2e6">' +
+    '<span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span></div></div>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeThinking() {
+  var el = document.getElementById('thinkingBubble');
+  if (el) el.remove();
+}
+
 function sendMessage() {
   var input = document.getElementById('chatInput');
   var msg = input.value.trim();
@@ -315,7 +347,8 @@ function sendMessage() {
   appendMessage('user', msg);
   input.value = '';
   sendBtn.disabled = true;
-  setStatus('Thinking…', 'text-muted');
+  setStatus('', '');
+  showThinking();
 
   fetch('/builder/api/chat/', {
     method: 'POST',
@@ -329,6 +362,7 @@ function sendMessage() {
   })
   .then(r => r.json())
   .then(d => {
+    removeThinking();
     sendBtn.disabled = false;
     if (d.error) {
       setStatus('Error: ' + d.error, 'text-danger');
@@ -350,6 +384,7 @@ function sendMessage() {
     }
   })
   .catch(err => {
+    removeThinking();
     sendBtn.disabled = false;
     setStatus('Network error: ' + err.message, 'text-danger');
   });

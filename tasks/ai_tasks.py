@@ -5,7 +5,7 @@ from django.db import connection
 
 def process_ai_queue():
     """Process pending AI analysis items."""
-    from ai.provider import get_provider
+    from ai.provider import get_provider_for_feature
 
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -24,8 +24,6 @@ def process_ai_queue():
     if not pending:
         return
 
-    provider = get_provider()
-
     for item in pending:
         analysis_id = item['id']
         try:
@@ -35,8 +33,9 @@ def process_ai_queue():
                     [analysis_id]
                 )
 
-            # Run analysis based on type
+            # Run analysis based on type — select provider per feature
             if item['analysis_type'] == 'screenshot' and item.get('screenshot_path'):
+                provider = get_provider_for_feature('vision')
                 import base64
                 from pathlib import Path
                 from django.conf import settings
