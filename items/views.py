@@ -302,8 +302,8 @@ def api_create_script(request):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, environment_id, item_id, description, updated_at)
-                   VALUES (%s, %s::uuid, %s, %s, now())""",
+                """INSERT INTO test_scripts (script_path, environment_id, item_id, description, test_type, tags, created_at, updated_at)
+                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, now(), now())""",
                 [script_path, environment_id, item_id, f'Test script for {name}']
             )
 

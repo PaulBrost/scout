@@ -142,15 +142,15 @@ def api_save(request):
         with connection.cursor() as cursor:
             if environment_id:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id)
-                       VALUES (%s, %s::uuid)
+                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, created_at, updated_at)
+                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [file_path, environment_id]
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path)
-                       VALUES (%s)
+                    """INSERT INTO test_scripts (script_path, test_type, tags, created_at, updated_at)
+                       VALUES (%s, 'functional', '[]'::jsonb, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [file_path]
                 )
@@ -204,8 +204,8 @@ def api_associate(request):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, updated_at)
-                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, now())
+                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, tags, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, '[]'::jsonb, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET
                      item_id = COALESCE(EXCLUDED.item_id, test_scripts.item_id),
                      assessment_id = COALESCE(EXCLUDED.assessment_id, test_scripts.assessment_id),

@@ -181,15 +181,15 @@ def api_save(request):
         with connection.cursor() as cursor:
             if environment_id:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id)
-                       VALUES (%s, %s::uuid)
+                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, created_at, updated_at)
+                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [rel_path, environment_id]
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path)
-                       VALUES (%s)
+                    """INSERT INTO test_scripts (script_path, test_type, tags, created_at, updated_at)
+                       VALUES (%s, 'functional', '[]'::jsonb, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [rel_path]
                 )
