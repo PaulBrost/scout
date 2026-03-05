@@ -1,4 +1,5 @@
 from django import template
+from django.utils import timezone
 
 register = template.Library()
 
@@ -26,3 +27,15 @@ def duration(ms):
     if minutes:
         return f'{minutes}m {secs:02d}s'
     return f'{secs}s'
+
+
+@register.filter
+def shorttime(value):
+    """Format a datetime as a compact timestamp: 'Mar 4, 1:23 PM' or 'Mar 3, 8:05 PM'."""
+    if not value:
+        return '—'
+    try:
+        local = timezone.localtime(value)
+        return local.strftime('%b %-d, %-I:%M %p')
+    except Exception:
+        return str(value)

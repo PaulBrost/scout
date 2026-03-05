@@ -304,6 +304,13 @@ def execute_run(run_id, script_paths, options=None):
                 }
                 env_config_json = json.dumps(env_config, default=str)
 
+    # Mark run as actually started (execution picked up by worker)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE test_runs SET started_at = now() WHERE id = %s AND started_at IS NULL",
+            [run_id]
+        )
+
     for script_path in script_paths:
         with connection.cursor() as cursor:
             cursor.execute(

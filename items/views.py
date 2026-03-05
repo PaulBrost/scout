@@ -202,6 +202,17 @@ def api_update_item(request):
         if 'languages' in data:
             fields.append('languages = %s')
             params.append(json.dumps(data['languages']) if isinstance(data['languages'], list) else data['languages'])
+        if 'metadata' in data and isinstance(data['metadata'], dict):
+            # Merge incoming metadata keys into existing metadata
+            with connection.cursor() as cur:
+                cur.execute('SELECT metadata FROM items WHERE numeric_id = %s', [numeric_id])
+                row = cur.fetchone()
+                existing = row[0] if row and row[0] else {}
+                if isinstance(existing, str):
+                    existing = json.loads(existing)
+                existing.update(data['metadata'])
+                fields.append('metadata = %s')
+                params.append(json.dumps(existing))
 
         if not fields:
             return JsonResponse({'error': 'No fields to update'}, status=400)
@@ -254,6 +265,42 @@ def api_delete_items_bulk(request):
             cursor.execute('DELETE FROM items WHERE numeric_id = ANY(%s::int[])', [ids])
             deleted = cursor.rowcount
         return JsonResponse({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_set_baseline(request):
+    """Set the baseline country/language for an item."""
+    try:
+        data = json.loads(request.body)
+        numeric_id = data.get('numeric_id')
+        country = data.get('country', '').strip()
+        language = data.get('language', '').strip()
+
+        if not numeric_id:
+            return JsonResponse({'error': 'numeric_id required'}, status=400)
+        if not country or not language:
+            return JsonResponse({'error': 'country and language required'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT metadata FROM items WHERE numeric_id = %s', [numeric_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Item not found'}, status=404)
+
+            metadata = row[0] if row[0] else {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            metadata['baseline'] = {'country': country, 'language': language}
+
+            cursor.execute(
+                'UPDATE items SET metadata = %s, updated_at = now() WHERE numeric_id = %s',
+                [json.dumps(metadata), numeric_id]
+            )
+        return JsonResponse({'ok': True, 'baseline': metadata['baseline']})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

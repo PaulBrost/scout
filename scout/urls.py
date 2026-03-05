@@ -8,6 +8,7 @@ urlpatterns = [
     path('django-admin/', admin.site.urls),
     path('login/', core_views.login_view, name='login'),
     path('logout/', core_views.logout_view, name='logout'),
+    path('settings/', core_views.settings_view, name='settings'),
     path('', include('dashboard.urls')),
     path('runs/', include('runs.urls')),
     path('suites/', include('suites.urls')),

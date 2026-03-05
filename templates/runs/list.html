@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load core_filters %}
 {% block title %}Runs{% endblock %}
 {% block page_title %}Test Runs{% endblock %}
 
@@ -34,22 +35,26 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th><a href="?sort=started&dir={% if sort == 'started' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Started {% if sort == 'started' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th><a href="?sort=started&dir={% if sort == 'started' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Queued {% if sort == 'started' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=suite&dir={% if sort == 'suite' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Suite {% if sort == 'suite' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=status&dir={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Status {% if sort == 'status' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=trigger&dir={% if sort == 'trigger' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Trigger {% if sort == 'trigger' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Scripts</th>
+          <th>Duration</th>
           <th>Results</th>
         </tr>
       </thead>
       <tbody>
         {% for run in runs %}
         <tr>
-          <td><a href="/runs/{{ run.id }}/">{{ run.started_at|default:"—" }}</a></td>
+          <td>
+            <a href="/runs/{{ run.id }}/">{{ run.queued_at|shorttime }}</a>
+          </td>
           <td>{% if run.suite_id %}<a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% else %}<span class="text-muted">Ad-hoc</span>{% endif %}</td>
           <td><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></td>
           <td>{{ run.trigger_type }}</td>
           <td>{{ run.script_count }}</td>
+          <td class="text-muted small">{% if run.started_at and run.completed_at %}{{ run.started_at|timesince:run.completed_at }}{% elif run.started_at %}{{ run.started_at|timesince }} ago{% else %}—{% endif %}</td>
           <td>
             {% if run.summary %}
             <span class="text-success">{{ run.summary.passed|default:0 }}p</span>
@@ -60,7 +65,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-5">No runs found.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-5">No runs found.</td></tr>
         {% endfor %}
       </tbody>
     </table>

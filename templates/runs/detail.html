@@ -51,6 +51,34 @@
   </div>
 </div>
 
+<!-- Timestamps row -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-2">
+        <div class="text-muted small">Queued</div>
+        <div class="mt-1 small" id="runQueued">{{ run.queued_at|shorttime }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-2">
+        <div class="text-muted small">Started</div>
+        <div class="mt-1 small" id="runStarted">{% if run.started_at %}{{ run.started_at|shorttime }}{% else %}<span class="text-muted">Waiting…</span>{% endif %}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-2">
+        <div class="text-muted small">Completed</div>
+        <div class="mt-1 small" id="runCompleted">{% if run.completed_at %}{{ run.completed_at|shorttime }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if run.notes %}
 <div class="alert alert-secondary py-2 small mb-4">{{ run.notes }}</div>
 {% endif %}
@@ -66,6 +94,7 @@
         <tr>
           <th>Script</th>
           <th>Status</th>
+          <th>Started</th>
           <th>Duration</th>
           <th>Error</th>
           <th>Actions</th>
@@ -76,6 +105,7 @@
         <tr id="script-{{ sr.id }}">
           <td class="font-monospace small">{{ sr.script_path }}</td>
           <td class="script-status"><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
+          <td class="script-started small text-muted">{% if sr.started_at %}{{ sr.started_at|shorttime }}{% else %}—{% endif %}</td>
           <td class="script-duration">{% if sr.duration_ms %}{{ sr.duration_ms|duration }}{% else %}—{% endif %}</td>
           <td class="script-error text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             {% if sr.error_message %}
@@ -94,7 +124,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted text-center py-4">No script results yet.</td></tr>
+        <tr><td colspan="6" class="text-muted text-center py-4">No script results yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -144,6 +174,18 @@ function statusBadgeHtml(status) {
   return '<span class="status-badge status-' + status + '">' + status + '</span>';
 }
 
+var USER_TZ = '{{ user_timezone }}';
+function formatTime(isoStr) {
+  if (!isoStr) return '\u2014';
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: USER_TZ,
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    }).format(new Date(isoStr));
+  } catch(e) { return isoStr; }
+}
+
 function pollRunStatus() {
   fetch('/runs/' + runId + '/status/')
     .then(function(r) { return r.ok ? r.json() : null; })
@@ -153,6 +195,12 @@ function pollRunStatus() {
       // Update run status badge
       var statusEl = document.getElementById('runStatusBadge');
       if (statusEl) statusEl.innerHTML = statusBadgeHtml(d.status);
+
+      // Update run timestamps
+      if (d.queued_at) document.getElementById('runQueued').textContent = formatTime(d.queued_at);
+      if (d.started_at) document.getElementById('runStarted').textContent = formatTime(d.started_at);
+      else document.getElementById('runStarted').innerHTML = '<span class="text-muted">Waiting\u2026</span>';
+      if (d.completed_at) document.getElementById('runCompleted').textContent = formatTime(d.completed_at);
 
       // Update summary
       var summaryEl = document.getElementById('runSummary');
@@ -170,6 +218,9 @@ function pollRunStatus() {
           if (!row) return;
           row.querySelector('.script-status').innerHTML = statusBadgeHtml(s.status);
           row.querySelector('.script-duration').textContent = formatDuration(s.duration_ms);
+
+          var startedCell = row.querySelector('.script-started');
+          if (startedCell) startedCell.textContent = formatTime(s.started_at);
 
           var errCell = row.querySelector('.script-error');
           if (s.error_message) {

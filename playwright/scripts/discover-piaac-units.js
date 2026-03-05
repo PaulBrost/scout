@@ -1,8 +1,9 @@
 // SCOUT — PIAAC Unit Discovery Scraper
 // Logs into piaac.ets.org, selects dropdown filters, and discovers available units.
-// Usage: PIAAC_USER=xxx PIAAC_PASS=xxx node scripts/discover-piaac-units.js
+// Usage: PIAAC_USER=xxx PIAAC_PASS=xxx node scripts/discover-piaac-units.js [--country=ZZZ] [--language=eng] [--domain=LITNew]
 //
-// Output: JSON array of units to stdout
+// Output: JSON with structured items array to stdout
+// Debug screenshots/logs go to stderr
 
 const { chromium } = require('playwright');
 
@@ -10,11 +11,23 @@ const BASE_URL = 'https://piaac.ets.org/portal/translations/';
 const USERNAME = process.env.PIAAC_USER || '';
 const PASSWORD = process.env.PIAAC_PASS || '';
 
+// Parse --key=value args from process.argv
+function parseArgs() {
+  const args = {};
+  for (const arg of process.argv.slice(2)) {
+    const match = arg.match(/^--(\w+)=(.+)$/);
+    if (match) args[match[1]] = match[2];
+  }
+  return args;
+}
+
+const cliArgs = parseArgs();
+
 const FILTERS = {
-  version: 'FT New',
-  country: 'ROU',
-  language: 'ron',
-  domain: 'LITNew',
+  version: cliArgs.version || process.env.PIAAC_VERSION || 'FT New',
+  country: cliArgs.country || process.env.PIAAC_COUNTRY || 'ZZZ',
+  language: cliArgs.language || process.env.PIAAC_LANGUAGE || 'eng',
+  domain: cliArgs.domain || process.env.PIAAC_DOMAIN || 'LITNew',
 };
 
 async function waitForSelectOptions(page, selectId, timeout) {
@@ -53,16 +66,15 @@ async function run() {
   console.error('[2/6] Post-login URL:', page.url());
   await page.screenshot({ path: '/tmp/piaac-02-post-login.png', fullPage: true });
 
-  // 3. Select Version = "FT New"
+  // 3. Select Version
   console.error('[3/6] Selecting Version:', FILTERS.version);
   await page.selectOption('#VerSelect', { label: FILTERS.version });
   await page.waitForTimeout(1000);
-  // Trigger change event explicitly if needed
   await page.locator('#VerSelect').dispatchEvent('change');
   await page.waitForTimeout(2000);
   await page.screenshot({ path: '/tmp/piaac-03-version.png', fullPage: true });
 
-  // 4. Select Country = "ROU"
+  // 4. Select Country
   console.error('[4/6] Selecting Country:', FILTERS.country);
   var countryOpts = await waitForSelectOptions(page, '#CountrySelect', 5000);
   console.error('[4/6] Country options available:', countryOpts);
@@ -77,7 +89,7 @@ async function run() {
   console.error('[4/6] Languages:', langOpts.map(o => o.value + '=' + o.text).join(', '));
   await page.screenshot({ path: '/tmp/piaac-04-country.png', fullPage: true });
 
-  // 5. Select Language = "ron"
+  // 5. Select Language
   console.error('[5/6] Selecting Language:', FILTERS.language);
   await page.selectOption('#LangSelect', FILTERS.language);
   await page.locator('#LangSelect').dispatchEvent('change');
@@ -90,9 +102,8 @@ async function run() {
   console.error('[5/6] Domains:', domainOpts.map(o => o.value + '=' + o.text).join(', '));
   await page.screenshot({ path: '/tmp/piaac-05-language.png', fullPage: true });
 
-  // 6. Select Domain = "LitNew"
+  // 6. Select Domain
   console.error('[6/6] Selecting Domain:', FILTERS.domain);
-  // Try by value first, then by label
   try {
     await page.selectOption('#DomainSelect', FILTERS.domain);
   } catch (e) {
@@ -146,10 +157,35 @@ async function run() {
   require('fs').writeFileSync('/tmp/piaac-page.html', html);
   console.error('[6/6] Full HTML saved to /tmp/piaac-page.html');
 
+  // Build structured items array from discovered links
+  var items = allLinks
+    .filter(l => l.text.length > 1 && /^U\d+/i.test(l.text.trim()))
+    .map(l => {
+      var text = l.text.trim();
+      var parts = text.split(/\s+/);
+      return {
+        item_id: parts[0],
+        unit_name: text,
+        href: l.href,
+        link_text: text,
+      };
+    });
+
+  // Deduplicate by item_id
+  var seen = new Set();
+  items = items.filter(item => {
+    if (seen.has(item.item_id)) return false;
+    seen.add(item.item_id);
+    return true;
+  });
+
+  console.error(`[6/6] Found ${items.length} structured items`);
+
   // Output results
   var result = {
     url: page.url(),
     filters_applied: FILTERS,
+    items: items,
     links: allLinks.filter(l => l.text.length > 1),
     clickables: clickables,
     bodyText: bodyText,

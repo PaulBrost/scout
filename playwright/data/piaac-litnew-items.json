@@ -1,0 +1,33 @@
+{
+  "filters_applied": {
+    "version": "FT New",
+    "country": "ZZZ",
+    "language": "eng",
+    "domain": "LITNew"
+  },
+  "items": [
+    {"item_id": "U501-Hiccups", "unit_name": "U501-Hiccups"},
+    {"item_id": "U502-Shades", "unit_name": "U502-Shades"},
+    {"item_id": "U503-Banking", "unit_name": "U503-Banking"},
+    {"item_id": "U504-Crayons", "unit_name": "U504-Crayons"},
+    {"item_id": "U505-EyeProtection", "unit_name": "U505-EyeProtection"},
+    {"item_id": "U507-PhotographyClass", "unit_name": "U507-PhotographyClass"},
+    {"item_id": "U508-Restaurants", "unit_name": "U508-Restaurants"},
+    {"item_id": "U509-BiciMAD", "unit_name": "U509-BiciMAD"},
+    {"item_id": "U510-ArtsCenter", "unit_name": "U510-ArtsCenter"},
+    {"item_id": "U511-AppComparison", "unit_name": "U511-AppComparison"},
+    {"item_id": "U512-Accessibility", "unit_name": "U512-Accessibility"},
+    {"item_id": "U513-CandidateForum", "unit_name": "U513-CandidateForum"},
+    {"item_id": "U514-DeskCycling", "unit_name": "U514-DeskCycling"},
+    {"item_id": "U515-InkStains", "unit_name": "U515-InkStains"},
+    {"item_id": "U516-OnlineLearning", "unit_name": "U516-OnlineLearning"},
+    {"item_id": "U517-RecyclingGuide", "unit_name": "U517-RecyclingGuide"},
+    {"item_id": "U518-Scalds", "unit_name": "U518-Scalds"},
+    {"item_id": "U592-ArticlesIntroductionRev", "unit_name": "U592-ArticlesIntroductionRev"},
+    {"item_id": "U593-BirthdayParty", "unit_name": "U593-BirthdayParty"},
+    {"item_id": "U594-LetterToTheEditor", "unit_name": "U594-LetterToTheEditor"},
+    {"item_id": "U595-WorldSports", "unit_name": "U595-WorldSports"},
+    {"item_id": "U596-GoingToTheMovies", "unit_name": "U596-GoingToTheMovies"},
+    {"item_id": "U598-SentencesRev", "unit_name": "U598-SentencesRev"}
+  ]
+}

@@ -1,4 +1,10 @@
-"""SCOUT — AI Chat Conversation Manager."""
+"""SCOUT — AI Chat Conversation Manager.
+
+Supports an agentic loop: when the AI calls research tools (read_file,
+list_helpers, search_tests, get_items), results are fed back automatically
+and the AI continues without requiring user prompts.  The loop stops when
+the AI produces a text-only response, calls update_code, or hits MAX_LOOP.
+"""
 import uuid
 import re
 import json
@@ -6,14 +12,28 @@ from django.db import connection
 
 
 MAX_TURNS = 50
+MAX_LOOP = 8  # max auto-continue iterations per user message
 
 
 def get_default_system_prompt():
-    return """You are SCOUT AI, an expert assistant for the SCOUT automated testing system. You help users understand, create, and modify Playwright test scripts for the NAEP assessment platform.
+    return """You are SCOUT AI, an expert assistant for the SCOUT automated testing system. You help users understand, create, and modify Playwright test scripts for PIAAC and NAEP assessment platforms.
 
 When explaining code, be concise and focus on what matters. When modifying code, make minimal targeted changes unless asked for a rewrite.
 
-IMPORTANT: If the user asks a question or asks for an explanation — respond with text only. Do NOT generate or replace code unless explicitly asked to modify, create, or fix it."""
+## Autonomy Rules — CRITICAL
+- When the user asks you to create, generate, or write a test: IMMEDIATELY call your tools to gather context, then produce the finished code. Do NOT describe what you plan to do. Do NOT ask for confirmation. The user's request IS the confirmation.
+- NEVER ask the user for helper function names, item IDs, or file contents. You have tools to find all of this yourself:
+  * `list_helpers` — lists all available helper functions with signatures
+  * `read_file` — reads any helper file (e.g., src/helpers/piaac.js, src/helpers/auth.js)
+  * `get_items` — looks up item details from the database
+  * `search_tests` — finds example test patterns in existing scripts
+- Your FIRST response to a code generation request should contain tool calls, NOT questions or plans.
+- Call multiple tools in one response to gather all context at once.
+- After gathering context, call `update_code` with the complete finished script.
+- Only ask clarifying questions when the request is genuinely ambiguous (e.g., the user says "write a test" without specifying which item or what kind of test).
+
+## When NOT to modify code
+If the user asks a question or asks for an explanation — respond with text only. Do NOT generate or replace code unless explicitly asked to modify, create, generate, or fix it."""
 
 
 def build_tool_descriptions():
@@ -60,10 +80,15 @@ def build_system_prompt(current_code, filename):
 
     prompt = base_prompt + '\n\n'
     prompt += f'## Available Tools\n{tool_desc}\n\n'
-    prompt += '## Tool Calling Format\nWhen you need to use a tool, include a JSON block in your response:\n'
+    prompt += '## Tool Calling Format\nWhen you need to use a tool, include ONE tool per code block:\n'
     prompt += '```tool\n{"tool": "tool_id", "args": {"param": "value"}}\n```\n'
-    prompt += 'You can use multiple tools in one response.\n'
+    prompt += 'For multiple tools, use SEPARATE ```tool blocks for each.\n'
     prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n\n'
+    prompt += '## Code Conventions\n'
+    prompt += '- Use CommonJS `require()` syntax, NOT ES module `import` syntax.\n'
+    prompt += '- Scripts in `tests/items/` import helpers with `../../src/helpers/` paths.\n'
+    prompt += '- Always pass env config to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
+    prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''
@@ -77,16 +102,25 @@ def parse_tool_calls(response):
     tool_calls = []
     text = response
 
-    # Strategy 1: ```tool ... ``` blocks
+    # Strategy 1: ```tool ... ``` blocks (may contain multiple tool calls)
     tool_block_re = re.compile(r'```tool\s*\n?([\s\S]*?)```')
     for match in tool_block_re.finditer(response):
-        json_str = match.group(1).strip()
-        parsed = _try_parse_tool_json(json_str)
+        block_content = match.group(1).strip()
+        # Try as single JSON object first
+        parsed = _try_parse_tool_json(block_content)
         if parsed:
             tool_calls.append(parsed)
-            text = text.replace(match.group(0), '').strip()
+        else:
+            # Multiple tool calls in one block — find each { and extract
+            for obj_match in re.finditer(r'\{', block_content):
+                json_str = _extract_balanced_json(block_content, obj_match.start())
+                if json_str:
+                    p = _try_parse_tool_json(json_str)
+                    if p:
+                        tool_calls.append(p)
+        text = text.replace(match.group(0), '').strip()
 
-    # Strategy 2: inline {"tool": ... } patterns
+    # Strategy 2: inline {"tool": ... } patterns (only if no block matches)
     if not tool_calls:
         start_re = re.compile(r'\{"tool"\s*:\s*"')
         for match in start_re.finditer(response):
@@ -98,6 +132,10 @@ def parse_tool_calls(response):
                     text = text.replace(json_str, '').strip()
 
     text = re.sub(r'```\s*```', '', text).strip()
+    # Clean up stray braces, "tool" markers, and empty lines
+    text = re.sub(r'^\s*[{}]\s*$', '', text, flags=re.MULTILINE).strip()
+    text = re.sub(r'^\s*tool\s*$', '', text, flags=re.MULTILINE).strip()
+    text = re.sub(r'\n{3,}', '\n\n', text)
     return text, tool_calls
 
 
@@ -271,9 +309,39 @@ def execute_tool(tool_id, args, context):
     return {'success': False, 'result': f'No executor for tool: {tool_id}'}
 
 
+# Phrases that indicate the AI is planning/asking instead of acting
+_PLANNING_PATTERNS = re.compile(
+    r'\b(I will|I\'ll|Let me|Proceeding to|I\'m going to|I can now|'
+    r'I\'ll now|going to|plan to|here\'s what|steps?:|'
+    r'I need to know|I need to fetch|please confirm|please provide|'
+    r'can you (provide|confirm|share)|do you want me to|shall I|'
+    r'before I (can|proceed|create|generate)|first I need)\b',
+    re.IGNORECASE
+)
+
+
+def _looks_like_planning(text):
+    """Return True if response text looks like a plan/request rather than a final answer."""
+    if not text or len(text) > 2000:
+        return False
+    return bool(_PLANNING_PATTERNS.search(text))
+
+
 def chat(message, conversation_id, current_code, filename):
-    """Process a chat message and return AI response."""
+    """Process a chat message with an agentic tool loop.
+
+    When the AI calls research tools (read_file, list_helpers, etc.) the
+    results are fed back automatically and the AI continues until it either
+    produces a text-only reply, calls update_code, or hits MAX_LOOP.
+
+    If the AI responds with just a planning message (no tools), it is
+    automatically nudged to continue and actually execute the work.
+    """
     from ai.provider import get_provider
+
+    # Tools that trigger auto-continue (research / context-gathering)
+    RESEARCH_TOOLS = {'read_file', 'list_helpers', 'search_tests', 'get_items',
+                      'explain_code', 'analyze_script'}
 
     # Load or create conversation
     if conversation_id:
@@ -300,34 +368,115 @@ def chat(message, conversation_id, current_code, filename):
     if len(messages) > MAX_TURNS * 2:
         messages = messages[-MAX_TURNS * 2:]
 
-    # Call AI
     provider = get_provider()
-    ai_messages = [{'role': 'system', 'content': system_prompt}] + messages
-    raw_response = provider.chat_completion(ai_messages, {'max_tokens': 3000})
-
-    # Parse tool calls
-    text, tool_calls = parse_tool_calls(raw_response)
-
-    # Execute tools
-    tool_results = []
+    all_tool_results = []
     code_update = None
+    final_text = ''
+    intermediate_messages = []  # assistant texts from mid-loop iterations
+    steps = []  # track what happened at each loop iteration
 
-    for tc in tool_calls:
-        result = execute_tool(tc['tool'], tc['args'], {'current_code': current_code, 'filename': filename})
-        tool_results.append({
-            'tool': tc['tool'],
-            'args': tc['args'],
-            'success': result['success'],
-            'result': result['result'],
+    for iteration in range(MAX_LOOP):
+        # Call AI
+        ai_messages = [{'role': 'system', 'content': system_prompt}] + messages
+        raw_response = provider.chat_completion(ai_messages, {'max_tokens': 4000})
+
+        # Parse tool calls
+        text, tool_calls = parse_tool_calls(raw_response)
+
+        # Add assistant message to conversation
+        messages.append({'role': 'assistant', 'content': raw_response})
+
+        if not tool_calls:
+            # No tools called — check if the AI is just announcing a plan
+            if _looks_like_planning(text) and iteration < MAX_LOOP - 1:
+                # Save this as an intermediate message and nudge the AI to continue
+                intermediate_messages.append(text)
+                steps.append({
+                    'iteration': iteration + 1,
+                    'tools': [],
+                    'note': 'auto-continue (planning response)',
+                })
+                messages.append({'role': 'user', 'content':
+                    'Do not ask me for information — you have tools to find it yourself. '
+                    'Call list_helpers to see available helper functions. '
+                    'Call read_file to read src/helpers/piaac.js and src/helpers/auth.js. '
+                    'Call get_items to look up item details. '
+                    'Then call update_code with the complete finished script. '
+                    'Do all of this NOW in your next response — do not ask for confirmation.'})
+                continue
+
+            # Genuine final text response — we're done
+            final_text = text
+            break
+
+        # If we have both text and tool calls, save the text as intermediate
+        if text.strip() and len(text.strip()) > 3:
+            intermediate_messages.append(text)
+
+        # Execute tools
+        needs_continue = False
+        tool_result_parts = []
+
+        for tc in tool_calls:
+            result = execute_tool(tc['tool'], tc['args'],
+                                  {'current_code': current_code, 'filename': filename})
+            all_tool_results.append({
+                'tool': tc['tool'],
+                'args': tc['args'],
+                'success': result['success'],
+                'result': result['result'],
+            })
+
+            if tc['tool'] == 'update_code' and result['success'] and isinstance(result.get('result'), dict):
+                code_update = {
+                    'code': result['result']['code'],
+                    'summary': result['result'].get('summary', 'Code updated'),
+                }
+                # update_code delivered code — update current_code for any further iterations
+                current_code = result['result']['code']
+            elif tc['tool'] in RESEARCH_TOOLS:
+                needs_continue = True
+
+            # Format tool result for the AI to consume
+            result_text = result['result'] if isinstance(result['result'], str) else json.dumps(result['result'])
+            tool_result_parts.append(
+                f"[Tool: {tc['tool']}] {'OK' if result['success'] else 'ERROR'}: {result_text}"
+            )
+
+        steps.append({
+            'iteration': iteration + 1,
+            'tools': [tc['tool'] for tc in tool_calls],
         })
-        if tc['tool'] == 'update_code' and result['success'] and isinstance(result.get('result'), dict):
-            code_update = {
-                'code': result['result']['code'],
-                'summary': result['result'].get('summary', 'Code updated'),
-            }
 
-    # Add assistant message
-    messages.append({'role': 'assistant', 'content': raw_response})
+        # If only update_code was called (no research tools), we're done
+        if not needs_continue:
+            final_text = text
+            break
+
+        # Feed tool results back — escalate urgency on later iterations
+        tool_feedback = "Tool results:\n\n" + "\n\n".join(tool_result_parts)
+        if iteration >= 3:
+            tool_feedback += (
+                "\n\nYou have gathered enough context. STOP reading more files. "
+                "Call update_code NOW with the complete finished script. "
+                "Do NOT call any more research tools."
+            )
+        elif iteration >= 1:
+            tool_feedback += (
+                "\n\nYou should have enough context now. "
+                "Generate the complete script and call update_code. "
+                "Only read more files if absolutely necessary."
+            )
+        else:
+            tool_feedback += (
+                "\n\nContinue with the task. If you have enough context, "
+                "generate the code now using update_code."
+            )
+        messages.append({'role': 'user', 'content': tool_feedback})
+
+    # If code was updated but no final text, generate a completion message
+    if code_update and not final_text:
+        final_text = f"Done — {code_update['summary']}. The script is ready in the editor. You can review it, then Save or Save & Run."
 
     # Save conversation to DB
     with connection.cursor() as cursor:
@@ -340,14 +489,18 @@ def chat(message, conversation_id, current_code, filename):
 
     return {
         'conversationId': conv_id,
-        'response': text,
+        'response': final_text,
+        'intermediateMessages': intermediate_messages,
         'codeUpdate': code_update,
+        'steps': steps,
         'toolsUsed': [
             {
                 'tool': t['tool'],
                 'success': t['success'],
-                'summary': (t['result'][:200] if isinstance(t['result'], str) else t['result'].get('summary', '')) if t.get('result') else '',
+                'summary': (t['result'][:200] if isinstance(t['result'], str)
+                            else t['result'].get('summary', ''))
+                           if t.get('result') else '',
             }
-            for t in tool_results
+            for t in all_tool_results
         ],
     }

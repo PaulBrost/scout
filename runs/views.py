@@ -32,12 +32,12 @@ def index(request):
     search = request.GET.get('search', '').strip()
 
     valid_sorts = {
-        'started': 'r.started_at',
+        'started': 'r.queued_at',
         'status': 'r.status',
         'trigger': 'r.trigger_type',
         'suite': 's.name',
     }
-    order_col = valid_sorts.get(sort, 'r.started_at')
+    order_col = valid_sorts.get(sort, 'r.queued_at')
 
     where = []
     params = []
@@ -76,7 +76,7 @@ def index(request):
         offset = (page - 1) * page_size
         row_params = params + [page_size, offset]
         cursor.execute(f"""
-            SELECT r.id, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary, r.notes,
+            SELECT r.id, r.queued_at, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary, r.notes,
                    s.id AS suite_id, s.name AS suite_name,
                    (SELECT COUNT(*) FROM test_run_scripts rs WHERE rs.run_id = r.id) AS script_count
             FROM test_runs r
@@ -174,7 +174,7 @@ def api_run_status(request, run_id):
     """Lightweight JSON endpoint for polling run status + script results."""
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT status, summary FROM test_runs WHERE id = %s',
+            'SELECT status, summary, queued_at, started_at, completed_at FROM test_runs WHERE id = %s',
             [run_id]
         )
         row = cursor.fetchone()
@@ -192,7 +192,8 @@ def api_run_status(request, run_id):
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT id, script_path, status, duration_ms, error_message,
-                      execution_log IS NOT NULL AS has_log
+                      execution_log IS NOT NULL AS has_log,
+                      started_at, completed_at
                FROM test_run_scripts WHERE run_id = %s
                ORDER BY completed_at DESC NULLS LAST, script_path""",
             [run_id]
@@ -203,6 +204,9 @@ def api_run_status(request, run_id):
     return JsonResponse({
         'status': run_status,
         'summary': summary,
+        'queued_at': row[2],
+        'started_at': row[3],
+        'completed_at': row[4],
         'scripts': scripts,
     }, json_dumps_params={'default': str})
 
@@ -216,8 +220,8 @@ def api_list(request):
     status_filter = request.GET.get('status', '')
     search = request.GET.get('search', '').strip()
 
-    valid_sorts = {'started': 'r.started_at', 'status': 'r.status', 'trigger': 'r.trigger_type', 'suite': 's.name'}
-    order_col = valid_sorts.get(sort, 'r.started_at')
+    valid_sorts = {'started': 'r.queued_at', 'status': 'r.status', 'trigger': 'r.trigger_type', 'suite': 's.name'}
+    order_col = valid_sorts.get(sort, 'r.queued_at')
 
     where = []
     params = []
@@ -248,7 +252,7 @@ def api_list(request):
         total = cursor.fetchone()[0]
         offset = (page - 1) * page_size
         cursor.execute(f"""
-            SELECT r.id, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary,
+            SELECT r.id, r.queued_at, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary,
                    s.name AS suite_name,
                    (SELECT COUNT(*) FROM test_run_scripts rs WHERE rs.run_id = r.id) AS script_count
             FROM test_runs r LEFT JOIN test_suites s ON r.suite_id = s.id
@@ -265,7 +269,7 @@ def api_list(request):
 @login_required(login_url='/login/')
 def api_latest(request):
     with connection.cursor() as cursor:
-        cursor.execute('SELECT * FROM test_runs ORDER BY started_at DESC LIMIT 1')
+        cursor.execute('SELECT * FROM test_runs ORDER BY queued_at DESC NULLS LAST LIMIT 1')
         cols = [c[0] for c in cursor.description]
         row = cursor.fetchone()
     if not row:

@@ -34,6 +34,13 @@
     0%, 80%, 100% { opacity: 0.2; }
     40% { opacity: 1; }
   }
+  @keyframes spinnerRotate { to { transform: rotate(360deg); } }
+  .ai-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #dee2e6; border-top-color: #0d6efd;
+    border-radius: 50%; animation: spinnerRotate 0.8s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
 </style>
 {% endblock %}
 
@@ -133,12 +140,6 @@
     <!-- Bottom action bar -->
     <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
       <span id="runStatus" class="text-muted small me-auto" style="min-height:1.2em"></span>
-      <button class="btn btn-sm btn-outline-danger" onclick="startRecording()" id="recordBtn">
-        <i class="bi bi-record-circle"></i> Record
-      </button>
-      <button class="btn btn-sm btn-danger" onclick="stopRecording()" id="stopRecordBtn" style="display:none">
-        <i class="bi bi-stop-circle"></i> Stop Recording
-      </button>
       <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" id="dryRunBtn">
         <i class="bi bi-check2-circle"></i> Check
       </button>
@@ -159,9 +160,6 @@
           <li><a class="dropdown-item" href="#" onclick="openScheduleModal(); return false;"><i class="bi bi-clock me-1"></i>Schedule</a></li>
         </ul>
       </div>
-      <button class="btn btn-sm btn-outline-primary" onclick="runInUI()" id="runUIBtn" {% if not file_path %}disabled{% endif %}>
-        <i class="bi bi-display"></i> Run in UI Mode
-      </button>
     </div>
   </div>
 
@@ -366,6 +364,9 @@ function setStatus(msg, cls) {
   el.className = 'small mt-1 ' + (cls || 'text-muted');
 }
 
+var thinkingTimer = null;
+var thinkingStartTime = null;
+
 function showThinking() {
   var placeholder = document.getElementById('chatPlaceholder');
   if (placeholder) placeholder.remove();
@@ -374,15 +375,34 @@ function showThinking() {
   div.id = 'thinkingBubble';
   div.className = 'mb-3';
   div.innerHTML = '<div class="d-flex"><div class="p-2 rounded small" style="background:#f8f9fa;border:1px solid #dee2e6">' +
-    '<span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span></div></div>';
+    '<span class="ai-spinner"></span>' +
+    '<span id="thinkingText">Working</span>' +
+    '<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>' +
+    ' <span id="thinkingElapsed" class="text-muted ms-2" style="font-size:0.75rem"></span>' +
+    '</div></div>';
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
+
+  thinkingStartTime = Date.now();
+  thinkingTimer = setInterval(function() {
+    var elapsed = Math.round((Date.now() - thinkingStartTime) / 1000);
+    var el = document.getElementById('thinkingElapsed');
+    if (el) el.textContent = elapsed + 's';
+    // After 5s, update hint
+    var txt = document.getElementById('thinkingText');
+    if (txt && elapsed >= 5 && txt.textContent === 'Working') {
+      txt.textContent = 'Gathering context & generating code';
+    }
+  }, 1000);
 }
 
 function removeThinking() {
+  if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
   var el = document.getElementById('thinkingBubble');
   if (el) el.remove();
 }
+
+var chatAbortController = null;
 
 function sendMessage() {
   var input = document.getElementById('chatInput');
@@ -394,9 +414,15 @@ function sendMessage() {
 
   appendMessage('user', msg);
   input.value = '';
-  sendBtn.disabled = true;
   setStatus('', '');
   showThinking();
+
+  // Switch button to Cancel
+  sendBtn.textContent = 'Cancel';
+  sendBtn.className = 'btn btn-danger btn-sm';
+  sendBtn.onclick = cancelChat;
+
+  chatAbortController = new AbortController();
 
   fetch('/builder/api/chat/', {
     method: 'POST',
@@ -406,36 +432,79 @@ function sendMessage() {
       conversationId: conversationId,
       currentCode: code,
       filename: currentFilePath || 'untitled.spec.js'
-    })
+    }),
+    signal: chatAbortController.signal
   })
   .then(r => r.json())
   .then(d => {
     removeThinking();
-    sendBtn.disabled = false;
+    restoreSendBtn();
     if (d.error) {
       setStatus('Error: ' + d.error, 'text-danger');
       return;
     }
     conversationId = d.conversationId || conversationId;
-    appendMessage('assistant', d.response || '');
 
-    if (d.codeUpdate && d.codeUpdate.trim()) {
-      document.getElementById('codeEditor').value = d.codeUpdate;
-      markDirty();
-      setStatus('Code updated by AI.', 'text-success');
-    } else {
-      setStatus('', '');
+    // Show intermediate messages (AI's thinking steps)
+    if (d.intermediateMessages && d.intermediateMessages.length) {
+      d.intermediateMessages.forEach(function(msg) {
+        appendMessage('assistant', msg);
+      });
     }
 
+    // Show final response
+    if (d.response) appendMessage('assistant', d.response);
+
+    // Handle code update
+    if (d.codeUpdate && d.codeUpdate.code) {
+      document.getElementById('codeEditor').value = d.codeUpdate.code;
+      markDirty();
+    }
+
+    // Build status message
+    var statusParts = [];
+    if (d.codeUpdate && d.codeUpdate.code) {
+      statusParts.push('Code updated' + (d.codeUpdate.summary ? ': ' + d.codeUpdate.summary : ''));
+    }
     if (d.toolsUsed && d.toolsUsed.length) {
-      setStatus('Tools used: ' + d.toolsUsed.join(', '), 'text-info');
+      var toolNames = d.toolsUsed.map(function(t) {
+        return (typeof t === 'string') ? t : (t.tool || String(t));
+      });
+      var stepsInfo = d.steps && d.steps.length > 1
+        ? ' (' + d.steps.length + ' steps)'
+        : '';
+      statusParts.push('Tools: ' + toolNames.join(', ') + stepsInfo);
+    }
+    if (statusParts.length) {
+      setStatus(statusParts.join(' · '), d.codeUpdate ? 'text-success' : 'text-info');
     }
   })
   .catch(err => {
     removeThinking();
-    sendBtn.disabled = false;
-    setStatus('Network error: ' + err.message, 'text-danger');
+    restoreSendBtn();
+    if (err.name === 'AbortError') {
+      setStatus('Cancelled.', 'text-warning');
+    } else {
+      setStatus('Network error: ' + err.message, 'text-danger');
+    }
   });
+}
+
+function cancelChat() {
+  if (chatAbortController) {
+    chatAbortController.abort();
+    chatAbortController = null;
+  }
+  removeThinking();
+  restoreSendBtn();
+}
+
+function restoreSendBtn() {
+  var sendBtn = document.getElementById('sendBtn');
+  sendBtn.textContent = 'Submit';
+  sendBtn.className = 'btn btn-primary btn-sm';
+  sendBtn.onclick = sendMessage;
+  chatAbortController = null;
 }
 
 function clearChat() {
@@ -450,7 +519,7 @@ function saveFile() {
   if (!code.trim()) { alert('No code to save.'); return; }
 
   var envPicker = document.getElementById('envPicker');
-  var envId = envPicker ? envPicker.value : '';
+  var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
   if (!currentFilePath && !envId) {
     alert('Please select an environment before saving a new script.');
     return;
@@ -459,11 +528,20 @@ function saveFile() {
   var saveBtn = document.getElementById('saveBtn');
   saveBtn.disabled = true;
 
-  var payload = {code: code};
-  if (currentFilePath) payload.path = currentFilePath;
-  if (envId) payload.environment_id = envId;
+  // Use test-cases/api/save for existing files (has path),
+  // builder/api/save for new files (generates path)
+  var url, payload;
+  if (currentFilePath) {
+    url = '/test-cases/api/save/';
+    payload = { path: currentFilePath, content: code };
+    if (envId) payload.environment_id = envId;
+  } else {
+    url = '/builder/api/save/';
+    payload = { code: code };
+    if (envId) payload.environment_id = envId;
+  }
 
-  fetch('/test-cases/api/save/', {
+  fetch(url, {
     method: 'POST',
     headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
     body: JSON.stringify(payload)
@@ -591,19 +669,26 @@ function saveAndRun(headed) {
   if (isDirty || !currentFilePath) {
     // Save first, then run
     var envPicker = document.getElementById('envPicker');
-    var envId = envPicker ? envPicker.value : '';
+    var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
     if (!currentFilePath && !envId) {
       alert('Please select an environment before saving a new script.');
       return;
     }
 
-    var payload = {code: code};
-    if (currentFilePath) payload.path = currentFilePath;
-    if (envId) payload.environment_id = envId;
+    var url, payload;
+    if (currentFilePath) {
+      url = '/test-cases/api/save/';
+      payload = { path: currentFilePath, content: code };
+      if (envId) payload.environment_id = envId;
+    } else {
+      url = '/builder/api/save/';
+      payload = { code: code };
+      if (envId) payload.environment_id = envId;
+    }
 
     setRunStatus('Saving…', 'text-info');
 
-    fetch('/test-cases/api/save/', {
+    fetch(url, {
       method: 'POST',
       headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
@@ -623,10 +708,6 @@ function saveAndRun(headed) {
   } else {
     doRunScript(headed);
   }
-}
-
-function runInUI() {
-  saveAndRun(true);
 }
 
 function openScheduleModal() {
@@ -649,22 +730,29 @@ function scheduleRun() {
 
   if (isDirty || !currentFilePath) {
     var envPicker = document.getElementById('envPicker');
-    var envId = envPicker ? envPicker.value : '';
+    var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
     if (!currentFilePath && !envId) {
       alert('Please select an environment before saving a new script.');
       return;
     }
 
-    var payload = {code: code};
-    if (currentFilePath) payload.path = currentFilePath;
-    if (envId) payload.environment_id = envId;
+    var schedUrl, schedPayload;
+    if (currentFilePath) {
+      schedUrl = '/test-cases/api/save/';
+      schedPayload = { path: currentFilePath, content: code };
+      if (envId) schedPayload.environment_id = envId;
+    } else {
+      schedUrl = '/builder/api/save/';
+      schedPayload = { code: code };
+      if (envId) schedPayload.environment_id = envId;
+    }
 
     setRunStatus('Saving…', 'text-info');
 
-    fetch('/test-cases/api/save/', {
+    fetch(schedUrl, {
       method: 'POST',
       headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
+      body: JSON.stringify(schedPayload)
     })
     .then(r => r.json())
     .then(d => {
@@ -686,9 +774,7 @@ function scheduleRun() {
 function updateRunButtons() {
   var hasFile = !!currentFilePath;
   var saveRunBtn = document.getElementById('saveRunBtn');
-  var runUIBtn = document.getElementById('runUIBtn');
   if (saveRunBtn) saveRunBtn.disabled = !hasFile;
-  if (runUIBtn) runUIBtn.disabled = !hasFile;
   // Also enable the dropdown toggle
   var dropdownToggle = saveRunBtn ? saveRunBtn.nextElementSibling : null;
   if (dropdownToggle) dropdownToggle.disabled = !hasFile;
@@ -699,157 +785,5 @@ window.addEventListener('beforeunload', function(e) {
   if (isDirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
-// ── Recording (Playwright Codegen) ──
-var recordingPollTimer = null;
-
-function getRecordingEnvId() {
-  // Use script's environment, or the env picker for new scripts
-  if (currentEnvironmentId) return currentEnvironmentId;
-  var picker = document.getElementById('envPicker');
-  return picker ? picker.value : '';
-}
-
-function startRecording() {
-  var envId = getRecordingEnvId();
-  if (!envId) {
-    alert('Please select an environment before recording. The environment\'s base URL will be used as the starting page.');
-    return;
-  }
-
-  var btn = document.getElementById('recordBtn');
-  btn.disabled = true;
-  setRunStatus('Starting recorder…', 'text-info');
-
-  fetch('/builder/api/record/start/', {
-    method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
-    body: JSON.stringify({environment_id: envId})
-  })
-  .then(r => r.json().then(d => ({status: r.status, data: d})))
-  .then(({status, data}) => {
-    if (status === 409) {
-      setRunStatus('Another recording is already active.', 'text-warning');
-      btn.disabled = false;
-      return;
-    }
-    if (data.error) {
-      setRunStatus('Record error: ' + data.error, 'text-danger');
-      btn.disabled = false;
-      return;
-    }
-    setRunStatus('Recording from ' + data.base_url + '…', 'text-danger');
-    enterRecordingMode();
-    pollRecordingStatus();
-  })
-  .catch(err => {
-    setRunStatus('Record error: ' + err.message, 'text-danger');
-    btn.disabled = false;
-  });
-}
-
-function enterRecordingMode() {
-  document.getElementById('recordBtn').style.display = 'none';
-  document.getElementById('stopRecordBtn').style.display = '';
-  // Disable other action buttons during recording
-  var ids = ['dryRunBtn', 'saveBtn', 'saveRunBtn', 'runUIBtn'];
-  ids.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.disabled = true;
-  });
-  // Disable the dropdown toggle too
-  var saveRunBtn = document.getElementById('saveRunBtn');
-  if (saveRunBtn && saveRunBtn.nextElementSibling) saveRunBtn.nextElementSibling.disabled = true;
-}
-
-function exitRecordingMode() {
-  if (recordingPollTimer) {
-    clearTimeout(recordingPollTimer);
-    recordingPollTimer = null;
-  }
-  document.getElementById('recordBtn').style.display = '';
-  document.getElementById('recordBtn').disabled = false;
-  document.getElementById('stopRecordBtn').style.display = 'none';
-  // Re-enable action buttons
-  var ids = ['dryRunBtn', 'saveBtn'];
-  ids.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.disabled = false;
-  });
-  updateRunButtons();
-}
-
-function pollRecordingStatus() {
-  fetch('/builder/api/record/status/')
-  .then(r => r.json())
-  .then(d => {
-    if (!d.active && d.status === 'stopped') {
-      // Recording ended naturally (user closed codegen browser)
-      if (d.code) {
-        document.getElementById('codeEditor').value = d.code;
-        markDirty();
-      }
-      exitRecordingMode();
-      setRunStatus('Recording complete.', 'text-success');
-      // Clean up server-side session
-      fetch('/builder/api/record/stop/', {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
-        body: '{}'
-      });
-      return;
-    }
-    if (!d.active && d.status === 'idle') {
-      exitRecordingMode();
-      setRunStatus('Recording ended.', 'text-muted');
-      return;
-    }
-    // Update editor if code changed
-    if (d.changed && d.code) {
-      document.getElementById('codeEditor').value = d.code;
-      markDirty();
-    }
-    // Update elapsed time in status
-    var mins = Math.floor(d.elapsed_seconds / 60);
-    var secs = Math.floor(d.elapsed_seconds % 60);
-    var elapsed = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
-    setRunStatus('Recording… (' + elapsed + ')', 'text-danger');
-    // Poll again
-    recordingPollTimer = setTimeout(pollRecordingStatus, 1500);
-  })
-  .catch(err => {
-    // Network error — retry once more
-    recordingPollTimer = setTimeout(pollRecordingStatus, 3000);
-  });
-}
-
-function stopRecording() {
-  var btn = document.getElementById('stopRecordBtn');
-  btn.disabled = true;
-  setRunStatus('Stopping recorder…', 'text-info');
-
-  if (recordingPollTimer) {
-    clearTimeout(recordingPollTimer);
-    recordingPollTimer = null;
-  }
-
-  fetch('/builder/api/record/stop/', {
-    method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
-    body: '{}'
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.code) {
-      document.getElementById('codeEditor').value = d.code;
-      markDirty();
-    }
-    exitRecordingMode();
-    setRunStatus('Recording stopped.', 'text-success');
-  })
-  .catch(err => {
-    exitRecordingMode();
-    setRunStatus('Stop error: ' + err.message, 'text-danger');
-  });
-}
 </script>
 {% endblock %}

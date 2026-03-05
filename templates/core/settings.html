@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-clock"></i> Timezone
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">All timestamps throughout SCOUT will display in your selected timezone.</p>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label for="timezone" class="form-label">Timezone</label>
+            <select name="timezone" id="timezone" class="form-select">
+              {% for group, tzs in timezone_choices %}
+              <optgroup label="{{ group }}">
+                {% for tz in tzs %}
+                <option value="{{ tz }}" {% if tz == current_timezone %}selected{% endif %}>{{ tz }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg"></i> Save
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

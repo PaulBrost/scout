@@ -285,8 +285,8 @@ def suite_run(request, suite_id):
         # Create run
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_runs (status, trigger_type, suite_id, environment_id, config, notes)
-                   VALUES ('running', 'dashboard', %s, %s, %s, %s) RETURNING id""",
+                """INSERT INTO test_runs (status, trigger_type, suite_id, environment_id, config, notes, queued_at)
+                   VALUES ('running', 'dashboard', %s, %s, %s, %s, now()) RETURNING id""",
                 [suite_id, suite.get('environment_id'),
                  json.dumps({'browser_profiles': suite.get('browser_profiles', [])}),
                  f"Suite: {suite['name']}"]
@@ -298,9 +298,18 @@ def suite_run(request, suite_id):
                     [str(run_id), sp]
                 )
 
-        # Queue task
-        from django_q.tasks import async_task
-        async_task('tasks.run_tasks.execute_suite_run', str(run_id))
+        # Run task in background thread
+        import threading
+        def _run_suite(rid=str(run_id)):
+            try:
+                from tasks.run_tasks import execute_suite_run
+                execute_suite_run(rid)
+            except Exception as e:
+                print(f'[suite_run] error: {e}')
+                from django.db import connection as conn
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+        threading.Thread(target=_run_suite, daemon=True).start()
 
         return JsonResponse({'runId': str(run_id), 'status': 'running', 'scripts': len(script_paths)})
     except Exception as e:
@@ -336,7 +345,7 @@ def run_script(request):
             run_status = 'scheduled' if scheduled_at else 'running'
 
             cursor.execute(
-                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, started_at)
+                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at)
                    VALUES (gen_random_uuid(), %s, 'manual', %s, %s, %s, now()) RETURNING id""",
                 [run_status, str(environment_id) if environment_id else None,
                  json.dumps(config), f'Ad-hoc: {script_path}']
@@ -349,20 +358,18 @@ def run_script(request):
 
         # Only queue for immediate execution if not scheduled
         if not scheduled_at:
-            if data.get('headed'):
-                # Headed mode: run synchronously via thread so the browser opens
-                # on this machine (qcluster worker has no display)
-                import threading
-                def _run_headed():
-                    try:
-                        from tasks.run_tasks import execute_single_script
-                        execute_single_script(str(run_id), script_path)
-                    except Exception as e:
-                        print(f'[run_script] headed run error: {e}')
-                threading.Thread(target=_run_headed, daemon=True).start()
-            else:
-                from django_q.tasks import async_task
-                async_task('tasks.run_tasks.execute_single_script', str(run_id), script_path)
+            import threading
+            def _run_task(rid=str(run_id), sp=script_path):
+                try:
+                    from tasks.run_tasks import execute_single_script
+                    execute_single_script(rid, sp)
+                except Exception as e:
+                    print(f'[run_script] run error: {e}')
+                    from django.db import connection as conn
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+                        cur.execute("UPDATE test_run_scripts SET status='error', error_message=%s, completed_at=now() WHERE run_id=%s AND status IN ('queued','running')", [str(e), rid])
+            threading.Thread(target=_run_task, daemon=True).start()
 
         return JsonResponse({'runId': str(run_id), 'status': run_status})
     except Exception as e:

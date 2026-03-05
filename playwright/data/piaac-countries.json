@@ -1,0 +1,15 @@
+{
+  "version": "FT New",
+  "discovered_at": "2026-03-04T00:00:00.000Z",
+  "source": "manual",
+  "countries": [
+    {"code": "AUS", "text": "Australia", "languages": [{"code": "eng", "text": "English"}]},
+    {"code": "ROU", "text": "Romania", "languages": [{"code": "hun", "text": "Hungarian"}, {"code": "ron", "text": "Romanian"}]},
+    {"code": "RWA", "text": "Rwanda", "languages": [{"code": "eng", "text": "English"}, {"code": "kin", "text": "Kinyarwanda"}]},
+    {"code": "SAU", "text": "Saudi Arabia", "languages": [{"code": "ara", "text": "Arabic"}]},
+    {"code": "SVN", "text": "Slovenia", "languages": [{"code": "slv", "text": "Slovenian"}]},
+    {"code": "URY", "text": "Uruguay", "languages": [{"code": "esp", "text": "Spanish"}]},
+    {"code": "ZED", "text": "ZED", "languages": [{"code": "eng", "text": "English"}]},
+    {"code": "ZZZ", "text": "ZZZ", "languages": [{"code": "eng", "text": "English"}]}
+  ]
+}

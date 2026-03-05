@@ -173,12 +173,13 @@ class TestRun(models.Model):
     config = models.JSONField(default=dict)
     summary = models.JSONField(null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
-    started_at = models.DateTimeField(auto_now_add=True)
+    queued_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'test_runs'
-        ordering = ['-started_at']
+        ordering = ['-queued_at']
 
     def __str__(self):
         return f"Run {str(self.id)[:8]} ({self.status})"
@@ -375,6 +376,17 @@ class TestDataSet(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.data_type})"
+
+
+class UserSettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='settings')
+    timezone = models.CharField(max_length=63, default='America/New_York')
+
+    class Meta:
+        db_table = 'user_settings'
+
+    def __str__(self):
+        return f"{self.user.username} — {self.timezone}"
 
 
 class AIConversation(models.Model):

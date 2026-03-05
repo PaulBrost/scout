@@ -15,7 +15,8 @@
       <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Assessment</div><div class="small">{% if item.assessment_numeric_id %}<a href="/assessments/{{ item.assessment_numeric_id }}/">{{ item.assessment_name }}</a>{% else %}—{% endif %}</div></div>
       <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Category</div><div class="small" id="viewCategory">{{ item.category|default:"—" }}</div></div>
       <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Tier</div><div class="small" id="viewTier">{{ item.tier|default:"—" }}</div></div>
-      <div class="d-flex"><div class="small text-muted text-end me-2" style="min-width:110px">Languages</div><div class="small" id="viewLanguages">{{ item.languages|default:"—" }}</div></div>
+      <div class="d-flex mb-1"><div class="small text-muted text-end me-2" style="min-width:110px">Languages</div><div class="small" id="viewLanguages"></div></div>
+      <div class="d-flex"><div class="small text-muted text-end me-2" style="min-width:110px">Baseline</div><div class="small" id="viewBaseline"></div></div>
     </div>
     <!-- Edit mode -->
     <div id="editMode" style="display:none">
@@ -146,6 +147,108 @@ function getCookie(n) {
   return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(n + '='))?.split('=')[1] || '';
 }
 
+// Parse item data from Django
+var itemLanguages = {{ item.languages|safe|default:"[]" }};
+var itemMetadata = {{ item.metadata|safe|default:"{}" }};
+var itemNumericId = {{ item.numeric_id }};
+
+function renderLanguageBadges() {
+  var container = document.getElementById('viewLanguages');
+  if (!itemLanguages || itemLanguages.length === 0) {
+    container.textContent = '—';
+    return;
+  }
+  var baseline = (itemMetadata && itemMetadata.baseline)
+    ? itemMetadata.baseline.country + '/' + itemMetadata.baseline.language
+    : null;
+  container.innerHTML = itemLanguages.map(function(lang) {
+    var isBaseline = (lang === baseline);
+    var cls = isBaseline ? 'badge bg-primary' : 'badge bg-secondary bg-opacity-25 text-dark';
+    var star = isBaseline ? '<i class="bi bi-star-fill text-warning me-1" style="font-size:.65rem"></i>' : '';
+    return '<span class="' + cls + ' me-1">' + star + lang + '</span>';
+  }).join('');
+}
+
+function renderBaseline() {
+  var container = document.getElementById('viewBaseline');
+  var baseline = itemMetadata && itemMetadata.baseline;
+  if (baseline) {
+    var tag = baseline.country + '/' + baseline.language;
+    container.innerHTML = '<span class="badge bg-primary"><i class="bi bi-star-fill text-warning me-1" style="font-size:.65rem"></i>' + tag + '</span> ' +
+      '<a href="#" class="small ms-1" onclick="showBaselineDropdown(event)">Change</a>';
+  } else {
+    container.innerHTML = '<span class="text-muted">Not set</span> ' +
+      '<a href="#" class="small ms-1" onclick="showBaselineDropdown(event)">Set Baseline</a>';
+  }
+}
+
+function showBaselineDropdown(e) {
+  e.preventDefault();
+  if (!itemLanguages || itemLanguages.length === 0) {
+    alert('No languages available. Add languages to this item first.');
+    return;
+  }
+  // Build a simple dropdown
+  var existing = document.getElementById('baselineDropdown');
+  if (existing) { existing.remove(); return; }
+
+  var dd = document.createElement('div');
+  dd.id = 'baselineDropdown';
+  dd.className = 'dropdown-menu show shadow';
+  dd.style.cssText = 'position:absolute;z-index:1050;min-width:160px';
+
+  itemLanguages.forEach(function(lang) {
+    var parts = lang.split('/');
+    var country = parts[0] || '';
+    var language = parts[1] || '';
+    var a = document.createElement('a');
+    a.className = 'dropdown-item small';
+    a.href = '#';
+    a.textContent = lang;
+    a.onclick = function(ev) {
+      ev.preventDefault();
+      setBaseline(country, language);
+      dd.remove();
+    };
+    dd.appendChild(a);
+  });
+
+  e.target.parentElement.style.position = 'relative';
+  e.target.parentElement.appendChild(dd);
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener('click', function handler() {
+      var el = document.getElementById('baselineDropdown');
+      if (el) el.remove();
+      document.removeEventListener('click', handler);
+    }, { once: true });
+  }, 0);
+}
+
+function setBaseline(country, language) {
+  fetch('/items/api/set-baseline/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({ numeric_id: itemNumericId, country: country, language: language })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      itemMetadata.baseline = d.baseline;
+      renderBaseline();
+      renderLanguageBadges();
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+    }
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+// Initial render
+renderLanguageBadges();
+renderBaseline();
+
 var editing = false;
 function toggleEdit() {
   editing = !editing;
@@ -184,7 +287,8 @@ function saveDetails() {
       document.getElementById('viewTitle').textContent = title || '—';
       document.getElementById('viewCategory').textContent = document.getElementById('editCategory').value.trim() || '—';
       document.getElementById('viewTier').textContent = document.getElementById('editTier').value.trim() || '—';
-      document.getElementById('viewLanguages').textContent = langVal || '—';
+      itemLanguages = languages;
+      renderLanguageBadges();
       document.getElementById('pageTitleName').textContent = title || '{{ item.item_id|escapejs }}';
       toggleEdit();
     } else {
