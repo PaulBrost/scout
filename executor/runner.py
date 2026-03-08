@@ -39,6 +39,65 @@ def find_artifacts(script_path):
     return trace_path, video_path
 
 
+def find_snapshots(script_path, pre_existing_pngs=None):
+    """Scan -snapshots/ dir AND test-results/ for captured screenshot PNGs.
+    pre_existing_pngs: dict of {Path: mtime} that existed before the script ran.
+    Returns list of dicts: [{name, file_path, project_name}, ...]
+    """
+    pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
+    tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+    spec_file = tests_dir / script_path
+    snapshots_dir = spec_file.parent / f'{spec_file.name}-snapshots'
+    results = []
+
+    # 1) Scan the per-spec -snapshots/ directory (Playwright baselines)
+    try:
+        if snapshots_dir.exists():
+            for f in sorted(snapshots_dir.iterdir()):
+                if f.suffix.lower() != '.png':
+                    continue
+                stem = f.stem
+                project_name = 'unknown'
+                name = stem
+                for proj in ('chrome-desktop', 'firefox-desktop', 'chromebook', 'edge-desktop', 'webkit-desktop'):
+                    idx = stem.find(f'-{proj}')
+                    if idx != -1:
+                        name = stem[:idx]
+                        project_name = proj
+                        break
+                rel_path = str(f.relative_to(pw_root))
+                results.append({'name': name, 'file_path': rel_path, 'project_name': project_name})
+    except Exception:
+        pass
+
+    # 2) Scan test-results/ for new or modified PNGs from this run
+    if pre_existing_pngs is not None:
+        results_dir = pw_root / 'test-results'
+        try:
+            if results_dir.exists():
+                for f in sorted(results_dir.rglob('*.png')):
+                    # Skip files that existed before and weren't modified
+                    if f in pre_existing_pngs and f.stat().st_mtime == pre_existing_pngs[f]:
+                        continue
+                    stem = f.stem
+                    # Classify by suffix pattern: *-diff, *-actual, or plain
+                    category = ''
+                    name = stem
+                    if stem.endswith('-diff'):
+                        category = 'diff'
+                        name = stem[:-5]
+                    elif stem.endswith('-actual'):
+                        category = 'actual'
+                        name = stem[:-7]
+                    display_name = f'{name} ({category})' if category else name
+                    rel_path = str(f.relative_to(pw_root))
+                    results.append({'name': display_name, 'file_path': rel_path, 'project_name': 'comparison'})
+        except Exception:
+            pass
+
+    return results
+
+
 def extract_error_message(stdout, stderr, json_report):
     """Extract a meaningful error from Playwright output."""
     if json_report and json_report.get('suites'):
@@ -100,6 +159,9 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
 
     results_dir = project_root / 'test-results'
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Snapshot existing PNGs with mtimes so we detect new AND overwritten files
+    pre_existing_pngs = {f: f.stat().st_mtime for f in results_dir.rglob('*.png')}
 
     json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
 
@@ -195,6 +257,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         error_message = extract_error_message(stdout, stderr, json_report)
 
     trace_path, video_path = find_artifacts(script_path)
+    snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs)
 
     return {
         'status': status,
@@ -205,6 +268,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         'exit_code': exit_code,
         'trace_path': trace_path,
         'video_path': video_path,
+        'snapshots': snapshots,
     }
 
 
@@ -336,11 +400,25 @@ def execute_run(run_id, script_paths, options=None):
                     """UPDATE test_run_scripts
                        SET status = %s, duration_ms = %s, error_message = %s,
                            execution_log = %s, trace_path = %s, video_path = %s, completed_at = now()
-                       WHERE run_id = %s AND script_path = %s""",
+                       WHERE run_id = %s AND script_path = %s
+                       RETURNING id""",
                     [result['status'], result['duration_ms'], result['error_message'],
                      result['execution_log'], result['trace_path'], result['video_path'],
                      run_id, script_path]
                 )
+                script_id_row = cursor.fetchone()
+                run_script_id = script_id_row[0] if script_id_row else None
+
+            # Save captured snapshots as RunScreenshot records
+            for snap in result.get('snapshots', []):
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, created_at)
+                           VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, false, now())
+                           ON CONFLICT DO NOTHING""",
+                        [run_id, run_script_id, snap['name'], snap['file_path'], snap['project_name']]
+                    )
+
             if result['status'] == 'passed':
                 passed += 1
             elif result['status'] == 'error':

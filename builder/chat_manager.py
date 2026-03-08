@@ -86,7 +86,7 @@ def build_system_prompt(current_code, filename):
     prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n\n'
     prompt += '## Code Conventions\n'
     prompt += '- Use CommonJS `require()` syntax, NOT ES module `import` syntax.\n'
-    prompt += '- Scripts in `tests/items/` import helpers with `../../src/helpers/` paths.\n'
+    prompt += '- Scripts in `tests/` import helpers with `../src/helpers/` paths. Scripts in `tests/items/` use `../../src/helpers/`.\n'
     prompt += '- Always pass env config to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
     prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n\n'
 
@@ -306,6 +306,36 @@ def execute_tool(tool_id, args, context):
         except Exception as e:
             return {'success': False, 'result': f'Database error: {e}'}
 
+    elif tool_id == 'get_run_screenshots':
+        run_id = args.get('run_id', '').strip()
+        if not run_id:
+            return {'success': False, 'result': 'No run_id provided'}
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT rs.name, rs.file_path, rs.project_name, rs.flagged, rs.flag_notes,
+                              trs.script_path
+                       FROM run_screenshots rs
+                       LEFT JOIN test_run_scripts trs ON rs.run_script_id = trs.id
+                       WHERE rs.run_id = %s::uuid
+                       ORDER BY rs.name""",
+                    [run_id]
+                )
+                cols = [c[0] for c in cursor.description]
+                rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+            if not rows:
+                return {'success': True, 'result': f'No screenshots found for run {run_id}.'}
+            output = '\n'.join(
+                f"- **{r['name']}** — `{r['file_path']}` ({r['project_name']})"
+                + (' [FLAGGED]' if r['flagged'] else '')
+                + (f" Note: {r['flag_notes']}" if r.get('flag_notes') else '')
+                + (f" (from {r['script_path']})" if r.get('script_path') else '')
+                for r in rows
+            )
+            return {'success': True, 'result': f'Found {len(rows)} screenshot(s) for run {run_id[:8]}:\n{output}'}
+        except Exception as e:
+            return {'success': False, 'result': f'Database error: {e}'}
+
     return {'success': False, 'result': f'No executor for tool: {tool_id}'}
 
 
@@ -341,7 +371,7 @@ def chat(message, conversation_id, current_code, filename):
 
     # Tools that trigger auto-continue (research / context-gathering)
     RESEARCH_TOOLS = {'read_file', 'list_helpers', 'search_tests', 'get_items',
-                      'explain_code', 'analyze_script'}
+                      'explain_code', 'analyze_script', 'get_run_screenshots'}
 
     # Load or create conversation
     if conversation_id:
@@ -378,7 +408,7 @@ def chat(message, conversation_id, current_code, filename):
     for iteration in range(MAX_LOOP):
         # Call AI
         ai_messages = [{'role': 'system', 'content': system_prompt}] + messages
-        raw_response = provider.chat_completion(ai_messages, {'max_tokens': 4000})
+        raw_response = provider.chat_completion(ai_messages, {'max_tokens': 8000})
 
         # Parse tool calls
         text, tool_calls = parse_tool_calls(raw_response)
@@ -387,6 +417,21 @@ def chat(message, conversation_id, current_code, filename):
         messages.append({'role': 'assistant', 'content': raw_response})
 
         if not tool_calls:
+            # Empty response — the AI returned nothing (possibly content filter or token issue)
+            if (not text or not text.strip()) and iteration < MAX_LOOP - 1:
+                steps.append({
+                    'iteration': iteration + 1,
+                    'tools': [],
+                    'note': 'auto-continue (empty response)',
+                })
+                messages.pop()  # remove the empty assistant message
+                messages.append({'role': 'user', 'content':
+                    'Your previous response was empty. You MUST respond now. '
+                    'If you have gathered enough context from the tools, call update_code '
+                    'with the complete finished script. If you need to explain something, '
+                    'write your explanation as plain text.'})
+                continue
+
             # No tools called — check if the AI is just announcing a plan
             if _looks_like_planning(text) and iteration < MAX_LOOP - 1:
                 # Save this as an intermediate message and nudge the AI to continue
@@ -477,6 +522,22 @@ def chat(message, conversation_id, current_code, filename):
     # If code was updated but no final text, generate a completion message
     if code_update and not final_text:
         final_text = f"Done — {code_update['summary']}. The script is ready in the editor. You can review it, then Save or Save & Run."
+
+    # If the loop exhausted without producing any output, provide a fallback
+    if not final_text and not code_update:
+        tool_names = [t['tool'] for t in all_tool_results]
+        if tool_names:
+            final_text = (
+                f"I gathered context using {', '.join(tool_names)} but wasn't able to "
+                f"generate a complete response. This can happen when the task is complex "
+                f"or the AI service returned an incomplete response. "
+                f"Please try again — you can simplify the request or break it into steps."
+            )
+        else:
+            final_text = (
+                "I wasn't able to generate a response. The AI service may be temporarily "
+                "unavailable. Please try again."
+            )
 
     # Save conversation to DB
     with connection.cursor() as cursor:

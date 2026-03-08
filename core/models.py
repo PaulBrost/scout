@@ -389,6 +389,28 @@ class UserSettings(models.Model):
         return f"{self.user.username} — {self.timezone}"
 
 
+class RunScreenshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(TestRun, on_delete=models.CASCADE, related_name='screenshots')
+    run_script = models.ForeignKey(
+        TestRunScript, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='screenshots'
+    )
+    name = models.TextField()
+    file_path = models.TextField()
+    project_name = models.TextField(default='chrome-desktop')
+    flagged = models.BooleanField(default=False)
+    flag_notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'run_screenshots'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({'flagged' if self.flagged else 'ok'})"
+
+
 class AIConversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     messages = models.JSONField(default=list)

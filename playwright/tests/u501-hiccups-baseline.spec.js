@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { login } = require('../src/helpers/auth');
 const { selectFilters, DEFAULT_FILTERS } = require('../src/helpers/piaac');
 
-// Only run on chrome-desktop project
+// Only run on chrome-desktop project (Chromium — Google Chrome engine)
 test.use({
   video: 'off',
   snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}-{projectName}{ext}',

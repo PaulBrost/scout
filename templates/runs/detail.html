@@ -131,6 +131,108 @@
   </div>
 </div>
 
+<!-- Screenshots Section -->
+{% if screenshots %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      Screenshots
+      <span class="badge bg-secondary">{{ screenshots|length }}</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <label class="small text-muted mb-0">Compare with:</label>
+      <input type="text" id="baselineRunInput" class="form-control form-control-sm" placeholder="Paste run ID..."
+             style="width:280px;font-size:.75rem" title="Enter a run ID to compare screenshots side-by-side">
+      <button class="btn btn-sm btn-outline-primary" id="loadBaselineBtn" onclick="loadBaselineRun()">
+        <i class="bi bi-arrows-angle-expand"></i> Load
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" id="clearBaselineBtn" onclick="clearBaseline()" style="display:none">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="baselineInfo" class="alert alert-info py-2 small mb-3" style="display:none"></div>
+    <div class="row g-3">
+      {% for ss in screenshots %}
+      <div class="col-md-4 col-lg-3">
+        <div class="card h-100 border {% if ss.flagged %}border-warning{% endif %}" id="ss-card-{{ ss.id }}">
+          <a href="#" class="ss-thumb" data-ss-id="{{ ss.id }}" data-ss-name="{{ ss.name }}"
+             data-ss-src="/runs/screenshot/img/{{ ss.file_path }}"
+             data-ss-flagged="{{ ss.flagged|yesno:'true,false' }}"
+             data-ss-notes="{{ ss.flag_notes|default_if_none:'' }}">
+            <img src="/runs/screenshot/img/{{ ss.file_path }}" class="card-img-top" alt="{{ ss.name }}" loading="lazy"
+                 style="height:180px;object-fit:cover;object-position:top;cursor:pointer">
+          </a>
+          <div class="card-body p-2">
+            <div class="d-flex align-items-center justify-content-between">
+              <span class="small font-monospace text-truncate" title="{{ ss.name }}">{{ ss.name }}</span>
+              <button class="btn btn-sm p-0 ms-1 flag-btn" title="Toggle flag"
+                      onclick="toggleFlag('{{ ss.id }}')">
+                <i class="bi {% if ss.flagged %}bi-flag-fill text-warning{% else %}bi-flag text-muted{% endif %}" id="flag-icon-{{ ss.id }}"></i>
+              </button>
+            </div>
+            <div class="text-muted" style="font-size:.68rem">{{ ss.project_name }}</div>
+            {% if ss.flagged and ss.flag_notes %}
+            <div class="text-warning small mt-1" id="flag-note-{{ ss.id }}">{{ ss.flag_notes }}</div>
+            {% else %}
+            <div class="text-warning small mt-1" id="flag-note-{{ ss.id }}" style="display:none"></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Screenshot Modal -->
+<div class="modal fade" id="screenshotModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ssModalTitle">Screenshot</h5>
+        <div class="ms-auto me-3 d-flex align-items-center gap-2">
+          <div class="btn-group btn-group-sm" id="ssModalViewToggle" style="display:none">
+            <button class="btn btn-outline-secondary active" onclick="setCompareView('side')">Side-by-side</button>
+            <button class="btn btn-outline-secondary" onclick="setCompareView('single')">Current only</button>
+            <button class="btn btn-outline-secondary" onclick="setCompareView('baseline')">Baseline only</button>
+          </div>
+          <button class="btn btn-sm btn-outline-warning" id="ssModalFlagBtn" onclick="toggleFlagFromModal()">
+            <i class="bi bi-flag" id="ssModalFlagIcon"></i> Flag
+          </button>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2">
+        <!-- Single image view (no baseline loaded) -->
+        <div id="ssModalSingle" class="text-center">
+          <img id="ssModalImg" src="" class="img-fluid" style="max-height:80vh" alt="">
+        </div>
+        <!-- Side-by-side comparison view -->
+        <div id="ssModalCompare" class="row g-2" style="display:none">
+          <div class="col-6 text-center">
+            <div class="text-muted small mb-1 fw-semibold">Current run</div>
+            <img id="ssModalImgLeft" src="" class="img-fluid" style="max-height:75vh" alt="">
+          </div>
+          <div class="col-6 text-center">
+            <div class="text-muted small mb-1 fw-semibold">Baseline</div>
+            <img id="ssModalImgRight" src="" class="img-fluid" style="max-height:75vh" alt="">
+            <div class="text-muted small mt-1" id="ssModalBaselineLabel"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <div>
+          <input type="text" id="ssModalNotes" class="form-control form-control-sm" placeholder="Flag notes..." style="width:350px">
+        </div>
+        <small class="text-muted font-monospace" id="ssModalPath"></small>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Log Modal -->
 <div class="modal fade" id="logModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -243,10 +345,11 @@ function pollRunStatus() {
         });
       }
 
-      // Stop polling when run is done
+      // When run finishes, reload page to show screenshots and final state
       if (d.status !== 'running' && d.status !== 'scheduled') {
         clearInterval(polling);
         polling = null;
+        location.reload();
       }
     })
     .catch(function() {}); // Silently ignore transient network errors
@@ -270,9 +373,229 @@ function formatDuration(ms) {
   return s + 's';
 }
 
+// Screenshot thumbnail click handler
+document.addEventListener('click', function(e) {
+  var link = e.target.closest('.ss-thumb');
+  if (!link) return;
+  e.preventDefault();
+  showScreenshot(
+    link.dataset.ssId, link.dataset.ssName, link.dataset.ssSrc,
+    link.dataset.ssFlagged === 'true', link.dataset.ssNotes || ''
+  );
+});
+
+// Screenshot viewer
+var currentScreenshotId = null;
+var currentScreenshotFlagged = false;
+
+function showScreenshot(id, name, src, flagged, notes) {
+  currentScreenshotId = id;
+  currentScreenshotFlagged = flagged;
+  document.getElementById('ssModalTitle').textContent = name;
+  document.getElementById('ssModalImg').src = src;
+  document.getElementById('ssModalPath').textContent = src.replace('/runs/screenshot/img/', '');
+  document.getElementById('ssModalNotes').value = notes || '';
+  updateModalFlagUI(flagged);
+  new bootstrap.Modal(document.getElementById('screenshotModal')).show();
+}
+
+function updateModalFlagUI(flagged) {
+  var icon = document.getElementById('ssModalFlagIcon');
+  var btn = document.getElementById('ssModalFlagBtn');
+  if (flagged) {
+    icon.className = 'bi bi-flag-fill';
+    btn.classList.remove('btn-outline-warning');
+    btn.classList.add('btn-warning');
+  } else {
+    icon.className = 'bi bi-flag';
+    btn.classList.add('btn-outline-warning');
+    btn.classList.remove('btn-warning');
+  }
+}
+
+function toggleFlag(id) {
+  var notes = '';
+  var noteEl = document.getElementById('flag-note-' + id);
+  if (noteEl) notes = noteEl.textContent || '';
+  doToggleFlag(id, null, notes);
+}
+
+function toggleFlagFromModal() {
+  if (!currentScreenshotId) return;
+  var notes = document.getElementById('ssModalNotes').value;
+  doToggleFlag(currentScreenshotId, null, notes);
+}
+
+function doToggleFlag(id, forceFlagged, notes) {
+  var body = {};
+  if (forceFlagged !== null && forceFlagged !== undefined) body.flagged = forceFlagged;
+  if (notes !== undefined) body.notes = notes;
+
+  fetch('/runs/screenshot/' + id + '/flag/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify(body),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    // Update card UI
+    var icon = document.getElementById('flag-icon-' + d.id);
+    var card = document.getElementById('ss-card-' + d.id);
+    var noteEl = document.getElementById('flag-note-' + d.id);
+    if (icon) {
+      icon.className = d.flagged ? 'bi bi-flag-fill text-warning' : 'bi bi-flag text-muted';
+    }
+    if (card) {
+      if (d.flagged) card.classList.add('border-warning');
+      else card.classList.remove('border-warning');
+    }
+    if (noteEl) {
+      noteEl.textContent = d.flag_notes || '';
+      noteEl.style.display = d.flagged && d.flag_notes ? '' : 'none';
+    }
+    // Update modal if open
+    if (currentScreenshotId === d.id) {
+      currentScreenshotFlagged = d.flagged;
+      updateModalFlagUI(d.flagged);
+    }
+  });
+}
+
+function getCsrf() {
+  var c = document.cookie.match(/csrftoken=([^;]+)/);
+  return c ? c[1] : '';
+}
+
 // Start polling if run is in progress
 if ('{{ run.status }}' === 'running' || '{{ run.status }}' === 'scheduled') {
   polling = setInterval(pollRunStatus, 3000);
 }
+
+// --- Baseline comparison ---
+var baselineScreenshots = null; // map: name -> {file_path, ...}
+
+function loadBaselineRun() {
+  var input = document.getElementById('baselineRunInput');
+  var rid = input.value.trim();
+  if (!rid) return;
+  var btn = document.getElementById('loadBaselineBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  fetch('/runs/' + rid + '/screenshots/')
+    .then(function(r) { return r.ok ? r.json() : Promise.reject('Run not found or no screenshots'); })
+    .then(function(d) {
+      if (!d.screenshots || !d.screenshots.length) {
+        alert('No screenshots found for that run.');
+        return;
+      }
+      baselineScreenshots = {};
+      d.screenshots.forEach(function(s) {
+        baselineScreenshots[s.name] = s;
+      });
+      document.getElementById('baselineInfo').style.display = '';
+      document.getElementById('baselineInfo').textContent =
+        'Baseline loaded: ' + d.screenshots.length + ' screenshots from run ' + rid.substring(0, 8) + '...';
+      document.getElementById('clearBaselineBtn').style.display = '';
+    })
+    .catch(function(err) { alert('Error: ' + err); })
+    .finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrows-angle-expand"></i> Load';
+    });
+}
+
+function clearBaseline() {
+  baselineScreenshots = null;
+  document.getElementById('baselineInfo').style.display = 'none';
+  document.getElementById('clearBaselineBtn').style.display = 'none';
+  document.getElementById('baselineRunInput').value = '';
+}
+
+var currentCompareView = 'side';
+
+function setCompareView(mode) {
+  currentCompareView = mode;
+  var toggle = document.getElementById('ssModalViewToggle');
+  toggle.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+  if (mode === 'side') toggle.children[0].classList.add('active');
+  else if (mode === 'single') toggle.children[1].classList.add('active');
+  else toggle.children[2].classList.add('active');
+  updateModalLayout();
+}
+
+function updateModalLayout() {
+  var single = document.getElementById('ssModalSingle');
+  var compare = document.getElementById('ssModalCompare');
+  var toggle = document.getElementById('ssModalViewToggle');
+
+  if (!baselineScreenshots || !currentBaselineMatch) {
+    single.style.display = '';
+    compare.style.display = 'none';
+    toggle.style.display = 'none';
+    return;
+  }
+
+  toggle.style.display = '';
+  if (currentCompareView === 'side') {
+    single.style.display = 'none';
+    compare.style.display = '';
+    compare.querySelector('.col-6:first-child').style.display = '';
+    compare.querySelector('.col-6:last-child').style.display = '';
+  } else if (currentCompareView === 'single') {
+    single.style.display = '';
+    compare.style.display = 'none';
+  } else { // baseline only
+    single.style.display = 'none';
+    compare.style.display = '';
+    compare.querySelector('.col-6:first-child').style.display = 'none';
+    compare.querySelector('.col-6:last-child').style.display = '';
+    compare.querySelector('.col-6:last-child').className = 'col-12 text-center';
+  }
+}
+
+var currentBaselineMatch = null;
+
+// Patch showScreenshot to support comparison
+var _origShowScreenshot = showScreenshot;
+showScreenshot = function(id, name, src, flagged, notes) {
+  currentScreenshotId = id;
+  currentScreenshotFlagged = flagged;
+  document.getElementById('ssModalTitle').textContent = name;
+  document.getElementById('ssModalImg').src = src;
+  document.getElementById('ssModalImgLeft').src = src;
+  document.getElementById('ssModalPath').textContent = src.replace('/runs/screenshot/img/', '');
+  document.getElementById('ssModalNotes').value = notes || '';
+  updateModalFlagUI(flagged);
+
+  // Find baseline match by name
+  currentBaselineMatch = null;
+  if (baselineScreenshots) {
+    // Try exact match first, then try matching base name (strip " (actual)"/" (diff)" suffixes)
+    if (baselineScreenshots[name]) {
+      currentBaselineMatch = baselineScreenshots[name];
+    } else {
+      // Try fuzzy: strip comparison suffixes and match
+      var baseName = name.replace(/ \((actual|diff)\)$/, '');
+      Object.keys(baselineScreenshots).forEach(function(k) {
+        var bBase = k.replace(/ \((actual|diff)\)$/, '');
+        if (bBase === baseName && !currentBaselineMatch) currentBaselineMatch = baselineScreenshots[k];
+      });
+    }
+  }
+
+  if (currentBaselineMatch) {
+    var bSrc = '/runs/screenshot/img/' + currentBaselineMatch.file_path;
+    document.getElementById('ssModalImgRight').src = bSrc;
+    document.getElementById('ssModalBaselineLabel').textContent = currentBaselineMatch.name;
+    // Reset col classes for side-by-side
+    var cols = document.getElementById('ssModalCompare').querySelectorAll('[class*="col-"]');
+    cols[0].className = 'col-6 text-center';
+    cols[1].className = 'col-6 text-center';
+  }
+
+  currentCompareView = 'side';
+  updateModalLayout();
+  new bootstrap.Modal(document.getElementById('screenshotModal')).show();
+};
 </script>
 {% endblock %}

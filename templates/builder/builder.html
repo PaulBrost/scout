@@ -102,8 +102,102 @@
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
           <!-- Message history -->
           <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
-            <div class="text-muted text-center small py-4" id="chatPlaceholder">
-              Describe the test you want to create, or ask for help modifying the script.
+            <div id="chatPlaceholder" class="small py-2">
+              <p class="text-muted mb-2">Describe the test you want to create, or click an example to get started.</p>
+
+              <div class="accordion accordion-flush" id="helpAccordion">
+                <div class="accordion-item border-0">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed px-2 py-1" style="font-size:.78rem;background:none;box-shadow:none" type="button" data-bs-toggle="collapse" data-bs-target="#helpBaseline">
+                      <i class="bi bi-camera me-1 text-primary"></i> Baseline Screenshots
+                    </button>
+                  </h2>
+                  <div id="helpBaseline" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                    <div class="px-2 pb-2">
+                      <p class="text-muted mb-1" style="font-size:.72rem">Capture reference screenshots for an item in a specific locale. These become the baseline for future comparisons.</p>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a baseline screenshot test for item U501-Hiccups on the ZZZ/eng environment. Navigate to every page in the item (C501P001, item1a, C501P002, C501P003) and capture a full-page screenshot of each one.">
+                        <i class="bi bi-arrow-right-short"></i> Capture baseline screenshots for every page of <strong>U501-Hiccups</strong> on ZZZ/eng
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a test that logs in, navigates to the specified item, and captures a full-page screenshot of every screen. Use toHaveScreenshot() for each capture so Playwright stores the baseline automatically.">
+                        <i class="bi bi-arrow-right-short"></i> Generic baseline capture template for any item
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="accordion-item border-0">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed px-2 py-1" style="font-size:.78rem;background:none;box-shadow:none" type="button" data-bs-toggle="collapse" data-bs-target="#helpComparison">
+                      <i class="bi bi-arrows-angle-expand me-1 text-success"></i> Visual Comparison
+                    </button>
+                  </h2>
+                  <div id="helpComparison" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                    <div class="px-2 pb-2">
+                      <p class="text-muted mb-1" style="font-size:.72rem">Compare a translated locale against the baseline to detect layout breaks, text overflow, or missing content.</p>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0fff4;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a visual comparison test for U501-Hiccups. Run it on the ROU/ron locale and compare each screen against the ZZZ/eng baseline screenshots from run b26285fb. Use pixelmatch to detect layout differences. Ignore text/color changes but flag structural or layout breaks. Also check for text overflow issues on each screen.">
+                        <i class="bi bi-arrow-right-short"></i> Compare <strong>ROU/ron</strong> vs <strong>ZZZ/eng</strong> baseline for U501-Hiccups
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0fff4;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a visual comparison test that navigates through every page of an item in a translated locale, takes screenshots, and compares them against a baseline run's screenshots using pixelmatch. Flag any screens where more than 5% of pixels differ (layout break). Also detect text overflow on every page.">
+                        <i class="bi bi-arrow-right-short"></i> Generic cross-locale visual comparison template
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="accordion-item border-0">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed px-2 py-1" style="font-size:.78rem;background:none;box-shadow:none" type="button" data-bs-toggle="collapse" data-bs-target="#helpSpelling">
+                      <i class="bi bi-spellcheck me-1 text-warning"></i> Spelling &amp; Grammar
+                    </button>
+                  </h2>
+                  <div id="helpSpelling" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                    <div class="px-2 pb-2">
+                      <p class="text-muted mb-1" style="font-size:.72rem">Extract text from each screen and use AI to check for spelling, grammar, and syntax errors in the target language.</p>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fffdf0;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a test for U501-Hiccups that navigates through every page/screen in the item on the ZZZ/eng environment. On each page, extract all visible text and use the analyzeItemText AI helper to check for spelling, grammar, and syntax errors in English. Attach the results to the test report and flag any issues found.">
+                        <i class="bi bi-arrow-right-short"></i> Check <strong>U501-Hiccups</strong> for spelling/grammar errors in English
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fffdf0;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a test that navigates through every screen of an item and extracts the visible text from each page. Send the text to the AI helper (analyzeItemText) to check for spelling, grammar, and syntax errors. Attach structured results to the report with the page name, issues found, and severity. Do not auto-fail the test — make results advisory for human review.">
+                        <i class="bi bi-arrow-right-short"></i> Generic spelling/grammar check template for any item
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="accordion-item border-0">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed px-2 py-1" style="font-size:.78rem;background:none;box-shadow:none" type="button" data-bs-toggle="collapse" data-bs-target="#helpVisualAI">
+                      <i class="bi bi-eye me-1 text-info"></i> AI Visual Inspection
+                    </button>
+                  </h2>
+                  <div id="helpVisualAI" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                    <div class="px-2 pb-2">
+                      <p class="text-muted mb-1" style="font-size:.72rem">Take a screenshot of each screen and send it to the AI vision model to inspect for layout problems, truncation, overlapping elements, or rendering issues.</p>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f8ff;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a test for U501-Hiccups that navigates through every page on the ROU/ron environment. On each page, take a full-page screenshot and send it to the AI vision helper (analyzeItemScreenshot) to check for layout issues like text overflow, truncated content, overlapping elements, or broken formatting. Attach the analysis results to the test report.">
+                        <i class="bi bi-arrow-right-short"></i> AI visual inspection of <strong>U501-Hiccups</strong> layout on ROU/ron
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f8ff;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a test that navigates through every screen of an item, captures a full-page screenshot of each, and sends it to the AI screenshot analysis helper. Have the AI check for visual quality issues: text cut off or overflowing containers, overlapping UI elements, broken layouts, missing images, and rendering problems. Attach structured results per screen to the test report.">
+                        <i class="bi bi-arrow-right-short"></i> Generic AI visual inspection template for any item
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -253,11 +347,14 @@
             <input type="text" id="metaDescription" class="form-control form-control-sm"
               value="{{ script_meta.description|default:'' }}" placeholder="Brief description">
           </div>
-          <div class="col-12">
+          <div class="col-12 d-flex align-items-center">
             <button class="btn btn-sm btn-primary" onclick="saveMeta()">
               <i class="bi bi-check-lg"></i> Save Details
             </button>
             <span id="metaSaveStatus" class="text-muted small ms-2"></span>
+            <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteScript()">
+              <i class="bi bi-trash"></i> Delete Script
+            </button>
           </div>
         </div>
         {% else %}
@@ -505,6 +602,11 @@ function restoreSendBtn() {
   sendBtn.className = 'btn btn-primary btn-sm';
   sendBtn.onclick = sendMessage;
   chatAbortController = null;
+}
+
+function usePrompt(text) {
+  document.getElementById('chatInput').value = text;
+  document.getElementById('chatInput').focus();
 }
 
 function clearChat() {
@@ -778,6 +880,23 @@ function updateRunButtons() {
   // Also enable the dropdown toggle
   var dropdownToggle = saveRunBtn ? saveRunBtn.nextElementSibling : null;
   if (dropdownToggle) dropdownToggle.disabled = !hasFile;
+}
+
+function deleteScript() {
+  if (!currentFilePath) { alert('No script to delete.'); return; }
+  if (!confirm('Delete this script permanently?\n\n' + currentFilePath + '\n\nThis will remove the file and its metadata. Run history will be preserved.')) return;
+
+  fetch('/builder/api/delete/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    body: JSON.stringify({ path: currentFilePath })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { alert('Delete failed: ' + d.error); return; }
+    window.location.href = '/test-cases/';
+  })
+  .catch(err => { alert('Delete error: ' + err.message); });
 }
 
 // Warn on unload if dirty

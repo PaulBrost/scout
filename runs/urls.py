@@ -6,4 +6,7 @@ urlpatterns = [
     path('<uuid:run_id>/', views.detail, name='run_detail'),
     path('<uuid:run_id>/status/', views.api_run_status, name='api_run_status'),
     path('<uuid:run_id>/script/<uuid:script_id>/', views.script_detail, name='script_detail'),
+    path('<uuid:run_id>/screenshots/', views.api_run_screenshots, name='api_run_screenshots'),
+    path('screenshot/<uuid:screenshot_id>/flag/', views.api_flag_screenshot, name='api_flag_screenshot'),
+    path('screenshot/img/<path:file_path>', views.serve_screenshot, name='serve_screenshot'),
 ]

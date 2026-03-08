@@ -25,29 +25,25 @@ module.exports = {
   },
 
   projects: [
-    // Primary browser — always active
+    // Primary browser — Chromium (Google Chrome engine)
     {
       name: 'chrome-desktop',
       use: { ...devices['Desktop Chrome'] },
     },
 
-    // Firefox — cross-browser validation
-    {
-      name: 'firefox-desktop',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    // Chromebook — viewport emulation (1366×768)
-    {
-      name: 'chromebook',
-      use: {
-        browserName: 'chromium',
-        viewport: { width: 1366, height: 768 },
-        deviceScaleFactor: 1,
-      },
-    },
-
-    // Additional browsers — uncomment when system deps are installed
+    // Additional browsers — uncomment when needed
+    // {
+    //   name: 'firefox-desktop',
+    //   use: { ...devices['Desktop Firefox'] },
+    // },
+    // {
+    //   name: 'chromebook',
+    //   use: {
+    //     browserName: 'chromium',
+    //     viewport: { width: 1366, height: 768 },
+    //     deviceScaleFactor: 1,
+    //   },
+    // },
     // {
     //   name: 'edge-desktop',
     //   use: { ...devices['Desktop Edge'], channel: 'msedge' },

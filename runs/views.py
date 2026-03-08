@@ -1,8 +1,12 @@
 import json
+import mimetypes
+from pathlib import Path
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse, Http404
 from django.db import connection
+from django.conf import settings
+from django.views.decorators.http import require_POST
 from core.mixins import get_user_env_ids
 
 
@@ -149,9 +153,19 @@ def detail(request, run_id):
         cols = [c[0] for c in cursor.description]
         script_results = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    # Screenshots
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT * FROM run_screenshots WHERE run_id = %s ORDER BY name',
+            [run_id]
+        )
+        cols = [c[0] for c in cursor.description]
+        screenshots = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
     return render(request, 'runs/detail.html', {
         'run': run,
         'script_results': script_results,
+        'screenshots': screenshots,
     })
 
 
@@ -281,3 +295,62 @@ def api_latest(request):
         except Exception:
             pass
     return JsonResponse({'run': run}, default=str)
+
+
+@login_required(login_url='/login/')
+def serve_screenshot(request, file_path):
+    """Serve a screenshot image from the Playwright project directory."""
+    pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
+    full_path = (pw_root / file_path).resolve()
+
+    # Security: ensure path stays within the playwright directory
+    if not str(full_path).startswith(str(pw_root.resolve())):
+        raise Http404
+    if not full_path.exists() or not full_path.is_file():
+        raise Http404
+    if full_path.suffix.lower() not in ('.png', '.jpg', '.jpeg', '.webp'):
+        raise Http404
+
+    content_type = mimetypes.guess_type(str(full_path))[0] or 'image/png'
+    return HttpResponse(full_path.read_bytes(), content_type=content_type)
+
+
+@login_required(login_url='/login/')
+@require_POST
+def api_flag_screenshot(request, screenshot_id):
+    """Toggle the flagged status of a screenshot, with optional notes."""
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT flagged FROM run_screenshots WHERE id = %s', [screenshot_id])
+        row = cursor.fetchone()
+    if not row:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    new_flagged = data.get('flagged', not row[0])
+    flag_notes = data.get('notes', None)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'UPDATE run_screenshots SET flagged = %s, flag_notes = %s WHERE id = %s',
+            [new_flagged, flag_notes, screenshot_id]
+        )
+
+    return JsonResponse({'id': str(screenshot_id), 'flagged': new_flagged, 'flag_notes': flag_notes})
+
+
+@login_required(login_url='/login/')
+def api_run_screenshots(request, run_id):
+    """Return screenshots for a run as JSON."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at
+               FROM run_screenshots WHERE run_id = %s ORDER BY name""",
+            [run_id]
+        )
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+    return JsonResponse({'screenshots': rows}, default=str)

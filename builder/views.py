@@ -155,6 +155,38 @@ def api_chat(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
+def api_delete(request):
+    """Delete a script file and its DB metadata."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('path', '').strip()
+        if not file_path:
+            return JsonResponse({'error': 'No path provided'}, status=400)
+
+        tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+        full_path = (tests_dir / file_path).resolve()
+
+        # Security: ensure path stays within tests dir
+        if not str(full_path).startswith(str(tests_dir.resolve())):
+            return JsonResponse({'error': 'Invalid path'}, status=400)
+
+        # Delete DB records
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [file_path])
+            cursor.execute('DELETE FROM test_scripts WHERE script_path = %s', [file_path])
+
+        # Delete the file
+        if full_path.exists():
+            full_path.unlink()
+
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
 def api_save(request):
     try:
         data = json.loads(request.body)
