@@ -21,6 +21,7 @@ urlpatterns = [
     path('baselines/', include('baselines.urls')),
     path('test-data/', include('test_data.urls')),
     path('admin-config/', include('admin_config.urls')),
+    path('users/', include('users.urls')),
     path('api/', include('runs.api_urls')),
 ]
 

@@ -187,6 +187,81 @@
 </div>
 {% endif %}
 
+<!-- AI Analysis Section -->
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      AI Analysis
+      {% if analyses %}<span class="badge bg-secondary">{{ analyses|length }}</span>{% endif %}
+    </div>
+    {% if run.status != 'running' and run.status != 'scheduled' %}
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-info" onclick="runAnalysis('visual')" id="analyzeVisualBtn">
+        <i class="bi bi-eye"></i> Analyze Screenshots
+      </button>
+      <button class="btn btn-sm btn-outline-warning" onclick="runAnalysis('text')" id="analyzeTextBtn">
+        <i class="bi bi-spellcheck"></i> Analyze Text
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-body" id="analysisResults">
+    {% if analyses %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Issues</th>
+            <th>Model</th>
+            <th>Duration</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in analyses %}
+          <tr>
+            <td>
+              {% if a.analysis_type == 'visual_layout' %}
+              <i class="bi bi-eye text-info me-1"></i>
+              {% elif a.analysis_type == 'text_content' %}
+              <i class="bi bi-spellcheck text-warning me-1"></i>
+              {% elif a.analysis_type == 'screenshot_diff' %}
+              <i class="bi bi-arrows-angle-expand text-success me-1"></i>
+              {% else %}
+              <i class="bi bi-cpu text-muted me-1"></i>
+              {% endif %}
+              <span class="small">{{ a.analysis_type }}</span>
+            </td>
+            <td><span class="status-badge status-{{ a.status }}">{{ a.status }}</span></td>
+            <td>
+              {% if a.issues_found %}
+              <a href="#" class="text-danger text-decoration-none" onclick="showAnalysisIssues({{ forloop.counter0 }}); return false;">
+                {{ a.issues|length }} issue{{ a.issues|length|pluralize }}
+              </a>
+              {% else %}
+              <span class="text-success small">Clean</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ a.model_used|default:"—" }}</td>
+            <td class="small text-muted">{% if a.duration_ms %}{{ a.duration_ms }}ms{% else %}—{% endif %}</td>
+            <td class="small text-muted">{{ a.created_at|shorttime }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0 py-2">
+      No AI analysis results yet.
+      {% if ai_config_enabled %}Analysis will run automatically when the script completes.{% endif %}
+      Use the buttons above to run analysis manually on this run's artifacts.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 <!-- Screenshot Modal -->
 <div class="modal fade" id="screenshotModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -597,5 +672,85 @@ showScreenshot = function(id, name, src, flagged, notes) {
   updateModalLayout();
   new bootstrap.Modal(document.getElementById('screenshotModal')).show();
 };
+
+// --- AI Analysis ---
+var analysesData = JSON.parse('{{ analyses_json|escapejs }}');
+
+function runAnalysis(type) {
+  var btn = type === 'visual' ? document.getElementById('analyzeVisualBtn') : document.getElementById('analyzeTextBtn');
+  var origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyzing...';
+
+  fetch('/runs/' + runId + '/analyze/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ type: type }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    if (d.error) {
+      alert('Error: ' + d.error);
+      return;
+    }
+    // Show status and poll for results
+    var resultsEl = document.getElementById('analysisResults');
+    resultsEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span><span class="text-muted small">AI analysis queued. Results will appear shortly...</span></div>';
+    pollAnalysisResults();
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    alert('Error: ' + err.message);
+  });
+}
+
+var analysisPolling = null;
+function pollAnalysisResults() {
+  if (analysisPolling) clearInterval(analysisPolling);
+  analysisPolling = setInterval(function() {
+    fetch('/runs/' + runId + '/analyses/')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !d.analyses) return;
+        // Check if any are still processing
+        var pending = d.analyses.some(function(a) { return a.status === 'pending' || a.status === 'processing'; });
+        if (!pending && d.analyses.length > 0) {
+          clearInterval(analysisPolling);
+          analysisPolling = null;
+          location.reload();
+        }
+      });
+  }, 3000);
+  // Stop after 5 minutes
+  setTimeout(function() {
+    if (analysisPolling) {
+      clearInterval(analysisPolling);
+      analysisPolling = null;
+      location.reload();
+    }
+  }, 300000);
+}
+
+function showAnalysisIssues(index) {
+  var analyses = analysesData;
+  if (!analyses || !analyses[index]) return;
+  var issues = analyses[index].issues || [];
+  var text = issues.map(function(i, idx) {
+    var parts = ['Issue ' + (idx + 1) + ':'];
+    if (i.type) parts.push('Type: ' + i.type);
+    if (i.severity) parts.push('Severity: ' + i.severity);
+    if (i.message) parts.push(i.message);
+    if (i.detail) parts.push(i.detail);
+    if (i.text) parts.push('Text: "' + i.text + '"');
+    if (i.suggestion) parts.push('Suggestion: ' + i.suggestion);
+    if (i.context) parts.push('Context: ' + i.context);
+    return parts.join('\n  ');
+  }).join('\n\n');
+  document.getElementById('logContent').textContent = text || 'No issue details available.';
+  new bootstrap.Modal(document.getElementById('logModal')).show();
+}
 </script>
 {% endblock %}

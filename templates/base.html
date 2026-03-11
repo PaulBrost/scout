@@ -232,6 +232,9 @@
         <a href="/environments/" class="{% if 'environments' in request.path %}active{% endif %}">
           <i class="bi bi-server"></i> <span class="nav-label">Environments</span>
         </a>
+        <a href="/users/" class="{% if '/users/' in request.path %}active{% endif %}">
+          <i class="bi bi-people"></i> <span class="nav-label">Users</span>
+        </a>
         <a href="/admin-config/ai/" class="{% if 'admin-config' in request.path %}active{% endif %}">
           <i class="bi bi-gear"></i> <span class="nav-label">AI Settings</span>
         </a>

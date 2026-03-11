@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_user %}Edit User{% else %}New User{% endif %}{% endblock %}
+{% block page_title %}{% if edit_user %}Edit: {{ edit_user.username }}{% else %}New User{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+<a href="/users/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+  {{ error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post" action="{% if edit_user %}/users/{{ edit_user.id }}/update/{% else %}/users/create/{% endif %}">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Username *</label>
+            <input type="text" name="username" class="form-control" required
+                   value="{{ edit_user.username|default:'' }}" placeholder="e.g. jsmith">
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">First Name</label>
+              <input type="text" name="first_name" class="form-control"
+                     value="{{ edit_user.first_name|default:'' }}">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Last Name</label>
+              <input type="text" name="last_name" class="form-control"
+                     value="{{ edit_user.last_name|default:'' }}">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Email</label>
+            <input type="email" name="email" class="form-control"
+                   value="{{ edit_user.email|default:'' }}" placeholder="user@example.com">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Password {% if edit_user %}{% else %}*{% endif %}</label>
+            <input type="password" name="password" class="form-control"
+                   {% if not edit_user %}required{% endif %}
+                   placeholder="{% if edit_user %}Leave blank to keep current password{% else %}Enter password{% endif %}">
+          </div>
+
+          <div class="mb-3">
+            <div class="form-check form-switch mb-2">
+              <input type="checkbox" name="is_staff" id="isStaff" class="form-check-input"
+                     {% if edit_user.is_staff %}checked{% endif %}>
+              <label class="form-check-label fw-semibold" for="isStaff">Admin</label>
+              <div class="form-text">Admins have full access to all environments and admin settings.</div>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="form-check form-switch">
+              <input type="checkbox" name="is_active" id="isActive" class="form-check-input"
+                     {% if edit_user.is_active or not edit_user %}checked{% endif %}>
+              <label class="form-check-label fw-semibold" for="isActive">Active</label>
+              <div class="form-text">Inactive users cannot log in.</div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save"></i> {% if edit_user %}Save Changes{% else %}Create User{% endif %}
+            </button>
+            <a href="/users/" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-semibold">
+        <i class="bi bi-server"></i> Environment Access
+      </div>
+      <div class="card-body" id="env-panel">
+        <p class="text-muted small mb-3">
+          Select which environments this user can access. Admins automatically have access to all environments.
+        </p>
+        {% if environments %}
+        {% for env in environments %}
+        <div class="form-check mb-2">
+          <input type="checkbox" name="environments" value="{{ env.id }}"
+                 id="env_{{ env.id }}" class="form-check-input env-checkbox"
+                 {% if env.id|stringformat:"s" in user_env_ids %}checked{% endif %}>
+          <label class="form-check-label" for="env_{{ env.id }}">{{ env.name }}</label>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="text-muted small">No environments configured yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Grey out environment checkboxes when Admin is checked
+  var isStaff = document.getElementById('isStaff');
+  var envPanel = document.getElementById('env-panel');
+  function toggleEnvPanel() {
+    var checkboxes = envPanel.querySelectorAll('.env-checkbox');
+    if (isStaff.checked) {
+      envPanel.style.opacity = '0.5';
+      checkboxes.forEach(function(cb) { cb.disabled = true; });
+    } else {
+      envPanel.style.opacity = '1';
+      checkboxes.forEach(function(cb) { cb.disabled = false; });
+    }
+  }
+  isStaff.addEventListener('change', toggleEnvPanel);
+  toggleEnvPanel();
+</script>
+{% endblock %}

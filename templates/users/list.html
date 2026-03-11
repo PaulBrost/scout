@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block page_title %}Users{% endblock %}
+
+{% block topbar_actions %}
+<a href="/users/new/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New User</a>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Username</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Environments</th>
+          <th>Status</th>
+          <th>Last Login</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td>{{ u.first_name }} {{ u.last_name }}</td>
+          <td class="text-muted small">{{ u.email|default:"—" }}</td>
+          <td>
+            {% if u.is_staff %}
+            <span class="badge bg-primary">Admin</span>
+            {% else %}
+            <span class="badge bg-light text-dark">User</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_staff %}
+            <span class="text-muted small">All (admin)</span>
+            {% else %}
+            {{ u.env_count }}
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_active %}
+            <span class="badge bg-success">Active</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">
+            {% if u.last_login %}{{ u.last_login|date:"M d, Y" }}{% else %}Never{% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a href="/users/{{ u.id }}/edit/" class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-pencil"></i> Edit
+            </a>
+            {% if u.id != request.user.id %}
+            <form method="post" action="/users/{{ u.id }}/delete/" class="d-inline"
+                  onsubmit="return confirm('Delete user {{ u.username|escapejs }}? This cannot be undone.')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted text-center py-5">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -49,6 +49,15 @@ def builder_view(request):
                 row = cursor.fetchone()
                 if row:
                     script_meta = dict(zip(cols, row))
+                    # Ensure ai_config is a dict
+                    ai_cfg = script_meta.get('ai_config')
+                    if isinstance(ai_cfg, str):
+                        try:
+                            script_meta['ai_config'] = json.loads(ai_cfg)
+                        except Exception:
+                            script_meta['ai_config'] = {}
+                    elif not isinstance(ai_cfg, dict):
+                        script_meta['ai_config'] = {}
         except Exception:
             pass
 

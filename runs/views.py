@@ -162,10 +162,55 @@ def detail(request, run_id):
         cols = [c[0] for c in cursor.description]
         screenshots = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    # AI Analyses
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, analysis_type, status, issues_found, issues,
+                   model_used, duration_ms, created_at
+            FROM ai_analyses WHERE run_id = %s
+            ORDER BY created_at DESC
+        """, [run_id])
+        cols = [c[0] for c in cursor.description]
+        analyses = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    for a in analyses:
+        if isinstance(a.get('issues'), str):
+            try:
+                a['issues'] = json.loads(a['issues'])
+            except Exception:
+                a['issues'] = []
+
+    # Check if any script in this run has ai_config enabled
+    ai_config_enabled = False
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT ts.ai_config FROM test_run_scripts trs
+            JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE trs.run_id = %s AND ts.ai_config IS NOT NULL
+            LIMIT 1
+        """, [run_id])
+        row = cursor.fetchone()
+        if row and row[0]:
+            cfg = row[0]
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            ai_config_enabled = bool(cfg.get('text_analysis') or cfg.get('visual_analysis'))
+
     return render(request, 'runs/detail.html', {
         'run': run,
         'script_results': script_results,
         'screenshots': screenshots,
+        'analyses': analyses,
+        'analyses_json': json.dumps([{
+            'analysis_type': a['analysis_type'],
+            'status': a['status'],
+            'issues_found': a['issues_found'],
+            'issues': a['issues'],
+        } for a in analyses], default=str),
+        'ai_config_enabled': ai_config_enabled,
     })
 
 
@@ -354,3 +399,57 @@ def api_run_screenshots(request, run_id):
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
     return JsonResponse({'screenshots': rows}, default=str)
+
+
+@login_required(login_url='/login/')
+@require_POST
+def api_run_analyze(request, run_id):
+    """Trigger AI analysis on a completed run's artifacts."""
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    analysis_type = data.get('type', 'both')  # 'text', 'visual', or 'both'
+
+    # Verify run exists and is complete
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT status FROM test_runs WHERE id = %s', [run_id])
+        row = cursor.fetchone()
+    if not row:
+        return JsonResponse({'error': 'Run not found'}, status=404)
+    if row[0] in ('running', 'scheduled'):
+        return JsonResponse({'error': 'Run is still in progress'}, status=400)
+
+    from django_q.tasks import async_task
+    task_id = async_task(
+        'tasks.post_execution.run_analysis_on_demand',
+        str(run_id), analysis_type,
+        task_name=f'analyze-{str(run_id)[:8]}'
+    )
+
+    return JsonResponse({'ok': True, 'taskId': str(task_id), 'type': analysis_type})
+
+
+@login_required(login_url='/login/')
+def api_run_analyses(request, run_id):
+    """Return AI analysis results for a run."""
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, analysis_type, status, issues_found, issues,
+                   model_used, duration_ms, created_at
+            FROM ai_analyses WHERE run_id = %s
+            ORDER BY created_at DESC
+        """, [run_id])
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    # Parse issues JSON if stored as string
+    for row in rows:
+        if isinstance(row.get('issues'), str):
+            try:
+                row['issues'] = json.loads(row['issues'])
+            except Exception:
+                row['issues'] = []
+
+    return JsonResponse({'analyses': rows}, default=str)

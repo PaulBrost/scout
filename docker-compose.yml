@@ -26,7 +26,7 @@ services:
     volumes:
       - ./playwright:/playwright-project
     command: >
-      sh -c "if [ -f /playwright-project/package.json ] && [ ! -d /playwright-project/node_modules ]; then
+      sh -c "if [ -f /playwright-project/package.json ]; then
                npm install --prefix /playwright-project;
              fi &&
              python manage.py qcluster"

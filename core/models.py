@@ -307,6 +307,7 @@ class TestScript(models.Model):
         db_column='assessment_id'
     )
     test_type = models.TextField(default='functional', choices=TEST_TYPE_CHOICES)
+    ai_config = models.JSONField(default=dict, blank=True)
     tags = models.JSONField(default=list)
     category = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

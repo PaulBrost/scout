@@ -347,6 +347,28 @@
             <input type="text" id="metaDescription" class="form-control form-control-sm"
               value="{{ script_meta.description|default:'' }}" placeholder="Brief description">
           </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold mb-1">Post-run AI Analysis</label>
+            <p class="text-muted mb-2" style="font-size:.72rem">When enabled, AI analysis runs automatically after the script completes. You can also trigger it manually from the run detail page.</p>
+            <div class="d-flex gap-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="aiTextAnalysis"
+                  {% if script_meta.ai_config.text_analysis %}checked{% endif %}>
+                <label class="form-check-label small" for="aiTextAnalysis">
+                  <i class="bi bi-spellcheck text-warning me-1"></i>Text Analysis
+                  <span class="text-muted" style="font-size:.7rem">— spelling, grammar, syntax</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="aiVisualAnalysis"
+                  {% if script_meta.ai_config.visual_analysis %}checked{% endif %}>
+                <label class="form-check-label small" for="aiVisualAnalysis">
+                  <i class="bi bi-eye text-info me-1"></i>Visual Analysis
+                  <span class="text-muted" style="font-size:.7rem">— layout, overflow, rendering</span>
+                </label>
+              </div>
+            </div>
+          </div>
           <div class="col-12 d-flex align-items-center">
             <button class="btn btn-sm btn-primary" onclick="saveMeta()">
               <i class="bi bi-check-lg"></i> Save Details
@@ -713,7 +735,11 @@ function saveMeta() {
       assessmentId: document.getElementById('metaAssessmentId')?.value || null,
       testType: document.getElementById('metaTestType')?.value || null,
       description: document.getElementById('metaDescription')?.value || null,
-      environmentId: envPicker ? envPicker.value || null : null
+      environmentId: envPicker ? envPicker.value || null : null,
+      aiConfig: {
+        text_analysis: document.getElementById('aiTextAnalysis')?.checked || false,
+        visual_analysis: document.getElementById('aiVisualAnalysis')?.checked || false,
+      }
     })
   })
   .then(r => r.json())

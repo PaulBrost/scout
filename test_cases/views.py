@@ -201,11 +201,13 @@ def api_associate(request):
         test_type = data.get('testType') or None
         description = data.get('description') or None
         environment_id = data.get('environmentId') or None
+        ai_config = data.get('aiConfig')
+        ai_config_json = json.dumps(ai_config) if ai_config is not None else None
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, tags, created_at, updated_at)
-                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, '[]'::jsonb, now(), now())
+                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, ai_config, tags, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, COALESCE(%s::jsonb, '{}'::jsonb), '[]'::jsonb, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET
                      item_id = COALESCE(EXCLUDED.item_id, test_scripts.item_id),
                      assessment_id = COALESCE(EXCLUDED.assessment_id, test_scripts.assessment_id),
@@ -213,8 +215,10 @@ def api_associate(request):
                      test_type = COALESCE(EXCLUDED.test_type, test_scripts.test_type),
                      description = COALESCE(EXCLUDED.description, test_scripts.description),
                      environment_id = COALESCE(EXCLUDED.environment_id, test_scripts.environment_id),
+                     ai_config = CASE WHEN %s::jsonb IS NOT NULL THEN %s::jsonb ELSE test_scripts.ai_config END,
                      updated_at = now()""",
-                [script_path, item_id, assessment_id, category, test_type, description, environment_id]
+                [script_path, item_id, assessment_id, category, test_type, description, environment_id, ai_config_json,
+                 ai_config_json, ai_config_json]
             )
         return JsonResponse({'ok': True})
     except Exception as e:

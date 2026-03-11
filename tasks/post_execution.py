@@ -7,19 +7,52 @@ from django.db import connection
 from django.conf import settings
 
 
+def run_analysis_on_demand(run_id, analysis_type='both'):
+    """Manually triggered AI analysis on an existing run's artifacts."""
+    print(f'[PostExec] On-demand analysis for run {str(run_id)[:8]}, type={analysis_type}')
+
+    if analysis_type in ('visual', 'both'):
+        try:
+            analyze_run_screenshots(run_id)
+        except Exception as e:
+            print(f'[PostExec] On-demand visual analysis error: {e}')
+
+    if analysis_type in ('text', 'both'):
+        try:
+            analyze_run_text(run_id)
+        except Exception as e:
+            print(f'[PostExec] On-demand text analysis error: {e}')
+
+
 def dispatch_post_execution(run_id):
-    """Look up test_types for scripts in this run and queue appropriate handlers."""
+    """Look up test_types and ai_config for scripts in this run and queue appropriate handlers."""
     with connection.cursor() as cursor:
-        # Find distinct test_types for scripts in this run
+        # Find distinct test_types and ai_configs for scripts in this run
         cursor.execute("""
-            SELECT DISTINCT ts.test_type
+            SELECT DISTINCT ts.test_type, ts.ai_config
             FROM test_run_scripts trs
             JOIN test_scripts ts ON ts.script_path = trs.script_path
             WHERE trs.run_id = %s
         """, [run_id])
-        test_types = {row[0] for row in cursor.fetchall()}
+        rows = cursor.fetchall()
 
-    if not test_types:
+    test_types = set()
+    ai_text = False
+    ai_visual = False
+    for row in rows:
+        test_types.add(row[0])
+        cfg = row[1] or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                cfg = {}
+        if cfg.get('text_analysis'):
+            ai_text = True
+        if cfg.get('visual_analysis'):
+            ai_visual = True
+
+    if not test_types and not ai_text and not ai_visual:
         return
 
     # Dispatch handlers for each test_type
@@ -41,7 +74,20 @@ def dispatch_post_execution(run_id):
         except Exception as e:
             print(f'[PostExec] run_visual_analysis error for run {str(run_id)[:8]}: {e}')
 
-    print(f'[PostExec] Completed post-execution for run {str(run_id)[:8]}, types: {test_types}')
+    # ai_config-driven analysis on RunScreenshots
+    if ai_visual:
+        try:
+            analyze_run_screenshots(run_id)
+        except Exception as e:
+            print(f'[PostExec] analyze_run_screenshots error for run {str(run_id)[:8]}: {e}')
+
+    if ai_text:
+        try:
+            analyze_run_text(run_id)
+        except Exception as e:
+            print(f'[PostExec] analyze_run_text error for run {str(run_id)[:8]}: {e}')
+
+    print(f'[PostExec] Completed post-execution for run {str(run_id)[:8]}, types: {test_types}, ai_text={ai_text}, ai_visual={ai_visual}')
 
 
 def compare_baselines(run_id):
@@ -267,6 +313,100 @@ def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, 
                 INSERT INTO reviews (analysis_id, status)
                 VALUES (%s, 'pending')
             """, [str(analysis_id)])
+
+
+def analyze_run_screenshots(run_id):
+    """Run AI visual analysis on RunScreenshot images for this run."""
+    from ai.provider import get_provider_for_feature
+
+    project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT rs.id, rs.name, rs.file_path, rs.run_script_id,
+                   ts.item_id
+            FROM run_screenshots rs
+            JOIN test_run_scripts trs ON trs.id = rs.run_script_id
+            LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE rs.run_id = %s
+        """, [run_id])
+        cols = [c[0] for c in cursor.description]
+        screenshots = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if not screenshots:
+        print(f'[PostExec] No screenshots to analyze for run {str(run_id)[:8]}')
+        return
+
+    provider = get_provider_for_feature('vision')
+    analyzed = 0
+
+    for ss in screenshots:
+        full_path = project_root / ss['file_path']
+        if not full_path.exists():
+            continue
+
+        start = time.time()
+        try:
+            b64 = base64.b64encode(full_path.read_bytes()).decode()
+            context = f"Screenshot: {ss['name']}"
+            analysis = provider.analyze_screenshot(b64, context)
+            duration_ms = int((time.time() - start) * 1000)
+            issues = analysis.get('issues', [])
+
+            _create_analysis_and_review(
+                run_id, ss.get('item_id'), None,
+                'visual_layout', issues,
+                raw_response=analysis.get('raw', ''),
+                model_used=analysis.get('model', ''),
+                duration_ms=duration_ms,
+            )
+            analyzed += 1
+        except Exception as e:
+            print(f'[PostExec] Visual analysis failed for screenshot {ss["name"]}: {e}')
+
+    print(f'[PostExec] Analyzed {analyzed} screenshots for run {str(run_id)[:8]}')
+
+
+def analyze_run_text(run_id):
+    """Run AI text analysis on execution logs for this run."""
+    from ai.provider import get_provider_for_feature
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT trs.id, trs.script_path, trs.execution_log,
+                   ts.item_id
+            FROM test_run_scripts trs
+            LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE trs.run_id = %s AND trs.execution_log IS NOT NULL
+        """, [run_id])
+        cols = [c[0] for c in cursor.description]
+        scripts = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if not scripts:
+        return
+
+    provider = get_provider_for_feature('text')
+
+    for script in scripts:
+        text = script.get('execution_log') or ''
+        if not text.strip():
+            continue
+
+        start = time.time()
+        try:
+            analysis = provider.analyze_text(text)
+            duration_ms = int((time.time() - start) * 1000)
+            issues = analysis.get('issues', [])
+
+            _create_analysis_and_review(
+                run_id, script.get('item_id'), None,
+                'text_content', issues,
+                raw_response=analysis.get('raw', ''),
+                model_used=analysis.get('model', ''),
+                duration_ms=duration_ms,
+            )
+        except Exception as e:
+            print(f'[PostExec] Text analysis failed for script {script["script_path"]}: {e}')
 
 
 def _create_pending_baseline(item_id, browser, device_profile, screenshot_path, environment_id):
