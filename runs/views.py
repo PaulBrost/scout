@@ -447,6 +447,12 @@ def api_delete_run(request, run_id):
     """Delete a single run and all related data."""
     try:
         with connection.cursor() as cursor:
+            # Delete in FK order to avoid constraint violations
+            cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = %s)', [str(run_id)])
+            cursor.execute('DELETE FROM ai_analyses WHERE run_id = %s', [str(run_id)])
+            cursor.execute('DELETE FROM run_screenshots WHERE run_id = %s', [str(run_id)])
+            cursor.execute('DELETE FROM test_results WHERE run_id = %s', [str(run_id)])
+            cursor.execute('DELETE FROM test_run_scripts WHERE run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM test_runs WHERE id = %s', [str(run_id)])
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Run not found'}, status=404)
@@ -466,6 +472,12 @@ def api_delete_runs_bulk(request):
         if not ids:
             return JsonResponse({'error': 'No IDs provided'}, status=400)
         with connection.cursor() as cursor:
+            # Delete in FK order to avoid constraint violations
+            cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = ANY(%s::uuid[]))', [ids])
+            cursor.execute('DELETE FROM ai_analyses WHERE run_id = ANY(%s::uuid[])', [ids])
+            cursor.execute('DELETE FROM run_screenshots WHERE run_id = ANY(%s::uuid[])', [ids])
+            cursor.execute('DELETE FROM test_results WHERE run_id = ANY(%s::uuid[])', [ids])
+            cursor.execute('DELETE FROM test_run_scripts WHERE run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM test_runs WHERE id = ANY(%s::uuid[])', [ids])
             deleted = cursor.rowcount
         return JsonResponse({'ok': True, 'deleted': deleted})

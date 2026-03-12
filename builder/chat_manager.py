@@ -95,7 +95,9 @@ def build_system_prompt(current_code, filename):
     prompt += '  }\n'
     prompt += '  ```\n'
     prompt += '- Then pass it to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
-    prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n\n'
+    prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n'
+    prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
+    prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''

@@ -5,7 +5,7 @@ const { devices } = require('@playwright/test');
 
 module.exports = {
   testDir: './tests',
-  timeout: 120000,
+  timeout: 300000, // 5 min — multi-item screenshot tests need time for intro screens + all items
   retries: 1,
   workers: 1, // serialize — assessment server cannot handle concurrent sessions
 
