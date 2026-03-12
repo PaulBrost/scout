@@ -2,6 +2,7 @@
 Spawns Playwright test processes, captures output, parses results.
 """
 import os
+import shutil
 import subprocess
 import json
 import time
@@ -159,6 +160,14 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
 
     results_dir = project_root / 'test-results'
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean up stale Playwright artifact directories that block subsequent runs
+    for entry in results_dir.iterdir():
+        if entry.is_dir() and entry.name.startswith('.playwright-artifacts'):
+            try:
+                shutil.rmtree(entry)
+            except OSError:
+                pass
 
     # Snapshot existing PNGs with mtimes so we detect new AND overwritten files
     pre_existing_pngs = {f: f.stat().st_mtime for f in results_dir.rglob('*.png')}
