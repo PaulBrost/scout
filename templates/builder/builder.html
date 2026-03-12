@@ -514,11 +514,6 @@ function updateSummaryDisplay(text) {
     return false;
   }
 
-  // Strip ```tool ... ``` blocks from assistant messages
-  function stripToolBlocks(text) {
-    return text.replace(/```tool\s*\n?[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
-  }
-
   fetch('/builder/api/chat-history/?conversationId=' + conversationId)
   .then(r => r.json())
   .then(d => {
@@ -539,9 +534,7 @@ function updateSummaryDisplay(text) {
       if (!content) return;
       // Skip internal agentic-loop messages
       if (m.role === 'user' && isInternalMessage(content)) return;
-      // Strip tool-call JSON blocks from assistant messages
-      if (m.role === 'assistant') content = stripToolBlocks(content);
-      if (content) appendMessage(m.role, content);
+      appendMessage(m.role, content);
     });
   })
   .catch(function() { /* ignore — conversation may not exist */ });
@@ -555,6 +548,12 @@ function handleKey(e) {
 }
 
 function appendMessage(role, content) {
+  // Strip tool-call JSON blocks from assistant messages
+  if (role === 'assistant') {
+    content = content.replace(/```tool\s*\n?[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  if (!content) return;
+
   var placeholder = document.getElementById('chatPlaceholder');
   if (placeholder) placeholder.remove();
 

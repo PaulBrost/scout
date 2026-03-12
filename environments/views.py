@@ -1,4 +1,5 @@
 import json
+import uuid
 from django.shortcuts import render, redirect
 from django.http import JsonResponse, Http404, HttpResponseForbidden
 from django.contrib.auth.decorators import login_required
@@ -64,13 +65,13 @@ def environment_create(request):
     if request.POST.get('password'):
         creds['password'] = request.POST.get('password')
 
+    env_id = uuid.uuid4()
     with connection.cursor() as cursor:
         cursor.execute(
-            """INSERT INTO environments (name, base_url, auth_type, credentials, notes, is_default)
-               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-            [name, base_url, auth_type, json.dumps(creds), notes, is_default]
+            """INSERT INTO environments (id, name, base_url, auth_type, credentials, notes, is_default)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            [env_id, name, base_url, auth_type, json.dumps(creds), notes, is_default]
         )
-        env_id = cursor.fetchone()[0]
 
     return redirect('/environments/')
 
