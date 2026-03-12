@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse, Http404
 from django.db import connection
 from django.conf import settings
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from core.mixins import get_user_env_ids
 
@@ -122,6 +123,7 @@ def index(request):
 
 
 @login_required(login_url='/login/')
+@ensure_csrf_cookie
 def detail(request, run_id):
     with connection.cursor() as cursor:
         cursor.execute(
