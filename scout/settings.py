@@ -111,6 +111,12 @@ AZURE_VISION_DEPLOYMENT = config('AZURE_AI_VISION_DEPLOYMENT', default='gpt-4o')
 AZURE_API_VERSION = config('AZURE_AI_API_VERSION', default='2024-02-01')
 
 CSRF_TRUSTED_ORIGINS = [o for o in config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv()) if o]
+# If not explicitly set, derive from ALLOWED_HOSTS so HTTPS sites behind a
+# reverse proxy pass Django's strict Origin/Referer CSRF checks automatically.
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [
+        f'https://{host}' for host in ALLOWED_HOSTS if host and host != '*'
+    ]
 
 # Trust X-Forwarded-Proto from nginx so Django knows the request is HTTPS.
 # Without this, CSRF rejects fetch() POST requests because the Origin header
