@@ -289,6 +289,7 @@ class TestScript(models.Model):
         ('visual_regression', 'Visual Regression'),
         ('ai_content', 'AI Content Analysis'),
         ('ai_visual', 'AI Visual Analysis'),
+        ('qc_checklist', 'QC Checklist'),
     ]
 
     id = models.AutoField(primary_key=True)

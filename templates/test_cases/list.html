@@ -94,6 +94,8 @@
             <span class="badge bg-info text-dark">AI Visual</span>
             {% elif sc.test_type == 'functional' %}
             <span class="badge bg-success">Functional</span>
+            {% elif sc.test_type == 'qc_checklist' %}
+            <span class="badge bg-danger">QC Checklist</span>
             {% else %}
             <span class="badge bg-secondary">{{ sc.test_type|default:"—" }}</span>
             {% endif %}

@@ -284,6 +284,22 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
     prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. Valid formKeys: cra-form1, cra-form2, cra-form3, cra-form4.\n\n'
 
+    # QC Checklist instructions
+    prompt += '## QC Checklist Tests\n'
+    prompt += 'QC Checklist tests validate interactive item types against formal QA/QC checklists. '
+    prompt += 'Checklists define specific test steps and expected results for each item type.\n'
+    prompt += 'Available checklists (read with `read_file` tool for full details):\n'
+    prompt += '- `src/qc-checklists/ExtendedText.md` — Text area inputs: text entry, max char limit (3000 standard / 1000 math), text wrapping, scrollbar behavior, text retention across navigation, copy/paste, clearing.\n'
+    prompt += '- `src/qc-checklists/InlineChoice.md` — Dropdown menus: option selection, clearing (Clear Answer button + empty value), retention across navigation, dropdown direction, scroll behavior, TTS.\n'
+    prompt += '- `src/qc-checklists/Matching.md` — Drag-and-drop / click-click: source-to-target movement (both drag and click-click), single vs multi use sources, single vs multi target zones, clearing, retention, match groups, scratchwork restrictions.\n'
+    prompt += 'When generating a QC checklist test:\n'
+    prompt += '1. Use `read_file` to load the relevant checklist markdown for the item type.\n'
+    prompt += '2. Implement each automatable checklist step as a separate `test()` or `test.step()` block.\n'
+    prompt += '3. Name each test/step to match the checklist number (e.g., "QC-1: Verify text entry", "QC-2: Verify max character limit").\n'
+    prompt += '4. Skip steps that require manual/visual verification (e.g., TTS, scratchwork) — add a comment noting they need manual QC.\n'
+    prompt += '5. Use Playwright assertions (`expect`) to validate expected results from the checklist.\n'
+    prompt += '6. **Assessment vs Item scope**: Check the Test Context below. If only an assessment is specified (no specific item), generate a test that iterates through all items in the assessment and runs the checklist against each one. If a specific item is specified, test only that item. Do NOT ask the user which items to test — use the context to determine scope automatically.\n\n'
+
     prompt += _get_reference_scripts()
 
     # Include assessment/item context when available
@@ -305,7 +321,8 @@ def build_system_prompt(current_code, filename, script_context=None):
         if ctx_parts:
             prompt += '## Test Context\nThis test is associated with the following:\n'
             prompt += '\n'.join(f'- {p}' for p in ctx_parts) + '\n'
-            prompt += 'Use this context to inform the test you generate. You do NOT need to ask the user which item or assessment this test is for — it is already specified above.\n\n'
+            prompt += 'Use this context to inform the test you generate. You do NOT need to ask the user which item or assessment this test is for — it is already specified above.\n'
+            prompt += 'If an assessment is specified without a specific item, the test should cover ALL items in that assessment (e.g., iterate through items). Do not ask the user to pick specific items.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''

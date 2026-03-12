@@ -164,6 +164,34 @@
                     </div>
                   </div>
                 </div>
+
+                <div class="accordion-item border-0">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed px-2 py-1" style="font-size:.78rem;background:none;box-shadow:none" type="button" data-bs-toggle="collapse" data-bs-target="#helpQC">
+                      <i class="bi bi-clipboard-check me-1 text-danger"></i> QC Checklist
+                    </button>
+                  </h2>
+                  <div id="helpQC" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                    <div class="px-2 pb-2">
+                      <p class="text-muted mb-1" style="font-size:.72rem">Validate interactive item types against formal QA/QC checklists. Automates test steps for text areas, dropdowns, and drag-and-drop interactions. Works for both individual items and full assessments.</p>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fff0f0;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a QC checklist test for Extended Text interactions. Read the QC checklist from src/qc-checklists/ExtendedText.md and implement each automatable step as a test.step() block. Use the test context to determine the scope — if an item is specified, test that item; if only an assessment is specified, iterate through all items in the assessment and test each one. Test text entry, max character limit, text editing/clearing, text retention across navigation, and copy/paste.">
+                        <i class="bi bi-arrow-right-short"></i> QC checklist for <strong>Extended Text</strong> (text area)
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fff0f0;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a QC checklist test for Inline Choice interactions. Read the QC checklist from src/qc-checklists/InlineChoice.md and implement each automatable step as a test.step() block. Use the test context to determine the scope — if an item is specified, test that item; if only an assessment is specified, iterate through all items in the assessment and test each one. Test dropdown option selection, clearing answers, answer retention across navigation, and dropdown display behavior.">
+                        <i class="bi bi-arrow-right-short"></i> QC checklist for <strong>Inline Choice</strong> (dropdown)
+                      </a>
+                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fff0f0;font-size:.75rem"
+                         onclick="usePrompt(this.dataset.prompt); return false"
+                         data-prompt="Write a QC checklist test for Matching interactions. Read the QC checklist from src/qc-checklists/Matching.md and implement each automatable step as a test.step() block. Use the test context to determine the scope — if an item is specified, test that item; if only an assessment is specified, iterate through all items in the assessment and test each one. Test drag-and-drop and click-click source movement, source-to-target placement, clearing answers, answer retention across navigation, and single vs multi select behavior.">
+                        <i class="bi bi-arrow-right-short"></i> QC checklist for <strong>Matching</strong> (drag &amp; drop)
+                      </a>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -357,6 +385,7 @@
               <option value="visual_regression" {% if script_meta and script_meta.test_type == 'visual_regression' %}selected{% endif %}>Visual Regression</option>
               <option value="ai_content" {% if script_meta and script_meta.test_type == 'ai_content' %}selected{% endif %}>AI Content Analysis</option>
               <option value="ai_visual" {% if script_meta and script_meta.test_type == 'ai_visual' %}selected{% endif %}>AI Visual Analysis</option>
+              <option value="qc_checklist" {% if script_meta and script_meta.test_type == 'qc_checklist' %}selected{% endif %}>QC Checklist</option>
             </select>
           </div>
           <div class="col-md-8">
