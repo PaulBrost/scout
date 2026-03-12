@@ -8,7 +8,11 @@ the AI produces a text-only response, calls update_code, or hits MAX_LOOP.
 import uuid
 import re
 import json
+import time
+import logging
 from django.db import connection
+
+logger = logging.getLogger('scout.builder')
 
 
 MAX_TURNS = 50
@@ -21,16 +25,12 @@ def get_default_system_prompt():
 When explaining code, be concise and focus on what matters. When modifying code, make minimal targeted changes unless asked for a rewrite.
 
 ## Autonomy Rules — CRITICAL
-- When the user asks you to create, generate, or write a test: IMMEDIATELY call your tools to gather context, then produce the finished code. Do NOT describe what you plan to do. Do NOT ask for confirmation. The user's request IS the confirmation.
-- NEVER ask the user for helper function names, item IDs, or file contents. You have tools to find all of this yourself:
-  * `list_helpers` — lists all available helper functions with signatures
-  * `read_file` — reads any helper file (e.g., src/helpers/piaac.js, src/helpers/auth.js)
-  * `get_items` — looks up item details from the database
-  * `search_tests` — finds example test patterns in existing scripts
-- Your FIRST response to a code generation request should contain tool calls, NOT questions or plans.
-- Call multiple tools in one response to gather all context at once.
-- After gathering context, call `update_code` with the complete finished script.
-- Only ask clarifying questions when the request is genuinely ambiguous (e.g., the user says "write a test" without specifying which item or what kind of test).
+- When the user asks you to create, generate, or write a test: IMMEDIATELY produce the finished code. Do NOT describe what you plan to do. Do NOT ask for confirmation. The user's request IS the confirmation.
+- Reference scripts for common test types are provided below. For standard requests (baseline screenshots, visual comparison, spelling/grammar, AI visual inspection), adapt the matching reference script directly and call `update_code` — do NOT call research tools first.
+- Only use research tools (`list_helpers`, `read_file`, `search_tests`, `get_items`) when the request involves something NOT covered by the reference scripts.
+- NEVER ask the user for helper function names, item IDs, or file contents. The Test Context section (if present) tells you which item/assessment this test targets.
+- Your FIRST response to a code generation request should call `update_code` with the complete finished script, NOT tool calls or plans.
+- Only ask clarifying questions when the request is genuinely ambiguous (e.g., the user says "write a test" without specifying what kind of test and no Test Context is available).
 
 ## When NOT to modify code
 If the user asks a question or asks for an explanation — respond with text only. Do NOT generate or replace code unless explicitly asked to modify, create, generate, or fix it."""
@@ -60,8 +60,185 @@ def build_tool_descriptions():
     return '\n'.join(lines)
 
 
-def build_system_prompt(current_code, filename, script_context=None):
-    """Build system prompt with tool descriptions, current code, and assessment/item context."""
+def _get_reference_scripts():
+    """Return reference script examples for common test types."""
+    return """## Reference Scripts
+Adapt these working examples for standard requests. Replace item names, form keys, and filter values to match the Test Context. For NAEP/CRA items use the CRA pattern; for PIAAC items use the PIAAC pattern.
+
+### Baseline Screenshots (CRA)
+```javascript
+const { test, expect } = require('@playwright/test');
+const { loginAndStartTest } = require('../../src/helpers/auth');
+const { clickNext, extractItemText } = require('../../src/helpers/items');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+test('Baseline screenshots — CRA Form 1', async ({ page }) => {
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig });
+
+  const TOTAL_ITEMS = 25;
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveScreenshot(`item-${i}.png`, { fullPage: true });
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }
+});
+```
+
+### Baseline Screenshots (PIAAC)
+```javascript
+const { test, expect } = require('@playwright/test');
+const { login } = require('../../src/helpers/auth');
+const { selectFilters, getItemLinks, openItem } = require('../../src/helpers/piaac');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+test('Baseline screenshots — PIAAC items', async ({ page }) => {
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, { env: envConfig });
+  await selectFilters(page, { version: 'FT New', country: 'ZZZ', language: 'eng', domain: 'LITNew' });
+  const items = await getItemLinks(page);
+
+  for (const item of items) {
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    await expect(itemPage).toHaveScreenshot(`${item.itemId}.png`, { fullPage: true });
+    await itemPage.close();
+  }
+});
+```
+
+### Spelling & Grammar Check (CRA)
+```javascript
+const { test, expect } = require('@playwright/test');
+const { loginAndStartTest } = require('../../src/helpers/auth');
+const { clickNext, extractItemText } = require('../../src/helpers/items');
+const { analyzeItemText } = require('../../src/helpers/ai');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+test('Spelling & grammar check — CRA Form 1', async ({ page }) => {
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig });
+
+  const TOTAL_ITEMS = 25;
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {
+    await page.waitForLoadState('networkidle');
+    const text = await extractItemText(page);
+    if (text && text.trim().length >= 10) {
+      const result = await analyzeItemText(text, 'English');
+      if (result.issuesFound) {
+        console.warn(`Issues in item ${i}:`, result.issues);
+      }
+      await test.info().attach(`ai-text-item-${i}`, {
+        body: JSON.stringify(result, null, 2),
+        contentType: 'application/json',
+      });
+    }
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }
+});
+```
+
+### AI Visual Inspection (CRA)
+```javascript
+const { test, expect } = require('@playwright/test');
+const { loginAndStartTest } = require('../../src/helpers/auth');
+const { clickNext } = require('../../src/helpers/items');
+const { analyzeItemScreenshot } = require('../../src/helpers/ai');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+test('AI visual inspection — CRA Form 1', async ({ page }) => {
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig });
+
+  const TOTAL_ITEMS = 25;
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {
+    await page.waitForLoadState('networkidle');
+    const screenshot = await page.screenshot({ fullPage: true });
+    const result = await analyzeItemScreenshot(screenshot,
+      `Assessment item ${i}. Check text readability, layout integrity, and visual anomalies.`
+    );
+    if (result.issuesFound) {
+      console.warn(`Visual issues in item ${i}:`, result.issues);
+    }
+    await test.info().attach(`ai-vision-item-${i}`, {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    });
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }
+});
+```
+
+### Visual Comparison (cross-locale with pixelmatch)
+```javascript
+const { test, expect } = require('@playwright/test');
+const { login } = require('../../src/helpers/auth');
+const { selectFilters, getItemLinks, openItem } = require('../../src/helpers/piaac');
+const fs = require('fs');
+const { PNG } = require('pngjs');
+const pixelmatch = require('pixelmatch');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+function compareImages(actualBuf, baselineBuf, name) {
+  const actual = PNG.sync.read(actualBuf);
+  const baseline = PNG.sync.read(baselineBuf);
+  const { width, height } = actual;
+  const diff = new PNG({ width, height });
+  const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, { threshold: 0.1 });
+  return { diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) };
+}
+
+test('Visual comparison — translated vs baseline', async ({ page }) => {
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, { env: envConfig });
+  await selectFilters(page, { version: 'FT New', country: 'ROU', language: 'ron', domain: 'LITNew' });
+  const items = await getItemLinks(page);
+  const failures = [];
+
+  for (const item of items) {
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    const screenshot = await itemPage.screenshot({ fullPage: true });
+    // Compare against baseline (stored from a previous baseline run)
+    const baselinePath = `test-results/baseline/${item.itemId}.png`;
+    if (fs.existsSync(baselinePath)) {
+      const baseline = fs.readFileSync(baselinePath);
+      const result = compareImages(screenshot, baseline, item.itemId);
+      if (result.diffRatio > 0.05) {
+        failures.push(`${item.itemId}: ${(result.diffRatio * 100).toFixed(2)}% diff`);
+      }
+      await test.info().attach(`diff-${item.itemId}`, { body: result.diffPng, contentType: 'image/png' });
+    }
+    await itemPage.close();
+  }
+
+  if (failures.length) console.warn('Layout differences:', failures);
+});
+```
+
+IMPORTANT: When adapting these reference scripts, adjust the formKey, filter values, item count, and language to match the Test Context. Do NOT call `list_helpers`, `read_file`, or `search_tests` for standard requests — use the reference scripts directly.
+
+"""
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT value FROM ai_settings WHERE key = 'system_prompt'")
@@ -102,6 +279,8 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
     prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. Valid formKeys: cra-form1, cra-form2, cra-form3, cra-form4.\n\n'
+
+    prompt += _get_reference_scripts()
 
     # Include assessment/item context when available
     if script_context:
@@ -438,14 +617,22 @@ def chat(message, conversation_id, current_code, filename, script_context=None):
     final_text = ''
     intermediate_messages = []  # assistant texts from mid-loop iterations
     steps = []  # track what happened at each loop iteration
+    chat_start = time.time()
+
+    logger.info('chat start conv=%s msg_len=%d history=%d', conv_id[:8], len(message), len(messages) - 1)
 
     for iteration in range(MAX_LOOP):
         # Call AI
         ai_messages = [{'role': 'system', 'content': system_prompt}] + messages
+        iter_start = time.time()
         raw_response = provider.chat_completion(ai_messages, {'max_tokens': 8000})
+        ai_duration = time.time() - iter_start
 
         # Parse tool calls
         text, tool_calls = parse_tool_calls(raw_response)
+        tool_names = [tc['tool'] for tc in tool_calls]
+        logger.info('chat iter=%d ai_call=%.1fs tools=%s resp_len=%d',
+                     iteration + 1, ai_duration, tool_names or 'none', len(raw_response))
 
         # Add assistant message to conversation
         messages.append({'role': 'assistant', 'content': raw_response})
@@ -572,6 +759,12 @@ def chat(message, conversation_id, current_code, filename, script_context=None):
                 "I wasn't able to generate a response. The AI service may be temporarily "
                 "unavailable. Please try again."
             )
+
+    total_duration = time.time() - chat_start
+    tool_names_used = [t['tool'] for t in all_tool_results]
+    logger.info('chat done conv=%s total=%.1fs iterations=%d tools=%s code_update=%s',
+                conv_id[:8], total_duration, len(steps), tool_names_used or 'none',
+                bool(code_update))
 
     # Save conversation to DB
     with connection.cursor() as cursor:

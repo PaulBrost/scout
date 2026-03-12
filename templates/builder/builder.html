@@ -104,8 +104,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Capture reference screenshots for an item in a specific locale. These become the baseline for future comparisons.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test that logs in, navigates to the specified item, and captures a full-page screenshot of every screen. Use toHaveScreenshot() for each capture so Playwright stores the baseline automatically.">
-                        <i class="bi bi-arrow-right-short"></i> Example baseline capture for any item
+                         data-prompt="Write a test that logs in, navigates to this item, and captures a full-page screenshot of every screen. Use toHaveScreenshot() for each capture so Playwright stores the baseline automatically.">
+                        <i class="bi bi-arrow-right-short"></i> Capture baseline screenshots for this item
                       </a>
                     </div>
                   </div>
@@ -122,8 +122,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Compare a translated locale against the baseline to detect layout breaks, text overflow, or missing content.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0fff4;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a visual comparison test that navigates through every page of an item in a translated locale, takes screenshots, and compares them against a baseline run's screenshots using pixelmatch. Flag any screens where more than 5% of pixels differ (layout break). Also detect text overflow on every page.">
-                        <i class="bi bi-arrow-right-short"></i> Sample cross-locale visual comparison
+                         data-prompt="Write a visual comparison test that navigates through every page of this item in a translated locale, takes screenshots, and compares them against a baseline run's screenshots using pixelmatch. Flag any screens where more than 5% of pixels differ (layout break). Also detect text overflow on every page.">
+                        <i class="bi bi-arrow-right-short"></i> Compare this item across locales
                       </a>
                     </div>
                   </div>
@@ -140,8 +140,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Extract text from each screen and use AI to check for spelling, grammar, and syntax errors in the target language.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fffdf0;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test that navigates through every screen of an item and extracts the visible text from each page. Send the text to the AI helper (analyzeItemText) to check for spelling, grammar, and syntax errors. Attach structured results to the report with the page name, issues found, and severity. Do not auto-fail the test — make results advisory for human review.">
-                        <i class="bi bi-arrow-right-short"></i> Sample spelling &amp; grammar check for any item
+                         data-prompt="Write a test that navigates through every screen of this item and extracts the visible text from each page. Send the text to the AI helper (analyzeItemText) to check for spelling, grammar, and syntax errors. Attach structured results to the report with the page name, issues found, and severity. Do not auto-fail the test — make results advisory for human review.">
+                        <i class="bi bi-arrow-right-short"></i> Check this item for spelling &amp; grammar errors
                       </a>
                     </div>
                   </div>
@@ -158,8 +158,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Take a screenshot of each screen and send it to the AI vision model to inspect for layout problems, truncation, overlapping elements, or rendering issues.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f8ff;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test that navigates through every screen of an item, captures a full-page screenshot of each, and sends it to the AI screenshot analysis helper. Have the AI check for visual quality issues: text cut off or overflowing containers, overlapping UI elements, broken layouts, missing images, and rendering problems. Attach structured results per screen to the test report.">
-                        <i class="bi bi-arrow-right-short"></i> Sample AI visual inspection for any item
+                         data-prompt="Write a test that navigates through every screen of this item, captures a full-page screenshot of each, and sends it to the AI screenshot analysis helper. Have the AI check for visual quality issues: text cut off or overflowing containers, overlapping UI elements, broken layouts, missing images, and rendering problems. Attach structured results per screen to the test report.">
+                        <i class="bi bi-arrow-right-short"></i> AI visual inspection of this item
                       </a>
                     </div>
                   </div>
@@ -501,6 +501,24 @@ function updateSummaryDisplay(text) {
 // --- Restore chat history on page load ---
 (function() {
   if (!conversationId) return;
+
+  // Internal messages injected by the agentic loop — skip these on restore
+  var internalPrefixes = ['Tool results:', 'Your previous response was empty',
+    'Do not ask me for information', 'You have gathered enough context',
+    'You should have enough context', 'Continue with the task'];
+
+  function isInternalMessage(text) {
+    for (var i = 0; i < internalPrefixes.length; i++) {
+      if (text.substring(0, internalPrefixes[i].length) === internalPrefixes[i]) return true;
+    }
+    return false;
+  }
+
+  // Strip ```tool ... ``` blocks from assistant messages
+  function stripToolBlocks(text) {
+    return text.replace(/```tool\s*\n?[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   fetch('/builder/api/chat-history/?conversationId=' + conversationId)
   .then(r => r.json())
   .then(d => {
@@ -508,18 +526,22 @@ function updateSummaryDisplay(text) {
     var placeholder = document.getElementById('chatPlaceholder');
     if (placeholder) placeholder.remove();
     d.messages.forEach(function(m) {
-      if (m.role === 'user' || m.role === 'assistant') {
-        var content = m.content || '';
-        if (typeof content !== 'string') {
-          // Handle structured content (tool calls etc) — show text parts only
-          if (Array.isArray(content)) {
-            content = content.filter(function(c) { return c.type === 'text'; }).map(function(c) { return c.text; }).join('\n');
-          } else {
-            content = String(content);
-          }
+      if (m.role !== 'user' && m.role !== 'assistant') return;
+      var content = m.content || '';
+      if (typeof content !== 'string') {
+        if (Array.isArray(content)) {
+          content = content.filter(function(c) { return c.type === 'text'; }).map(function(c) { return c.text; }).join('\n');
+        } else {
+          content = String(content);
         }
-        if (content.trim()) appendMessage(m.role, content);
       }
+      content = content.trim();
+      if (!content) return;
+      // Skip internal agentic-loop messages
+      if (m.role === 'user' && isInternalMessage(content)) return;
+      // Strip tool-call JSON blocks from assistant messages
+      if (m.role === 'assistant') content = stripToolBlocks(content);
+      if (content) appendMessage(m.role, content);
     });
   })
   .catch(function() { /* ignore — conversation may not exist */ });
