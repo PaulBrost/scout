@@ -201,8 +201,8 @@ def api_create_script(request):
         # Register in DB
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, environment_id, assessment_id, description, test_type, tags, created_at, updated_at)
-                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, now(), now())""",
+                """INSERT INTO test_scripts (script_path, environment_id, assessment_id, description, test_type, tags, ai_config, created_at, updated_at)
+                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())""",
                 [script_path, environment_id, assessment_id, f'Test script for {name}']
             )
 

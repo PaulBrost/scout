@@ -687,7 +687,10 @@ function runAnalysis(type) {
     headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
     body: JSON.stringify({ type: type }),
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Server returned ' + r.status + ' ' + r.statusText);
+    return r.json();
+  })
   .then(function(d) {
     btn.disabled = false;
     btn.innerHTML = origHtml;

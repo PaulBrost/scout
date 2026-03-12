@@ -137,6 +137,13 @@ def detail(request, run_id):
         raise Http404
     run = dict(zip(cols, row))
 
+    # RBAC: non-admin users can only view runs for their assigned environments
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        run_env = str(run.get('environment_id') or '')
+        if run_env and run_env not in [str(e) for e in env_ids]:
+            raise Http404
+
     # Parse summary
     if isinstance(run.get('summary'), str):
         try:

@@ -112,6 +112,11 @@ AZURE_API_VERSION = config('AZURE_AI_API_VERSION', default='2024-02-01')
 
 CSRF_TRUSTED_ORIGINS = [o for o in config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv()) if o]
 
+# Trust X-Forwarded-Proto from nginx so Django knows the request is HTTPS.
+# Without this, CSRF rejects fetch() POST requests because the Origin header
+# (https://...) doesn't match what Django thinks the scheme is (http://...).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 OLLAMA_HOST = config('OLLAMA_HOST', default='localhost:11434')
 OLLAMA_TEXT_MODEL = config('OLLAMA_TEXT_MODEL', default='qwen2.5:14b')
 OLLAMA_VISION_MODEL = config('OLLAMA_VISION_MODEL', default='gemma3:12b')
