@@ -225,6 +225,74 @@ def api_associate(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_delete_script(request):
+    """Delete a single test script by its DB id."""
+    try:
+        data = json.loads(request.body)
+        script_id = data.get('id')
+        if not script_id:
+            return JsonResponse({'error': 'id required'}, status=400)
+
+        # Look up script_path so we can also delete the file
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT script_path FROM test_scripts WHERE id = %s', [script_id])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Script not found'}, status=404)
+
+        script_path = row[0]
+
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [script_path])
+            cursor.execute('DELETE FROM test_scripts WHERE id = %s', [script_id])
+
+        # Delete the file on disk
+        tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+        full_path = (tests_dir / script_path).resolve()
+        if str(full_path).startswith(str(tests_dir.resolve())) and full_path.exists():
+            full_path.unlink()
+
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_delete_scripts_bulk(request):
+    """Delete multiple test scripts by ID list."""
+    try:
+        data = json.loads(request.body)
+        ids = data.get('ids', [])
+        if not ids:
+            return JsonResponse({'error': 'No IDs provided'}, status=400)
+
+        # Get script paths for file deletion
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT id, script_path FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
+            scripts = cursor.fetchall()
+
+        tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+        for script_id, script_path in scripts:
+            with connection.cursor() as cursor:
+                cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [script_path])
+            full_path = (tests_dir / script_path).resolve()
+            if str(full_path).startswith(str(tests_dir.resolve())) and full_path.exists():
+                full_path.unlink()
+
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
+            deleted = cursor.rowcount
+
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @login_required(login_url='/login/')
 def api_list(request):
     """RBAC-scoped list of test scripts from DB."""

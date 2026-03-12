@@ -86,8 +86,15 @@ def build_system_prompt(current_code, filename):
     prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n\n'
     prompt += '## Code Conventions\n'
     prompt += '- Use CommonJS `require()` syntax, NOT ES module `import` syntax.\n'
-    prompt += '- Scripts in `tests/` import helpers with `../src/helpers/` paths. Scripts in `tests/items/` use `../../src/helpers/`.\n'
-    prompt += '- Always pass env config to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
+    prompt += '- Scripts in `tests/` import helpers with `../src/helpers/` paths. Scripts in `tests/items/` or `tests/generated/` use `../../src/helpers/`.\n'
+    prompt += '- IMPORTANT: There is NO `src/helpers/config` module. Do NOT require or import it.\n'
+    prompt += '- Environment config is loaded inline via `process.env.SCOUT_ENV_CONFIG`:\n'
+    prompt += '  ```\n'
+    prompt += '  function loadEnvConfig() {\n'
+    prompt += '    return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};\n'
+    prompt += '  }\n'
+    prompt += '  ```\n'
+    prompt += '- Then pass it to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
     prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#1e2a3a"/>
+  <g transform="translate(7,3) scale(0.085)" fill="#4da3ff">
+    <!-- Head -->
+    <circle cx="105" cy="28" r="25"/>
+    <!-- Hat -->
+    <ellipse cx="105" cy="16" rx="32" ry="8"/>
+    <!-- Torso -->
+    <path d="M90,58 L85,140 L95,140 L105,110 L115,140 L125,140 L120,58 Z"/>
+    <!-- Backpack -->
+    <rect x="62" y="62" width="24" height="45" rx="5"/>
+    <!-- Left leg (forward) -->
+    <path d="M95,140 L80,240 L72,280 L88,280 L95,245 L100,180 Z"/>
+    <!-- Right leg (back) -->
+    <path d="M115,140 L130,240 L138,280 L122,280 L115,245 L110,180 Z"/>
+    <!-- Left arm -->
+    <path d="M88,65 L72,105" stroke="#4da3ff" stroke-width="12" stroke-linecap="round" fill="none"/>
+    <!-- Right arm + walking stick -->
+    <path d="M120,65 L145,110" stroke="#4da3ff" stroke-width="12" stroke-linecap="round" fill="none"/>
+    <rect x="143" y="105" width="5" height="175" rx="2" transform="rotate(-8,145,190)"/>
+  </g>
+</svg>

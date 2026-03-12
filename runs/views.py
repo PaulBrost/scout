@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse, Http404
 from django.db import connection
 from django.conf import settings
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_POST
 from core.mixins import get_user_env_ids
 
@@ -438,6 +438,39 @@ def api_run_analyze(request, run_id):
     )
 
     return JsonResponse({'ok': True, 'taskId': str(task_id), 'type': analysis_type})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_delete_run(request, run_id):
+    """Delete a single run and all related data."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM test_runs WHERE id = %s', [str(run_id)])
+            if cursor.rowcount == 0:
+                return JsonResponse({'error': 'Run not found'}, status=404)
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_delete_runs_bulk(request):
+    """Delete multiple runs by ID list."""
+    try:
+        data = json.loads(request.body)
+        ids = data.get('ids', [])
+        if not ids:
+            return JsonResponse({'error': 'No IDs provided'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM test_runs WHERE id = ANY(%s::uuid[])', [ids])
+            deleted = cursor.rowcount
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @login_required(login_url='/login/')

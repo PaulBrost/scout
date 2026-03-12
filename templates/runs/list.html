@@ -11,6 +11,11 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
   </div>
   <form method="get" class="d-flex gap-2 align-items-center">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -35,6 +40,7 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
           <th><a href="?sort=started&dir={% if sort == 'started' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Queued {% if sort == 'started' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=suite&dir={% if sort == 'suite' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Suite {% if sort == 'suite' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=status&dir={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Status {% if sort == 'status' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
@@ -42,11 +48,13 @@
           <th>Scripts</th>
           <th>Duration</th>
           <th>Results</th>
+          <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for run in runs %}
-        <tr>
+        <tr id="run-row-{{ run.id }}">
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ run.id }}" onchange="updateSelection()"></td>
           <td>
             <a href="/runs/{{ run.id }}/">{{ run.queued_at|shorttime }}</a>
           </td>
@@ -63,9 +71,14 @@
             {% if run.summary.errors %}<span class="text-muted">/ {{ run.summary.errors }}e</span>{% endif %}
             {% else %}—{% endif %}
           </td>
+          <td class="text-end text-nowrap">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteRun('{{ run.id }}')" title="Delete run">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-center text-muted py-5">No runs found.</td></tr>
+        <tr><td colspan="9" class="text-center text-muted py-5">No runs found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -89,6 +102,59 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = checked; });
+  updateSelection();
+}
+function updateSelection() {
+  var checked = document.querySelectorAll('.row-check:checked');
+  var count = checked.length;
+  var total = document.querySelectorAll('.row-check').length;
+  document.getElementById('selectAll').checked = count > 0 && count === total;
+  document.getElementById('selectAll').indeterminate = count > 0 && count < total;
+}
+function deleteRun(id) {
+  if (!confirm('Delete this run and all its results? This cannot be undone.')) return;
+  fetch('/runs/' + id + '/delete/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: '{}'
+  })
+  .then(function(r) { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      var row = document.getElementById('run-row-' + id);
+      if (row) row.remove();
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+    }
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+function applyBulkAction() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Please select a bulk action.'); return; }
+  var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return cb.value; });
+  if (ids.length === 0) { alert('No rows selected.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected run' + (ids.length === 1 ? '' : 's') + '? This will permanently remove the runs and all associated data. This cannot be undone.')) return;
+    fetch('/runs/api/delete-runs/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: ids})
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+    .then(function(d) {
+      if (d.ok) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+  }
 }
 </script>
 {% endblock %}

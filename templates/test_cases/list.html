@@ -14,6 +14,11 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
     <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('test_type',this.value)">
       <option value="">All Types</option>
       {% for val, label in test_types %}
@@ -47,6 +52,7 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
           <th>Script Path</th>
           <th>Environment</th>
           <th>Item</th>
@@ -57,7 +63,8 @@
       </thead>
       <tbody>
         {% for sc in scripts %}
-        <tr>
+        <tr id="script-row-{{ sc.id }}">
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ sc.id }}" onchange="updateSelection()"></td>
           <td class="font-monospace small">
             <a href="/builder/?file={{ sc.script_path|urlencode }}">{{ sc.script_path }}</a>
           </td>
@@ -101,10 +108,13 @@
             <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i> Edit
             </a>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteScript({{ sc.id }}, '{{ sc.script_path|escapejs }}')" title="Delete script">
+              <i class="bi bi-trash"></i>
+            </button>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-5">No test scripts found.
+        <tr><td colspan="7" class="text-muted text-center py-5">No test scripts found.
           {% if not search and not test_type_filter and not env_filter %}
           <a href="/builder/">Create one in the Script Editor</a>.
           {% endif %}
@@ -133,6 +143,59 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = checked; });
+  updateSelection();
+}
+function updateSelection() {
+  var checked = document.querySelectorAll('.row-check:checked');
+  var count = checked.length;
+  var total = document.querySelectorAll('.row-check').length;
+  document.getElementById('selectAll').checked = count > 0 && count === total;
+  document.getElementById('selectAll').indeterminate = count > 0 && count < total;
+}
+function deleteScript(id, path) {
+  if (!confirm('Delete script "' + path + '"? This will remove the file and its metadata. This cannot be undone.')) return;
+  fetch('/test-cases/api/delete-script/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id})
+  })
+  .then(function(r) { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      var row = document.getElementById('script-row-' + id);
+      if (row) row.remove();
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+    }
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+function applyBulkAction() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Please select a bulk action.'); return; }
+  var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return parseInt(cb.value); });
+  if (ids.length === 0) { alert('No rows selected.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected script' + (ids.length === 1 ? '' : 's') + '? This will remove the files and metadata. This cannot be undone.')) return;
+    fetch('/test-cases/api/delete-scripts/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: ids})
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+    .then(function(d) {
+      if (d.ok) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+  }
 }
 </script>
 {% endblock %}
