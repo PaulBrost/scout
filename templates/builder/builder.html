@@ -433,13 +433,13 @@ var conversationId = {% if chat_conversation_id %}'{{ chat_conversation_id|escap
 var currentFilePath = '{{ file_path|default:""|escapejs }}';
 var currentEnvironmentId = '{{ script_meta.environment_id|default:""|escapejs }}';
 var scriptContext = {
-  assessmentId: '{{ script_meta.assessment_id|default:assessment.id|default:""|escapejs }}',
-  assessmentName: '{{ script_meta.assessment_name|default:assessment.name|default:""|escapejs }}',
+  assessmentId: '{% if script_meta.assessment_id %}{{ script_meta.assessment_id|escapejs }}{% elif assessment %}{{ assessment.id|escapejs }}{% endif %}',
+  assessmentName: '{% if script_meta.assessment_name %}{{ script_meta.assessment_name|escapejs }}{% elif assessment %}{{ assessment.name|escapejs }}{% endif %}',
   itemId: '{{ script_meta.item_id|default:""|escapejs }}',
   itemTitle: '{{ script_meta.item_title|default:""|escapejs }}',
-  testType: '{{ script_meta.test_type|default:test_type|default:""|escapejs }}',
+  testType: '{% if script_meta.test_type %}{{ script_meta.test_type|escapejs }}{% elif test_type %}{{ test_type|escapejs }}{% endif %}',
   description: '{{ script_meta.description|default:""|escapejs }}',
-  environmentName: '{{ script_meta.environment_name|default:assessment.env_name|default:""|escapejs }}'
+  environmentName: '{% if script_meta.environment_name %}{{ script_meta.environment_name|escapejs }}{% elif assessment %}{{ assessment.env_name|escapejs }}{% endif %}'
 };
 var isDirty = false;
 
