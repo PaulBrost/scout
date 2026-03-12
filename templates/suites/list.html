@@ -89,15 +89,16 @@ function runSuite(id, name) {
   if (!confirm('Run suite: ' + name + '?')) return;
   fetch('/suites/' + id + '/run/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: '{}'
   }).then(r => r.json()).then(d => {
     if (d.runId) window.location = '/runs/' + d.runId + '/';
     else alert('Error: ' + (d.error || 'Unknown error'));
   });
 }
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 </script>
 {% endblock %}

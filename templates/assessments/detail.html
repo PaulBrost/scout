@@ -191,8 +191,9 @@
 </div>
 
 <script>
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 var editing = false;
@@ -217,7 +218,7 @@ function saveDetails() {
 
   fetch('/assessments/api/update-assessment/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       numeric_id: {{ assessment.numeric_id }},
       name: name,
@@ -227,7 +228,7 @@ function saveDetails() {
       intro_screens: parseInt(document.getElementById('editIntroScreens').value) || 5
     })
   })
-  .then(r => r.json())
+  .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
   .then(d => {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
@@ -255,10 +256,10 @@ function deleteAssessment() {
   if (!confirm('Delete assessment "{{ assessment.name|escapejs }}"? This will also delete all items in this assessment. This cannot be undone.')) return;
   fetch('/assessments/api/delete-assessment/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({assessment_id: '{{ assessment.id|escapejs }}'})
   })
-  .then(r => r.json())
+  .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
   .then(d => {
     if (d.ok) {
       window.location = '/assessments/';
@@ -273,10 +274,10 @@ function deleteItem(numericId, itemId) {
   if (!confirm('Delete item "' + itemId + '"? This will permanently remove the item and any associated data.')) return;
   fetch('/assessments/api/delete-item/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({numeric_id: numericId})
   })
-  .then(r => r.json())
+  .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
   .then(d => {
     if (d.ok) {
       var row = document.getElementById('item-row-' + numericId);
@@ -324,14 +325,14 @@ function createScript() {
 
   fetch('/assessments/api/create-script/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       name: name,
       assessment_id: '{{ assessment.id|escapejs }}',
       environment_id: '{{ assessment.environment_id|default:""|escapejs }}'
     })
   })
-  .then(r => r.json())
+  .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
   .then(d => {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-plus"></i> Create & Open Editor';

@@ -417,8 +417,9 @@ var currentFilePath = '{{ file_path|default:""|escapejs }}';
 var currentEnvironmentId = '{{ script_meta.environment_id|default:""|escapejs }}';
 var isDirty = false;
 
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 function markDirty() {
@@ -545,7 +546,7 @@ function sendMessage() {
 
   fetch('/builder/api/chat/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       message: msg,
       conversationId: conversationId,
@@ -667,7 +668,7 @@ function saveFile() {
 
   fetch(url, {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(payload)
   })
   .then(r => r.json())
@@ -701,7 +702,7 @@ function dryRun() {
 
   fetch('/test-cases/api/dry-run/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({code: code})
   })
   .then(r => r.json())
@@ -728,7 +729,7 @@ function saveMeta() {
   var envPicker = document.getElementById('envPicker');
   fetch('/test-cases/api/associate/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       scriptPath: path,
       itemId: document.getElementById('metaItemId')?.value || null,
@@ -770,7 +771,7 @@ function doRunScript(headed, scheduledAt) {
 
   fetch('/suites/run-script/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(payload)
   })
   .then(r => r.json())
@@ -818,7 +819,7 @@ function saveAndRun(headed) {
 
     fetch(url, {
       method: 'POST',
-      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     })
     .then(r => r.json())
@@ -879,7 +880,7 @@ function scheduleRun() {
 
     fetch(schedUrl, {
       method: 'POST',
-      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
       body: JSON.stringify(schedPayload)
     })
     .then(r => r.json())
@@ -914,7 +915,7 @@ function deleteScript() {
 
   fetch('/builder/api/delete/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({ path: currentFilePath })
   })
   .then(r => r.json())

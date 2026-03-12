@@ -537,8 +537,8 @@ function doToggleFlag(id, forceFlagged, notes) {
 }
 
 function getCsrf() {
-  var c = document.cookie.match(/csrftoken=([^;]+)/);
-  return c ? c[1] : '';
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 // Start polling if run is in progress

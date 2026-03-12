@@ -444,15 +444,16 @@
 </div>
 
 <script>
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 function toggleTool(toolId, checkbox) {
   checkbox.disabled = true;
   fetch('/admin-config/ai/tools/' + toolId + '/toggle/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'}
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'}
   })
   .then(r => r.json())
   .then(d => {
@@ -517,7 +518,7 @@ function saveFeatureProvider(feature) {
   var providerConfig = getProviderConfig(feature);
   fetch('/admin-config/ai/feature-provider/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({feature: feature, providerType: providerType, providerConfig: providerConfig})
   })
   .then(function(r) { return r.json(); })
@@ -553,7 +554,7 @@ function testProvider(feature) {
 
   fetch('/admin-config/ai/test-provider/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(body)
   })
   .then(function(r) { return r.json(); })

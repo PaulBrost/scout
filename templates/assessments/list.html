@@ -110,8 +110,9 @@
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
 }
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 function toggleAll(checked) {
@@ -136,7 +137,7 @@ function applyBulkAction() {
     if (!confirm('Delete ' + ids.length + ' selected assessment' + (ids.length === 1 ? '' : 's') + '? This will also delete all items in these assessments. This cannot be undone.')) return;
     fetch('/assessments/api/delete-assessments/', {
       method: 'POST',
-      headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
       body: JSON.stringify({ids: ids})
     })
     .then(function(r) { return r.json(); })

@@ -143,8 +143,9 @@
 </div>
 
 <script>
-function getCookie(n) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(n + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 // Parse item data from Django
@@ -229,7 +230,7 @@ function showBaselineDropdown(e) {
 function setBaseline(country, language) {
   fetch('/items/api/set-baseline/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({ numeric_id: itemNumericId, country: country, language: language })
   })
   .then(function(r) { return r.json(); })
@@ -269,7 +270,7 @@ function saveDetails() {
 
   fetch('/items/api/update-item/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       numeric_id: {{ item.numeric_id }},
       title: document.getElementById('editTitle').value.trim(),
@@ -306,7 +307,7 @@ function deleteItem() {
   if (!confirm('Delete item "{{ item.item_id|escapejs }}"? This will permanently remove the item and any associated data. This cannot be undone.')) return;
   fetch('/items/api/delete-item/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({numeric_id: {{ item.numeric_id }}})
   })
   .then(r => r.json())
@@ -321,7 +322,7 @@ function runScript(path) {
   if (!confirm('Run script: ' + path + '?')) return;
   fetch('/suites/run-script/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({scriptPath: path})
   }).then(r => r.json()).then(d => {
     if (d.runId) window.location = '/runs/' + d.runId + '/';
@@ -365,7 +366,7 @@ function createScript() {
 
   fetch('/items/api/create-script/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({
       name: name,
       item_id: '{{ item.item_id|escapejs }}',

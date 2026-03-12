@@ -73,8 +73,9 @@
 </div>
 
 <script>
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 function formatJson() {
@@ -121,7 +122,7 @@ function saveDataset() {
   document.getElementById('saveStatus').textContent = 'Saving…';
   fetch(url, {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(payload)
   }).then(r => r.json()).then(d => {
     if (d.error) { document.getElementById('saveStatus').textContent = 'Error: ' + d.error; return; }
@@ -135,7 +136,7 @@ function deleteDataset() {
   if (!confirm('Delete this data set? This cannot be undone.')) return;
   fetch('/test-data/api/delete/{{ dataset.id }}/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken')}
+    headers: {'X-CSRFToken': getCsrf()}
   }).then(() => { window.location = '/test-data/'; });
 }
 {% endif %}

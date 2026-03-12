@@ -104,8 +104,9 @@
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); window.location = url;
 }
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 
 function previewScreenshot(path) {
@@ -117,7 +118,7 @@ function approveBaseline(id) {
   if (!confirm('Approve this baseline?')) return;
   fetch('/baselines/api/approve/' + id + '/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken')}
+    headers: {'X-CSRFToken': getCsrf()}
   }).then(r => r.json()).then(d => {
     if (d.ok) location.reload();
     else alert('Error: ' + d.error);
@@ -128,7 +129,7 @@ function rejectBaseline(id) {
   if (!confirm('Reject and delete this baseline? This cannot be undone.')) return;
   fetch('/baselines/api/reject/' + id + '/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken')}
+    headers: {'X-CSRFToken': getCsrf()}
   }).then(r => r.json()).then(d => {
     if (d.ok) location.reload();
     else alert('Error: ' + d.error);

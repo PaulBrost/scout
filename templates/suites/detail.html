@@ -162,7 +162,7 @@ function saveSuite() {
   document.getElementById('saveStatus').textContent = 'Saving…';
   fetch(url, {
     method: method,
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }).then(r => r.json()).then(d => {
     if (d.error) { document.getElementById('saveStatus').textContent = 'Error: ' + d.error; return; }
@@ -176,7 +176,7 @@ function runSuite() {
   if (!confirm('Run suite "{{ suite.name|escapejs }}" now?')) return;
   fetch('/suites/{{ suite.id }}/run/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: '{}'
   }).then(r => r.json()).then(d => {
     if (d.runId) window.location = '/runs/' + d.runId + '/';
@@ -187,14 +187,15 @@ function deleteSuite() {
   if (!confirm('Delete suite "{{ suite.name|escapejs }}"? This cannot be undone.')) return;
   fetch('/suites/api/delete/{{ suite.id }}/', {
     method: 'POST',
-    headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: '{}'
   }).then(() => { window.location = '/suites/'; });
 }
 {% endif %}
 
-function getCookie(name) {
-  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
 }
 </script>
 {% endblock %}
