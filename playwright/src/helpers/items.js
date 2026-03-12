@@ -64,6 +64,7 @@ async function skipIntroScreens(page, count, envConfig = null) {
 
 /**
  * Click the next button, force-enabling it if disabled.
+ * Handles native alert() dialogs for "must answer" validation.
  * Useful for skipping audio checks, tutorials, and other gated screens.
  * @param {import('@playwright/test').Page} page
  */
@@ -77,103 +78,137 @@ async function forceClickNext(page) {
       btn.classList.add('enabledButton');
     }
   });
+
+  // Set up dialog handler BEFORE clicking — NAEP shows alert() for "must answer"
+  let dialogFired = false;
+  const dialogHandler = async (dialog) => {
+    dialogFired = true;
+    await dialog.accept();
+  };
+  page.on('dialog', dialogHandler);
+
   await page.click('#nextButton');
   await page.waitForTimeout(500);
 
-  // Check if a "must answer" dialog/overlay appeared
-  const blocked = await page.evaluate(() => {
-    const body = document.body.innerText || '';
-    return /you need to answer|must answer|answer this question|before continuing/i.test(body);
-  });
+  page.off('dialog', dialogHandler);
 
-  if (blocked) {
-    await dismissRequiredAnswer(page);
+  if (dialogFired) {
+    await answerAndAdvance(page);
   }
 }
 
 /**
  * Click the next button (only when enabled).
- * If the assessment shows a "must answer" validation, dismiss it,
- * provide a dummy answer, and retry.
+ * Handles native alert() dialogs for "must answer" validation.
  * @param {import('@playwright/test').Page} page
  */
 async function clickNext(page) {
   await page.waitForSelector('#nextButton', { state: 'visible', timeout: 10000 });
+
+  // Set up dialog handler BEFORE clicking
+  let dialogFired = false;
+  const dialogHandler = async (dialog) => {
+    dialogFired = true;
+    await dialog.accept();
+  };
+  page.on('dialog', dialogHandler);
+
   await page.click('#nextButton');
   await page.waitForTimeout(500);
 
-  // Check if a "must answer" dialog/overlay appeared
-  const blocked = await page.evaluate(() => {
-    // Look for common NAEP validation text patterns
-    const body = document.body.innerText || '';
-    return /you need to answer|must answer|answer this question|before continuing/i.test(body);
-  });
+  page.off('dialog', dialogHandler);
 
-  if (blocked) {
-    await dismissRequiredAnswer(page);
+  if (dialogFired) {
+    await answerAndAdvance(page);
   }
 }
 
 /**
- * Dismiss a "you must answer" validation screen by clicking continue/OK,
- * providing a dummy answer (first radio button, checkbox, or text input),
- * then clicking Next again.
+ * When a "must answer" dialog was dismissed, provide a dummy answer and retry Next.
+ * Handles standard HTML inputs and NAEP custom answer elements.
  * @param {import('@playwright/test').Page} page
  */
-async function dismissRequiredAnswer(page) {
-  // 1) Dismiss the validation dialog — click any continue/OK button
-  const dismissed = await page.evaluate(() => {
-    // Look for buttons/links with "continue", "ok", "close" text
-    const candidates = [...document.querySelectorAll('button, input[type="button"], a, .btn')];
-    for (const el of candidates) {
-      const text = (el.innerText || el.value || '').toLowerCase().trim();
-      if (/^(continue|ok|close|go back)$/.test(text) || /continue/i.test(text)) {
-        el.click();
-        return true;
-      }
-    }
-    return false;
-  });
-  await page.waitForTimeout(500);
-
-  // 2) Provide a dummy answer — select first available input
+async function answerAndAdvance(page) {
+  // Provide a dummy answer — try various input types
   await page.evaluate(() => {
-    // Try radio buttons first (most common for NAEP routing questions)
-    const radios = document.querySelectorAll('#item input[type="radio"], #theItem input[type="radio"], input[type="radio"]');
+    // Try radio buttons (most common for NAEP routing questions)
+    const radios = document.querySelectorAll('input[type="radio"]');
     if (radios.length > 0) {
       radios[0].click();
-      // Trigger change event in case the UI listens for it
       radios[0].dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
+    // Try NAEP custom answer choice elements (divs/spans with click handlers)
+    const choices = document.querySelectorAll(
+      '.answerChoice, .responseOption, .answer-option, ' +
+      '[role="radio"], [role="option"], [data-answer], ' +
+      '.mcChoice, .mc-choice, .choiceLabel'
+    );
+    if (choices.length > 0) {
+      choices[0].click();
+      return;
+    }
     // Try checkboxes
-    const checks = document.querySelectorAll('#item input[type="checkbox"], #theItem input[type="checkbox"]');
+    const checks = document.querySelectorAll('input[type="checkbox"]');
     if (checks.length > 0) {
       checks[0].click();
       checks[0].dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
     // Try select dropdowns
-    const selects = document.querySelectorAll('#item select, #theItem select');
-    if (selects.length > 0 && selects[0].options.length > 1) {
-      selects[0].selectedIndex = 1;
-      selects[0].dispatchEvent(new Event('change', { bubbles: true }));
-      return;
+    const selects = document.querySelectorAll('#item select, select');
+    for (const sel of selects) {
+      if (sel.options.length > 1 && sel.id !== 'TheTest') {
+        sel.selectedIndex = 1;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
     }
     // Try text inputs
-    const inputs = document.querySelectorAll('#item input[type="text"], #item textarea, #theItem input[type="text"], #theItem textarea');
+    const inputs = document.querySelectorAll(
+      '#item input[type="text"], #item textarea, ' +
+      'input[type="text"]:not([readonly]), textarea:not([readonly])'
+    );
     if (inputs.length > 0) {
       inputs[0].value = 'test';
       inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+      inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
+    // Last resort: click any clickable element inside the item content area
+    const itemEl = document.getElementById('item') || document.getElementById('theItem');
+    if (itemEl) {
+      const clickables = itemEl.querySelectorAll(
+        'a, button, [onclick], [role="button"], label, td[onclick], div[onclick]'
+      );
+      if (clickables.length > 0) {
+        clickables[0].click();
+      }
+    }
   });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
 
-  // 3) Retry clicking Next
-  await page.waitForSelector('#nextButton', { state: 'visible', timeout: 5000 });
+  // Retry clicking Next (with dialog handler in case answer wasn't accepted)
+  let retryDialog = false;
+  const retryHandler = async (dialog) => {
+    retryDialog = true;
+    await dialog.accept();
+  };
+  page.on('dialog', retryHandler);
+
+  await page.waitForSelector('#nextButton', { state: 'attached', timeout: 5000 });
+  await page.evaluate(() => {
+    const btn = document.getElementById('nextButton');
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('disabledButton');
+      btn.classList.add('enabledButton');
+    }
+  });
   await page.click('#nextButton');
   await page.waitForTimeout(500);
+
+  page.off('dialog', retryHandler);
 }
 
 /**
@@ -309,7 +344,7 @@ module.exports = {
   forceClickNext,
   clickNext,
   clickBack,
-  dismissRequiredAnswer,
+  answerAndAdvance,
   navigateToItem,
   extractItemText,
   isNextEnabled,

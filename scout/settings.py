@@ -98,6 +98,7 @@ LOGOUT_REDIRECT_URL = '/login/'
 PLAYWRIGHT_TESTS_DIR = config('PLAYWRIGHT_TESTS_DIR', default=str(BASE_DIR.parent / 'ETS/SCOUT/poc/tests'))
 PLAYWRIGHT_PROJECT_ROOT = config('PLAYWRIGHT_PROJECT_ROOT', default=str(BASE_DIR.parent / 'ETS/SCOUT/poc'))
 SCOUT_SCRIPT_TIMEOUT = config('SCOUT_SCRIPT_TIMEOUT', default=360000, cast=int)  # 6 min — must exceed Playwright's 5-min timeout
+SCOUT_ARCHIVE_DIR = config('SCOUT_ARCHIVE_DIR', default=str(BASE_DIR / 'media' / 'archive'))
 SCOUT_MOCK = config('SCOUT_MOCK', default='0')
 DASHBOARD_AUTH = config('DASHBOARD_AUTH', default=True, cast=bool)
 

@@ -98,8 +98,8 @@ def build_system_prompt(current_code, filename):
     prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n'
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
-    prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the validation dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
-    prompt += '- The `dismissRequiredAnswer(page)` helper is available if you need to explicitly handle a "must answer" screen.\n\n'
+    prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
+    prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''

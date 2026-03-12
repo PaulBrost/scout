@@ -57,7 +57,7 @@
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body py-2">
         <div class="text-muted small">Queued</div>
-        <div class="mt-1 small" id="runQueued">{{ run.queued_at|shorttime }}</div>
+        <div class="mt-1 small" id="runQueued">{{ run.queued_at|shorttime:user_timezone }}</div>
       </div>
     </div>
   </div>
@@ -65,7 +65,7 @@
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body py-2">
         <div class="text-muted small">Started</div>
-        <div class="mt-1 small" id="runStarted">{% if run.started_at %}{{ run.started_at|shorttime }}{% else %}<span class="text-muted">Waiting…</span>{% endif %}</div>
+        <div class="mt-1 small" id="runStarted">{% if run.started_at %}{{ run.started_at|shorttime:user_timezone }}{% else %}<span class="text-muted">Waiting…</span>{% endif %}</div>
       </div>
     </div>
   </div>
@@ -73,7 +73,7 @@
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body py-2">
         <div class="text-muted small">Completed</div>
-        <div class="mt-1 small" id="runCompleted">{% if run.completed_at %}{{ run.completed_at|shorttime }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+        <div class="mt-1 small" id="runCompleted">{% if run.completed_at %}{{ run.completed_at|shorttime:user_timezone }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
       </div>
     </div>
   </div>
@@ -105,7 +105,7 @@
         <tr id="script-{{ sr.id }}">
           <td class="font-monospace small">{{ sr.script_path }}</td>
           <td class="script-status"><span class="status-badge status-{{ sr.status }}">{{ sr.status }}</span></td>
-          <td class="script-started small text-muted">{% if sr.started_at %}{{ sr.started_at|shorttime }}{% else %}—{% endif %}</td>
+          <td class="script-started small text-muted">{% if sr.started_at %}{{ sr.started_at|shorttime:user_timezone }}{% else %}—{% endif %}</td>
           <td class="script-duration">{% if sr.duration_ms %}{{ sr.duration_ms|duration }}{% else %}—{% endif %}</td>
           <td class="script-error text-danger small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             {% if sr.error_message %}
@@ -246,7 +246,7 @@
             </td>
             <td class="small text-muted">{{ a.model_used|default:"—" }}</td>
             <td class="small text-muted">{% if a.duration_ms %}{{ a.duration_ms }}ms{% else %}—{% endif %}</td>
-            <td class="small text-muted">{{ a.created_at|shorttime }}</td>
+            <td class="small text-muted">{{ a.created_at|shorttime:user_timezone }}</td>
           </tr>
           {% endfor %}
         </tbody>

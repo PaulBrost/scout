@@ -13,6 +13,60 @@ from django.conf import settings
 from django.db import connection
 
 
+def archive_artifacts(run_id, script_path, snapshots, trace_path, video_path):
+    """Copy screenshots, trace, and video to persistent archive.
+    Returns (archived_snapshots, archived_trace, archived_video) with paths
+    relative to SCOUT_ARCHIVE_DIR.
+    """
+    archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
+    pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
+    script_stem = Path(script_path).stem
+
+    dest_dir = archive_root / 'runs' / str(run_id) / script_stem
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    archived_snapshots = []
+    for snap in snapshots:
+        src = pw_root / snap['file_path']
+        if not src.exists():
+            archived_snapshots.append(snap)
+            continue
+        dest_file = dest_dir / src.name
+        if dest_file.exists():
+            base, ext = dest_file.stem, dest_file.suffix
+            counter = 1
+            while dest_file.exists():
+                dest_file = dest_dir / f'{base}_{counter}{ext}'
+                counter += 1
+        shutil.copy2(str(src), str(dest_file))
+        archived_snapshots.append({
+            **snap,
+            'file_path': str(dest_file.relative_to(archive_root)),
+        })
+
+    archived_trace = None
+    if trace_path:
+        src = pw_root / trace_path
+        if src.exists():
+            dest_file = dest_dir / src.name
+            shutil.copy2(str(src), str(dest_file))
+            archived_trace = str(dest_file.relative_to(archive_root))
+        else:
+            archived_trace = trace_path
+
+    archived_video = None
+    if video_path:
+        src = pw_root / video_path
+        if src.exists():
+            dest_file = dest_dir / src.name
+            shutil.copy2(str(src), str(dest_file))
+            archived_video = str(dest_file.relative_to(archive_root))
+        else:
+            archived_video = video_path
+
+    return archived_snapshots, archived_trace, archived_video
+
+
 def find_artifacts(script_path):
     """Scan test-results/ for trace and video artifacts."""
     results_dir = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / 'test-results'
@@ -404,6 +458,15 @@ def execute_run(run_id, script_paths, options=None):
                 env_vars=env_vars if env_vars else None,
                 headed=headed,
             )
+
+            # Archive artifacts to persistent storage
+            archived_snaps, archived_trace, archived_video = archive_artifacts(
+                run_id, script_path,
+                result.get('snapshots', []),
+                result.get('trace_path'),
+                result.get('video_path'),
+            )
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """UPDATE test_run_scripts
@@ -412,14 +475,14 @@ def execute_run(run_id, script_paths, options=None):
                        WHERE run_id = %s AND script_path = %s
                        RETURNING id""",
                     [result['status'], result['duration_ms'], result['error_message'],
-                     result['execution_log'], result['trace_path'], result['video_path'],
+                     result['execution_log'], archived_trace, archived_video,
                      run_id, script_path]
                 )
                 script_id_row = cursor.fetchone()
                 run_script_id = script_id_row[0] if script_id_row else None
 
-            # Save captured snapshots as RunScreenshot records
-            for snap in result.get('snapshots', []):
+            # Save captured snapshots as RunScreenshot records (archived paths)
+            for snap in archived_snaps:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, created_at)

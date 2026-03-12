@@ -7,6 +7,15 @@ from django.db import connection
 from django.conf import settings
 
 
+def _resolve_artifact_path(relative_path):
+    """Resolve an artifact path, checking archive first then Playwright root."""
+    archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
+    candidate = archive_root / relative_path
+    if candidate.exists():
+        return candidate
+    return Path(settings.PLAYWRIGHT_PROJECT_ROOT) / relative_path
+
+
 def run_analysis_on_demand(run_id, analysis_type='both'):
     """Manually triggered AI analysis on an existing run's artifacts."""
     print(f'[PostExec] On-demand analysis for run {str(run_id)[:8]}, type={analysis_type}')
@@ -92,8 +101,6 @@ def dispatch_post_execution(run_id):
 
 def compare_baselines(run_id):
     """Compare screenshots against approved baselines for visual_regression scripts."""
-    project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
-
     with connection.cursor() as cursor:
         # Get test results with screenshots for visual_regression scripts in this run
         cursor.execute("""
@@ -115,7 +122,7 @@ def compare_baselines(run_id):
         item_id = result['item_id']
         browser = result['browser']
         device_profile = result['device_profile'] or 'default'
-        screenshot_path = project_root / result['screenshot_path']
+        screenshot_path = _resolve_artifact_path(result['screenshot_path'])
         environment_id = result.get('environment_id')
 
         if not screenshot_path.exists():
@@ -135,13 +142,14 @@ def compare_baselines(run_id):
 
         if baseline_row:
             baseline_id, baseline_screenshot = baseline_row
-            baseline_path = project_root / baseline_screenshot
+            baseline_path = _resolve_artifact_path(baseline_screenshot)
 
             if baseline_path.exists():
-                diff_ratio = _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root)
+                archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
+                diff_ratio = _compute_pixel_diff(baseline_path, screenshot_path, result_id, archive_root)
 
                 with connection.cursor() as cursor:
-                    diff_file = f'test-results/diffs/{result_id}.png'
+                    diff_file = f'diffs/{result_id}.png'
                     cursor.execute("""
                         UPDATE test_results SET diff_ratio = %s, diff_path = %s
                         WHERE id = %s
@@ -213,8 +221,6 @@ def run_visual_analysis(run_id):
     """Run AI visual layout analysis on screenshots for ai_visual scripts."""
     from ai.provider import get_provider_for_feature
 
-    project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
-
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT tr.id, tr.item_id, tr.screenshot_path, i.title
@@ -232,7 +238,7 @@ def run_visual_analysis(run_id):
     provider = get_provider_for_feature('vision')
 
     for result in results:
-        screenshot_path = project_root / result['screenshot_path']
+        screenshot_path = _resolve_artifact_path(result['screenshot_path'])
         if not screenshot_path.exists():
             continue
 
@@ -276,8 +282,8 @@ def _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root)
         diff_mask = np.any(diff > 10, axis=2)
         diff_ratio = float(np.sum(diff_mask)) / float(diff_mask.size)
 
-        # Save diff image
-        diff_dir = project_root / 'test-results' / 'diffs'
+        # Save diff image to archive
+        diff_dir = project_root / 'diffs'
         diff_dir.mkdir(parents=True, exist_ok=True)
         diff_visual = Image.fromarray((diff_mask * 255).astype(np.uint8))
         diff_visual.save(diff_dir / f'{result_id}.png')
@@ -319,8 +325,6 @@ def analyze_run_screenshots(run_id):
     """Run AI visual analysis on RunScreenshot images for this run."""
     from ai.provider import get_provider_for_feature
 
-    project_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
-
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT rs.id, rs.name, rs.file_path, rs.run_script_id,
@@ -341,7 +345,7 @@ def analyze_run_screenshots(run_id):
     analyzed = 0
 
     for ss in screenshots:
-        full_path = project_root / ss['file_path']
+        full_path = _resolve_artifact_path(ss['file_path'])
         if not full_path.exists():
             continue
 

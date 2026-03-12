@@ -56,7 +56,7 @@
         <tr id="run-row-{{ run.id }}">
           <td><input type="checkbox" class="form-check-input row-check" value="{{ run.id }}" onchange="updateSelection()"></td>
           <td>
-            <a href="/runs/{{ run.id }}/">{{ run.queued_at|shorttime }}</a>
+            <a href="/runs/{{ run.id }}/">{{ run.queued_at|shorttime:user_timezone }}</a>
           </td>
           <td>{% if run.suite_id %}<a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% else %}<span class="text-muted">Ad-hoc</span>{% endif %}</td>
           <td><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></td>

@@ -1,3 +1,4 @@
+import zoneinfo
 from django import template
 from django.utils import timezone
 
@@ -30,12 +31,17 @@ def duration(ms):
 
 
 @register.filter
-def shorttime(value):
-    """Format a datetime as a compact timestamp: 'Mar 4, 1:23 PM' or 'Mar 3, 8:05 PM'."""
+def shorttime(value, tz_name=None):
+    """Format a datetime as a compact timestamp. Accepts optional timezone name."""
     if not value:
         return '—'
     try:
-        local = timezone.localtime(value)
+        tz_name = tz_name or 'America/New_York'
+        try:
+            tz = zoneinfo.ZoneInfo(tz_name)
+            local = value.astimezone(tz) if timezone.is_aware(value) else value
+        except Exception:
+            local = timezone.localtime(value)
         return local.strftime('%b %-d, %-I:%M %p')
     except Exception:
         return str(value)

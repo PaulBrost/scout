@@ -39,7 +39,10 @@ def process_ai_queue():
                 import base64
                 from pathlib import Path
                 from django.conf import settings
-                path = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / item['screenshot_path']
+                archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
+                path = archive_root / item['screenshot_path']
+                if not path.exists():
+                    path = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / item['screenshot_path']
                 if path.exists():
                     b64 = base64.b64encode(path.read_bytes()).decode()
                     result = provider.analyze_screenshot(b64, item.get('title', ''))

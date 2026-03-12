@@ -6,11 +6,13 @@ services:
     environment:
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
+      SCOUT_ARCHIVE_DIR: /app/media/archive
     expose:
       - "8000"
     volumes:
       - ./playwright:/playwright-project
       - staticfiles:/app/staticfiles
+      - archive:/app/media/archive
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
@@ -23,8 +25,10 @@ services:
     environment:
       PLAYWRIGHT_PROJECT_ROOT: /playwright-project
       PLAYWRIGHT_TESTS_DIR: /playwright-project/tests
+      SCOUT_ARCHIVE_DIR: /app/media/archive
     volumes:
       - ./playwright:/playwright-project
+      - archive:/app/media/archive
     command: >
       sh -c "if [ -f /playwright-project/package.json ]; then
                npm install --prefix /playwright-project;
@@ -46,3 +50,4 @@ services:
 
 volumes:
   staticfiles:
+  archive:

@@ -1,4 +1,5 @@
 import json
+import shutil
 import mimetypes
 from pathlib import Path
 from django.shortcuts import render, get_object_or_404
@@ -353,16 +354,26 @@ def api_latest(request):
 
 @login_required(login_url='/login/')
 def serve_screenshot(request, file_path):
-    """Serve a screenshot image from the Playwright project directory."""
+    """Serve a screenshot/artifact from archive, falling back to Playwright root."""
+    allowed_ext = ('.png', '.jpg', '.jpeg', '.webp')
+
+    # Try archive directory first (persistent storage)
+    archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
+    full_path = (archive_root / file_path).resolve()
+    if (str(full_path).startswith(str(archive_root.resolve()))
+            and full_path.exists() and full_path.is_file()
+            and full_path.suffix.lower() in allowed_ext):
+        content_type = mimetypes.guess_type(str(full_path))[0] or 'image/png'
+        return HttpResponse(full_path.read_bytes(), content_type=content_type)
+
+    # Fallback: Playwright project root (legacy paths)
     pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
     full_path = (pw_root / file_path).resolve()
-
-    # Security: ensure path stays within the playwright directory
     if not str(full_path).startswith(str(pw_root.resolve())):
         raise Http404
     if not full_path.exists() or not full_path.is_file():
         raise Http404
-    if full_path.suffix.lower() not in ('.png', '.jpg', '.jpeg', '.webp'):
+    if full_path.suffix.lower() not in allowed_ext:
         raise Http404
 
     content_type = mimetypes.guess_type(str(full_path))[0] or 'image/png'
@@ -456,6 +467,10 @@ def api_delete_run(request, run_id):
             cursor.execute('DELETE FROM test_runs WHERE id = %s', [str(run_id)])
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Run not found'}, status=404)
+        # Clean up archived artifacts
+        archive_dir = Path(settings.SCOUT_ARCHIVE_DIR) / 'runs' / str(run_id)
+        if archive_dir.exists():
+            shutil.rmtree(archive_dir, ignore_errors=True)
         return JsonResponse({'ok': True})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -480,6 +495,12 @@ def api_delete_runs_bulk(request):
             cursor.execute('DELETE FROM test_run_scripts WHERE run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM test_runs WHERE id = ANY(%s::uuid[])', [ids])
             deleted = cursor.rowcount
+        # Clean up archived artifacts
+        archive_root = Path(settings.SCOUT_ARCHIVE_DIR) / 'runs'
+        for rid in ids:
+            archive_dir = archive_root / str(rid)
+            if archive_dir.exists():
+                shutil.rmtree(archive_dir, ignore_errors=True)
         return JsonResponse({'ok': True, 'deleted': deleted})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
