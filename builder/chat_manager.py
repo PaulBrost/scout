@@ -265,6 +265,12 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '```tool\n{"tool": "tool_id", "args": {"param": "value"}}\n```\n'
     prompt += 'For multiple tools, use SEPARATE ```tool blocks for each.\n'
     prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n\n'
+    prompt += '## Fast Path for Test Generation\n'
+    prompt += 'When asked to CREATE a new test script, ALWAYS call `get_test_template` FIRST with the appropriate type '
+    prompt += '(baseline, ai_content, ai_visual, qc_checklist, functional, visual_comparison). '
+    prompt += 'This returns a pre-filled skeleton with the correct helpers, imports, item counts, and platform patterns '
+    prompt += 'already configured from the test context. Customize the skeleton and call `update_code` — '
+    prompt += 'do NOT call list_helpers, read_file, search_tests, or get_items unless the template is insufficient.\n\n'
     prompt += '## Code Conventions\n'
     prompt += '- Use CommonJS `require()` syntax, NOT ES module `import` syntax.\n'
     prompt += '- Scripts in `tests/` import helpers with `../src/helpers/` paths. Scripts in `tests/items/` or `tests/generated/` use `../../src/helpers/`.\n'
@@ -282,23 +288,30 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
     prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
-    prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. Valid formKeys: cra-form1, cra-form2, cra-form3, cra-form4.\n\n'
+    prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n\n'
 
     # QC Checklist instructions
     prompt += '## QC Checklist Tests\n'
     prompt += 'QC Checklist tests validate interactive item types against formal QA/QC checklists. '
-    prompt += 'Checklists define specific test steps and expected results for each item type.\n'
-    prompt += 'Available checklists (read with `read_file` tool for full details):\n'
-    prompt += '- `src/qc-checklists/ExtendedText.md` — Text area inputs: text entry, max char limit (3000 standard / 1000 math), text wrapping, scrollbar behavior, text retention across navigation, copy/paste, clearing.\n'
-    prompt += '- `src/qc-checklists/InlineChoice.md` — Dropdown menus: option selection, clearing (Clear Answer button + empty value), retention across navigation, dropdown direction, scroll behavior, TTS.\n'
-    prompt += '- `src/qc-checklists/Matching.md` — Drag-and-drop / click-click: source-to-target movement (both drag and click-click), single vs multi use sources, single vs multi target zones, clearing, retention, match groups, scratchwork restrictions.\n'
-    prompt += 'When generating a QC checklist test:\n'
-    prompt += '1. Use `read_file` to load the relevant checklist markdown for the item type.\n'
-    prompt += '2. Implement each automatable checklist step as a separate `test()` or `test.step()` block.\n'
-    prompt += '3. Name each test/step to match the checklist number (e.g., "QC-1: Verify text entry", "QC-2: Verify max character limit").\n'
-    prompt += '4. Skip steps that require manual/visual verification (e.g., TTS, scratchwork) — add a comment noting they need manual QC.\n'
-    prompt += '5. Use Playwright assertions (`expect`) to validate expected results from the checklist.\n'
-    prompt += '6. **Assessment vs Item scope**: Check the Test Context below. If only an assessment is specified (no specific item), generate a test that iterates through all items in the assessment and runs the checklist against each one. If a specific item is specified, test only that item. Do NOT ask the user which items to test — use the context to determine scope automatically.\n\n'
+    prompt += 'Checklists define specific test steps and expected results for each interaction type.\n\n'
+    prompt += '### Default behavior: auto-detect interaction type\n'
+    prompt += 'When a user asks for "QC checks" or a "QC checklist test" WITHOUT specifying an interaction type, '
+    prompt += 'generate a test that **detects the interaction type at runtime** by inspecting the DOM on each item page. '
+    prompt += 'The detection logic should look for these DOM signatures:\n'
+    prompt += '- **Extended Text**: `textarea` elements or contenteditable response boxes (multi-line text input areas)\n'
+    prompt += '- **Inline Choice**: `select` dropdown elements inside the item content area\n'
+    prompt += '- **Matching**: draggable source elements with drop targets / drop zones (look for elements with `draggable` attribute, or source trays with moveable objects)\n'
+    prompt += 'Based on what is detected, run the corresponding checklist steps for that item. '
+    prompt += 'If an item has multiple interaction types, run checks for each detected type. '
+    prompt += 'If no known interaction type is detected, log the item as "unknown type — needs manual QC" and continue.\n\n'
+    prompt += '### How to generate a QC checklist test:\n'
+    prompt += '1. Use the `get_qc_checklists` tool to discover and read ALL available checklists. This returns the full content of every checklist — you do not need to know file paths in advance.\n'
+    prompt += '2. Generate a test that navigates to each item and detects the interaction type from the DOM (see signatures above). Then apply the matching checklist steps. If the user specifies a particular interaction type, use only that checklist.\n'
+    prompt += '3. Implement each automatable checklist step as a separate `test.step()` block.\n'
+    prompt += '4. Name each test/step to match the checklist number (e.g., "QC-1: Verify text entry", "QC-2: Verify max character limit").\n'
+    prompt += '5. Skip steps that require manual/visual verification (e.g., TTS, scratchwork) — add a comment noting they need manual QC.\n'
+    prompt += '6. Use Playwright assertions (`expect`) to validate expected results from the checklist.\n'
+    prompt += '7. **Assessment vs Item scope**: Check the Test Context below. If only an assessment is specified (no specific item), generate a test that iterates through all items in the assessment and runs the checklist against each one. If a specific item is specified, test only that item. Do NOT ask the user which items to test — use the context to determine scope automatically.\n\n'
 
     prompt += _get_reference_scripts()
 
@@ -411,6 +424,461 @@ def _extract_balanced_json(s, start):
     return None
 
 
+def _build_test_template(args, context, project_root):
+    """Build a pre-filled test template based on type and script context."""
+    template_type = (args.get('type') or '').strip().lower()
+    sc = context.get('script_context', {})
+
+    # Look up environment info from assessment
+    env_platform = 'unknown'  # 'naep' or 'piaac'
+    assessment_id = sc.get('assessmentId', '')
+    env_name = sc.get('environmentName', '')
+    item_count = None
+    form_value = None
+    items_list = []
+    domain = ''
+
+    if assessment_id:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT a.id, a.name, a.form_value, a.item_count,
+                              e.name as env_name, e.base_url
+                       FROM assessments a
+                       LEFT JOIN environments e ON a.environment_id = e.id
+                       WHERE a.id = %s""",
+                    [assessment_id]
+                )
+                row = cursor.fetchone()
+                if row:
+                    cols = [c[0] for c in cursor.description]
+                    ainfo = dict(zip(cols, row))
+                    form_value = ainfo.get('form_value')
+                    item_count = ainfo.get('item_count')
+                    env_name = ainfo.get('env_name') or env_name
+                    base_url = ainfo.get('base_url') or ''
+                    if 'piaac' in base_url.lower() or 'piaac' in env_name.lower():
+                        env_platform = 'piaac'
+                        # Extract domain from assessment id (e.g., piaac-litnew → LITNew)
+                        domain = assessment_id.replace('piaac-', '').upper() if assessment_id.startswith('piaac-') else ''
+                    elif 'naep' in base_url.lower() or 'c3.net' in base_url.lower() or 'naep' in env_name.lower() or 'cra' in assessment_id.lower() or 'gates' in assessment_id.lower():
+                        env_platform = 'naep'
+                # Get items for this assessment
+                cursor.execute(
+                    """SELECT item_id, title FROM items
+                       WHERE assessment_id = %s ORDER BY position, item_id LIMIT 50""",
+                    [assessment_id]
+                )
+                items_list = [{'item_id': r[0], 'title': r[1]} for r in cursor.fetchall()]
+                if not item_count:
+                    item_count = len(items_list)
+        except Exception:
+            pass
+
+    # Detect platform from env name if not from assessment
+    if env_platform == 'unknown':
+        combined = (env_name + ' ' + assessment_id).lower()
+        if 'piaac' in combined:
+            env_platform = 'piaac'
+        elif any(k in combined for k in ['naep', 'cra', 'gates']):
+            env_platform = 'naep'
+
+    form_key = assessment_id if env_platform == 'naep' and assessment_id else 'cra-form1'
+    total_items = item_count or 25
+
+    # Common boilerplate
+    env_config_block = """function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}"""
+
+    valid_types = ['baseline', 'ai_content', 'ai_visual', 'qc_checklist', 'functional', 'visual_comparison']
+
+    if template_type not in valid_types:
+        return {
+            'success': True,
+            'result': f'Available template types: {", ".join(valid_types)}.\n'
+                      f'Detected platform: **{env_platform}**, assessment: **{assessment_id or "none"}**, '
+                      f'items: **{total_items}**, formKey: **{form_key}**.\n'
+                      f'Call get_test_template again with a valid type.'
+        }
+
+    # Build templates per type and platform
+    if template_type == 'baseline':
+        if env_platform == 'piaac':
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+
+{env_config_block}
+
+test('Baseline screenshots — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, {{ env: envConfig }});
+  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  const items = await getItemLinks(page);
+
+  for (const item of items) {{
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    await expect(itemPage).toHaveScreenshot(`${{item.itemId}}.png`, {{ fullPage: true }});
+    await itemPage.close();
+  }}
+}});"""
+        else:
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ loginAndStartTest }} = require('../../src/helpers/auth');
+const {{ clickNext }} = require('../../src/helpers/items');
+
+{env_config_block}
+
+test('Baseline screenshots — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+
+  const TOTAL_ITEMS = {total_items};
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveScreenshot(`item-${{i}}.png`, {{ fullPage: true }});
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }}
+}});"""
+
+    elif template_type == 'ai_content':
+        if env_platform == 'piaac':
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ analyzeItemText }} = require('../../src/helpers/ai');
+
+{env_config_block}
+
+test('AI content check — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, {{ env: envConfig }});
+  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  const items = await getItemLinks(page);
+
+  for (const item of items) {{
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    const text = await itemPage.locator('body').innerText();
+    if (text && text.trim().length >= 10) {{
+      const result = await analyzeItemText(text, 'English');
+      if (result.issuesFound) console.warn(`Issues in ${{item.itemId}}:`, result.issues);
+      await test.info().attach(`ai-text-${{item.itemId}}`, {{
+        body: JSON.stringify(result, null, 2), contentType: 'application/json'
+      }});
+    }}
+    await itemPage.close();
+  }}
+}});"""
+        else:
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ loginAndStartTest }} = require('../../src/helpers/auth');
+const {{ clickNext, extractItemText }} = require('../../src/helpers/items');
+const {{ analyzeItemText }} = require('../../src/helpers/ai');
+
+{env_config_block}
+
+test('AI content check — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+
+  const TOTAL_ITEMS = {total_items};
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
+    await page.waitForLoadState('networkidle');
+    const text = await extractItemText(page);
+    if (text && text.trim().length >= 10) {{
+      const result = await analyzeItemText(text, 'English');
+      if (result.issuesFound) console.warn(`Issues in item ${{i}}:`, result.issues);
+      await test.info().attach(`ai-text-item-${{i}}`, {{
+        body: JSON.stringify(result, null, 2), contentType: 'application/json'
+      }});
+    }}
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }}
+}});"""
+
+    elif template_type == 'ai_visual':
+        if env_platform == 'piaac':
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ analyzeItemScreenshot }} = require('../../src/helpers/ai');
+
+{env_config_block}
+
+test('AI visual inspection — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, {{ env: envConfig }});
+  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  const items = await getItemLinks(page);
+
+  for (const item of items) {{
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    const screenshot = await itemPage.screenshot({{ fullPage: true }});
+    const result = await analyzeItemScreenshot(screenshot,
+      `Item ${{item.itemId}}. Check text readability, layout integrity, and visual anomalies.`
+    );
+    if (result.issuesFound) console.warn(`Visual issues in ${{item.itemId}}:`, result.issues);
+    await test.info().attach(`ai-vision-${{item.itemId}}`, {{
+      body: JSON.stringify(result, null, 2), contentType: 'image/png'
+    }});
+    await itemPage.close();
+  }}
+}});"""
+        else:
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ loginAndStartTest }} = require('../../src/helpers/auth');
+const {{ clickNext }} = require('../../src/helpers/items');
+const {{ analyzeItemScreenshot }} = require('../../src/helpers/ai');
+
+{env_config_block}
+
+test('AI visual inspection — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+
+  const TOTAL_ITEMS = {total_items};
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
+    await page.waitForLoadState('networkidle');
+    const screenshot = await page.screenshot({{ fullPage: true }});
+    const result = await analyzeItemScreenshot(screenshot,
+      `Assessment item ${{i}}. Check text readability, layout integrity, and visual anomalies.`
+    );
+    if (result.issuesFound) console.warn(`Visual issues in item ${{i}}:`, result.issues);
+    await test.info().attach(`ai-vision-item-${{i}}`, {{
+      body: JSON.stringify(result, null, 2), contentType: 'application/json'
+    }});
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }}
+}});"""
+
+    elif template_type == 'qc_checklist':
+        # Load all checklist content inline so the AI has everything in one call
+        checklists_dir = project_root / 'src' / 'qc-checklists'
+        checklist_info = ''
+        if checklists_dir.exists():
+            for f in sorted(checklists_dir.glob('*.md')):
+                content = f.read_text(encoding='utf-8')[:5000]
+                checklist_info += f'\n--- {f.stem} checklist ---\n{content}\n'
+
+        if env_platform == 'piaac':
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+
+{env_config_block}
+
+// QC Checklist — auto-detect interaction type per item
+// Detected platform: PIAAC, Domain: {domain or 'LITNew'}
+test.describe('QC Checklist — {sc.get("assessmentName", "PIAAC")}', () => {{
+  let page;
+  let envConfig;
+
+  test.beforeAll(async ({{ browser }}) => {{
+    page = await browser.newPage();
+    envConfig = loadEnvConfig();
+    await login(page, {{ env: envConfig }});
+    await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  }});
+
+  test.afterAll(async () => {{ await page.close(); }});
+
+  // TODO: For each item, detect interaction type and run matching checklist steps.
+  // Detection signatures:
+  //   textarea / contenteditable → Extended Text
+  //   select dropdowns in item content → Inline Choice
+  //   draggable elements / drop zones → Matching
+  //
+  // Implement checklist steps as test.step() blocks named QC-1, QC-2, etc.
+  // Skip manual-only steps (TTS, scratchwork) with comments.
+}});"""
+        else:
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ loginAndStartTest }} = require('../../src/helpers/auth');
+const {{ clickNext }} = require('../../src/helpers/items');
+
+{env_config_block}
+
+// QC Checklist — auto-detect interaction type per item
+// Detected platform: NAEP, formKey: {form_key}, items: {total_items}
+test.describe('QC Checklist — {sc.get("assessmentName", "Assessment")}', () => {{
+  test('QC checks across all items', async ({{ page }}) => {{
+    test.setTimeout(300000);
+    const envConfig = loadEnvConfig();
+    await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+
+    const TOTAL_ITEMS = {total_items};
+    for (let i = 1; i <= TOTAL_ITEMS; i++) {{
+      await page.waitForLoadState('networkidle');
+
+      // Detect interaction type from DOM
+      const hasTextarea = await page.locator('textarea').count() > 0;
+      const hasContentEditable = await page.locator('[contenteditable="true"]').count() > 0;
+      const hasDropdowns = await page.locator('.item-content select, .response-area select').count() > 0;
+      const hasDraggables = await page.locator('[draggable="true"], .source-tray .source').count() > 0;
+
+      if (hasTextarea || hasContentEditable) {{
+        await test.step(`Item ${{i}} — QC Extended Text`, async () => {{
+          // TODO: Implement Extended Text checklist steps
+          // QC-1: Verify text entry
+          // QC-2: Verify max character limit
+          // QC-3: Verify text editing and clearing
+        }});
+      }}
+
+      if (hasDropdowns) {{
+        await test.step(`Item ${{i}} — QC Inline Choice`, async () => {{
+          // TODO: Implement Inline Choice checklist steps
+          // QC-1: Verify dropdown selection
+          // QC-2: Verify clearing answers
+          // QC-3: Verify answer retention
+        }});
+      }}
+
+      if (hasDraggables) {{
+        await test.step(`Item ${{i}} — QC Matching`, async () => {{
+          // TODO: Implement Matching checklist steps
+          // QC-1: Verify drag-and-drop source movement
+          // QC-2: Verify click-click source movement
+          // QC-3: Verify clearing answers
+        }});
+      }}
+
+      if (!hasTextarea && !hasContentEditable && !hasDropdowns && !hasDraggables) {{
+        console.log(`Item ${{i}}: No known interaction type detected — needs manual QC`);
+      }}
+
+      if (i < TOTAL_ITEMS) await clickNext(page);
+    }}
+  }});
+}});"""
+
+        code += f'\n\n/*\nAvailable QC Checklists:\n{checklist_info}\n*/'
+
+    elif template_type == 'functional':
+        if env_platform == 'piaac':
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+
+{env_config_block}
+
+test('Functional test — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, {{ env: envConfig }});
+  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  const items = await getItemLinks(page);
+  expect(items.length).toBeGreaterThan(0);
+
+  for (const item of items) {{
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    // TODO: Add functional test assertions for each item
+    await expect(itemPage.locator('body')).toBeVisible();
+    await itemPage.close();
+  }}
+}});"""
+        else:
+            code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ loginAndStartTest }} = require('../../src/helpers/auth');
+const {{ clickNext }} = require('../../src/helpers/items');
+
+{env_config_block}
+
+test('Functional test — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+
+  const TOTAL_ITEMS = {total_items};
+  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
+    await page.waitForLoadState('networkidle');
+    // TODO: Add functional test assertions for each item
+    await expect(page.locator('body')).toBeVisible();
+    if (i < TOTAL_ITEMS) await clickNext(page);
+  }}
+}});"""
+
+    elif template_type == 'visual_comparison':
+        code = f"""const {{ test, expect }} = require('@playwright/test');
+const {{ login }} = require('../../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const fs = require('fs');
+const {{ PNG }} = require('pngjs');
+const pixelmatch = require('pixelmatch');
+
+{env_config_block}
+
+function compareImages(actualBuf, baselineBuf) {{
+  const actual = PNG.sync.read(actualBuf);
+  const baseline = PNG.sync.read(baselineBuf);
+  const {{ width, height }} = actual;
+  const diff = new PNG({{ width, height }});
+  const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, {{ threshold: 0.1 }});
+  return {{ diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) }};
+}}
+
+test('Visual comparison — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(300000);
+  const envConfig = loadEnvConfig();
+  await login(page, {{ env: envConfig }});
+  // TODO: Set the target locale/language filters
+  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+  const items = await getItemLinks(page);
+  const failures = [];
+
+  for (const item of items) {{
+    const itemPage = await openItem(page, item.itemId);
+    await itemPage.waitForLoadState('networkidle');
+    const screenshot = await itemPage.screenshot({{ fullPage: true }});
+    const baselinePath = `test-results/baseline/${{item.itemId}}.png`;
+    if (fs.existsSync(baselinePath)) {{
+      const baseline = fs.readFileSync(baselinePath);
+      const result = compareImages(screenshot, baseline);
+      if (result.diffRatio > 0.05) {{
+        failures.push(`${{item.itemId}}: ${{(result.diffRatio * 100).toFixed(2)}}% diff`);
+      }}
+      await test.info().attach(`diff-${{item.itemId}}`, {{ body: result.diffPng, contentType: 'image/png' }});
+    }}
+    await itemPage.close();
+  }}
+
+  if (failures.length) console.warn('Layout differences:', failures);
+}});"""
+    else:
+        return {'success': False, 'result': f'Unknown template type: {template_type}'}
+
+    # Build context summary
+    ctx_summary = f'Platform: {env_platform}'
+    if assessment_id:
+        ctx_summary += f', Assessment: {assessment_id}'
+    if item_count:
+        ctx_summary += f', Items: {item_count}'
+    if items_list:
+        item_names = ', '.join(i['item_id'] for i in items_list[:10])
+        if len(items_list) > 10:
+            item_names += f' ... +{len(items_list) - 10} more'
+        ctx_summary += f'\nKnown items: {item_names}'
+
+    return {
+        'success': True,
+        'result': f'**Template: {template_type}** ({ctx_summary})\n\n'
+                  f'This skeleton is pre-filled with the correct helpers, imports, and item count '
+                  f'for the current test context. Customize the TODO sections and call `update_code` '
+                  f'with the finished script.\n\n```javascript\n{code}\n```'
+    }
+
+
 def execute_tool(tool_id, args, context):
     """Execute an AI tool. Returns {success, result}."""
     from django.conf import settings
@@ -447,7 +915,7 @@ def execute_tool(tool_id, args, context):
             return {'success': False, 'result': 'No file path provided'}
         normalized = args['path'].replace('\\', '/').lstrip('./')
         full_path = (project_root / normalized).resolve()
-        safe_dirs = ['src/helpers', 'tests', 'src/config']
+        safe_dirs = ['src/helpers', 'tests', 'src/config', 'src/qc-checklists']
         if not str(full_path).startswith(str(project_root)):
             return {'success': False, 'result': 'Access denied: path outside project'}
         allowed = any(str(full_path).startswith(str(project_root / d)) for d in safe_dirs)
@@ -570,6 +1038,30 @@ def execute_tool(tool_id, args, context):
         except Exception as e:
             return {'success': False, 'result': f'Database error: {e}'}
 
+    elif tool_id == 'get_qc_checklists':
+        checklists_dir = project_root / 'src' / 'qc-checklists'
+        try:
+            if not checklists_dir.exists():
+                return {'success': False, 'result': 'No qc-checklists directory found in project.'}
+            md_files = sorted(checklists_dir.glob('*.md'))
+            if not md_files:
+                return {'success': False, 'result': 'No checklist files found in src/qc-checklists/.'}
+            output_parts = []
+            for f in md_files:
+                name = f.stem
+                content = f.read_text(encoding='utf-8')
+                truncated = content[:6000] + '\n... (truncated)' if len(content) > 6000 else content
+                output_parts.append(f'## {name}\nFile: src/qc-checklists/{f.name}\n\n{truncated}')
+            return {
+                'success': True,
+                'result': f'Found {len(md_files)} QC checklist(s):\n\n' + '\n\n---\n\n'.join(output_parts)
+            }
+        except Exception as e:
+            return {'success': False, 'result': f'Error reading checklists: {e}'}
+
+    elif tool_id == 'get_test_template':
+        return _build_test_template(args, context, project_root)
+
     return {'success': False, 'result': f'No executor for tool: {tool_id}'}
 
 
@@ -605,7 +1097,8 @@ def chat(message, conversation_id, current_code, filename, script_context=None):
 
     # Tools that trigger auto-continue (research / context-gathering)
     RESEARCH_TOOLS = {'read_file', 'list_helpers', 'search_tests', 'get_items',
-                      'explain_code', 'analyze_script', 'get_run_screenshots'}
+                      'explain_code', 'analyze_script', 'get_run_screenshots',
+                      'get_qc_checklists', 'get_test_template'}
 
     # Load or create conversation
     if conversation_id:
@@ -706,7 +1199,8 @@ def chat(message, conversation_id, current_code, filename, script_context=None):
 
         for tc in tool_calls:
             result = execute_tool(tc['tool'], tc['args'],
-                                  {'current_code': current_code, 'filename': filename})
+                                  {'current_code': current_code, 'filename': filename,
+                                   'script_context': script_context or {}})
             all_tool_results.append({
                 'tool': tc['tool'],
                 'args': tc['args'],

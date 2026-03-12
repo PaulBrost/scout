@@ -13,6 +13,7 @@ const TEST_FORMS = {
   'math-fluency': 'tests/mathFluency.xml|Pure/prefs/NAEP_MF_2022.xml',
   'naep-id-4th': 'tests/naepID_4thGrade.xml|Pure/prefs/NAEP_ID_2022.xml',
   'naep-id-8th': 'tests/naepID_8thGrade.xml|Pure/prefs/NAEP_ID_2022.xml',
+  'gates-student-experience-form': 'tests/Gates_form1.xml|Pure/prefs/NAEP_Gates_2025.xml',
 };
 
 // Number of intro screens to skip before reaching actual assessment items
@@ -26,8 +27,13 @@ const INTRO_SCREENS = 5;
  * @param {object} envConfig - Optional environment config from DB
  */
 async function startTestSession(page, formKey = 'cra-form1', envConfig = null) {
-  const formValue = TEST_FORMS[formKey];
-  if (!formValue) throw new Error('SCOUT: Unknown test form "' + formKey + '"');
+  // Look up form value: static map first, then fall back to envConfig.form_value
+  // (which the runner populates from the assessment's form_value DB column)
+  var formValue = TEST_FORMS[formKey];
+  if (!formValue && envConfig && envConfig.form_value) {
+    formValue = envConfig.form_value;
+  }
+  if (!formValue) throw new Error('SCOUT: Unknown test form "' + formKey + '". Add it to TEST_FORMS in items.js or set form_value on the assessment.');
 
   // Resolve launcher selectors from env config or use defaults
   var launcherSelector = '#TheTest';
