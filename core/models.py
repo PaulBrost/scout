@@ -310,6 +310,11 @@ class TestScript(models.Model):
     ai_config = models.JSONField(default=dict, blank=True)
     tags = models.JSONField(default=list)
     category = models.TextField(null=True, blank=True)
+    chat_conversation = models.ForeignKey(
+        'AIConversation', on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='chat_conversation_id', related_name='test_scripts'
+    )
+    test_summary = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

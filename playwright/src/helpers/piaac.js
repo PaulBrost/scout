@@ -76,24 +76,34 @@ async function selectFilters(page, filters = {}) {
 
 /**
  * Extract visible item links from the portal page after filters are applied.
+ * Waits for links to appear (filters trigger async content load).
  * @param {import('@playwright/test').Page} page
+ * @param {number} timeout - Max wait in ms for links to appear (default 15000)
  * @returns {Promise<Array<{itemId: string, linkText: string, href: string}>>}
  */
-async function getItemLinks(page) {
-  return page.locator('a').evaluateAll(els =>
-    els
-      .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
-      .filter(el => {
-        const text = el.textContent.trim();
-        // PIAAC item links contain unit identifiers like "U593-BirthdayParty"
-        return /^U\d+/i.test(text) || el.href?.includes('unit') || el.getAttribute('onclick');
-      })
-      .map(el => ({
-        itemId: el.textContent.trim().split(/\s+/)[0],
-        linkText: el.textContent.trim(),
-        href: el.href || '',
-      }))
-  );
+async function getItemLinks(page, timeout = 15000) {
+  // Wait for item links to appear after filter selection
+  const start = Date.now();
+  let links = [];
+  while (Date.now() - start < timeout) {
+    links = await page.locator('a').evaluateAll(els =>
+      els
+        .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
+        .filter(el => {
+          const text = el.textContent.trim();
+          // PIAAC item links contain unit identifiers like "U593-BirthdayParty"
+          return /^U\d+/i.test(text) || el.href?.includes('unit') || el.getAttribute('onclick');
+        })
+        .map(el => ({
+          itemId: el.textContent.trim().split(/\s+/)[0],
+          linkText: el.textContent.trim(),
+          href: el.href || '',
+        }))
+    );
+    if (links.length > 0) return links;
+    await page.waitForTimeout(1000);
+  }
+  return links;
 }
 
 /**

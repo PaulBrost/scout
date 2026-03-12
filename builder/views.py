@@ -125,6 +125,13 @@ def builder_view(request):
     except Exception:
         pass
 
+    # Load chat conversation ID and test summary from script metadata
+    chat_conversation_id = None
+    test_summary = None
+    if script_meta:
+        chat_conversation_id = script_meta.get('chat_conversation_id')
+        test_summary = script_meta.get('test_summary')
+
     return render(request, 'builder/builder.html', {
         'file_content': file_content,
         'file_path': file_path,
@@ -137,6 +144,8 @@ def builder_view(request):
         'environments': environments,
         'test_type': request.GET.get('type'),
         'baseline_version': request.GET.get('baseline'),
+        'chat_conversation_id': str(chat_conversation_id) if chat_conversation_id else None,
+        'test_summary': test_summary,
     })
 
 
@@ -155,6 +164,7 @@ def api_chat(request):
             data.get('conversationId'),
             data.get('currentCode', ''),
             data.get('filename', ''),
+            script_context=data.get('context'),
         )
         return JsonResponse(result)
     except Exception as e:
@@ -228,3 +238,83 @@ def api_save(request):
         return JsonResponse({'path': rel_path})
     except Exception as e:
         return JsonResponse({'error': str(e)})
+
+
+@login_required(login_url='/login/')
+def api_chat_history(request):
+    """Return chat messages for a conversation (GET ?conversationId=...)."""
+    conv_id = request.GET.get('conversationId')
+    if not conv_id:
+        return JsonResponse({'messages': []})
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT messages FROM ai_conversations WHERE id = %s', [conv_id])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'messages': []})
+        messages = row[0] if isinstance(row[0], list) else json.loads(row[0])
+        return JsonResponse({'messages': messages})
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'messages': []})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_link_conversation(request):
+    """Link a conversation to a test script."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('filePath', '').strip()
+        conv_id = data.get('conversationId', '').strip()
+        if not file_path or not conv_id:
+            return JsonResponse({'error': 'Missing filePath or conversationId'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'UPDATE test_scripts SET chat_conversation_id = %s, updated_at = now() WHERE script_path = %s',
+                [conv_id, file_path]
+            )
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_update_summary(request):
+    """Update the test summary for a script."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('filePath', '').strip()
+        summary = data.get('summary', '').strip()
+        if not file_path:
+            return JsonResponse({'error': 'Missing filePath'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'UPDATE test_scripts SET test_summary = %s, updated_at = now() WHERE script_path = %s',
+                [summary or None, file_path]
+            )
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_clear_chat(request):
+    """Clear the chat conversation link for a script."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('filePath', '').strip()
+        if not file_path:
+            return JsonResponse({'error': 'Missing filePath'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'UPDATE test_scripts SET chat_conversation_id = NULL, updated_at = now() WHERE script_path = %s',
+                [file_path]
+            )
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

@@ -213,18 +213,14 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         }
 
     results_dir = project_root / 'test-results'
+
+    # Wipe test-results clean before each run — artifacts are archived to
+    # persistent storage after execution, so this is safe scratch space.
+    if results_dir.exists():
+        shutil.rmtree(results_dir, ignore_errors=True)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clean up stale Playwright artifact directories that block subsequent runs
-    for entry in results_dir.iterdir():
-        if entry.is_dir() and entry.name.startswith('.playwright-artifacts'):
-            try:
-                shutil.rmtree(entry)
-            except OSError:
-                pass
-
-    # Snapshot existing PNGs with mtimes so we detect new AND overwritten files
-    pre_existing_pngs = {f: f.stat().st_mtime for f in results_dir.rglob('*.png')}
+    pre_existing_pngs = {}
 
     json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
 

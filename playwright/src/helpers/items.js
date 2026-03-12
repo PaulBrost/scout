@@ -79,11 +79,17 @@ async function forceClickNext(page) {
     }
   });
 
-  // Set up dialog handler BEFORE clicking — NAEP shows alert() for "must answer"
-  let dialogFired = false;
+  // Handle NAEP "must answer" alert — only dismiss dialogs about answering
+  let mustAnswerFired = false;
   const dialogHandler = async (dialog) => {
-    dialogFired = true;
-    await dialog.accept();
+    const msg = (dialog.message() || '').toLowerCase();
+    if (/answer|question|before continuing|respond/.test(msg)) {
+      mustAnswerFired = true;
+      await dialog.accept();
+    } else {
+      // Not a "must answer" dialog — accept but don't trigger answer logic
+      await dialog.accept();
+    }
   };
   page.on('dialog', dialogHandler);
 
@@ -92,7 +98,7 @@ async function forceClickNext(page) {
 
   page.off('dialog', dialogHandler);
 
-  if (dialogFired) {
+  if (mustAnswerFired) {
     await answerAndAdvance(page);
   }
 }
@@ -105,11 +111,16 @@ async function forceClickNext(page) {
 async function clickNext(page) {
   await page.waitForSelector('#nextButton', { state: 'visible', timeout: 10000 });
 
-  // Set up dialog handler BEFORE clicking
-  let dialogFired = false;
+  // Handle NAEP "must answer" alert — only dismiss dialogs about answering
+  let mustAnswerFired = false;
   const dialogHandler = async (dialog) => {
-    dialogFired = true;
-    await dialog.accept();
+    const msg = (dialog.message() || '').toLowerCase();
+    if (/answer|question|before continuing|respond/.test(msg)) {
+      mustAnswerFired = true;
+      await dialog.accept();
+    } else {
+      await dialog.accept();
+    }
   };
   page.on('dialog', dialogHandler);
 
@@ -118,7 +129,7 @@ async function clickNext(page) {
 
   page.off('dialog', dialogHandler);
 
-  if (dialogFired) {
+  if (mustAnswerFired) {
     await answerAndAdvance(page);
   }
 }

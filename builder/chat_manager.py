@@ -60,8 +60,8 @@ def build_tool_descriptions():
     return '\n'.join(lines)
 
 
-def build_system_prompt(current_code, filename):
-    """Build system prompt with tool descriptions and current code context."""
+def build_system_prompt(current_code, filename, script_context=None):
+    """Build system prompt with tool descriptions, current code, and assessment/item context."""
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT value FROM ai_settings WHERE key = 'system_prompt'")
@@ -99,7 +99,30 @@ def build_system_prompt(current_code, filename):
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
-    prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n\n'
+    prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
+    prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
+    prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. Valid formKeys: cra-form1, cra-form2, cra-form3, cra-form4.\n\n'
+
+    # Include assessment/item context when available
+    if script_context:
+        ctx_parts = []
+        if script_context.get('assessmentName'):
+            ctx_parts.append(f"Assessment: {script_context['assessmentName']}")
+        if script_context.get('itemId'):
+            item_str = script_context['itemId']
+            if script_context.get('itemTitle'):
+                item_str += f" — {script_context['itemTitle']}"
+            ctx_parts.append(f"Item: {item_str}")
+        if script_context.get('testType'):
+            ctx_parts.append(f"Test type: {script_context['testType']}")
+        if script_context.get('description'):
+            ctx_parts.append(f"Description: {script_context['description']}")
+        if script_context.get('environmentName'):
+            ctx_parts.append(f"Environment: {script_context['environmentName']}")
+        if ctx_parts:
+            prompt += '## Test Context\nThis test is associated with the following:\n'
+            prompt += '\n'.join(f'- {p}' for p in ctx_parts) + '\n'
+            prompt += 'Use this context to inform the test you generate. You do NOT need to ask the user which item or assessment this test is for — it is already specified above.\n\n'
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''
@@ -368,7 +391,7 @@ def _looks_like_planning(text):
     return bool(_PLANNING_PATTERNS.search(text))
 
 
-def chat(message, conversation_id, current_code, filename):
+def chat(message, conversation_id, current_code, filename, script_context=None):
     """Process a chat message with an agentic tool loop.
 
     When the AI calls research tools (read_file, list_helpers, etc.) the
@@ -399,8 +422,8 @@ def chat(message, conversation_id, current_code, filename):
         conv_id = str(uuid.uuid4())
         messages = []
 
-    # Build system prompt
-    system_prompt = build_system_prompt(current_code, filename)
+    # Build system prompt with assessment/item context
+    system_prompt = build_system_prompt(current_code, filename, script_context=script_context)
 
     # Add user message
     messages.append({'role': 'user', 'content': message})

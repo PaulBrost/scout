@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Test Scripts{% endblock %}
-{% block page_title %}Test Scripts{% endblock %}
+{% block title %}Tests{% endblock %}
+{% block page_title %}Tests{% endblock %}
 
 {% block topbar_actions %}
-<a href="/builder/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Script</a>
+<a href="/builder/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Test</a>
 {% endblock %}
 
 {% block content %}
@@ -53,7 +53,7 @@
       <thead class="table-light">
         <tr>
           <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
-          <th>Script Path</th>
+          <th>Test Path</th>
           <th>Environment</th>
           <th>Item</th>
           <th>Type</th>
@@ -108,7 +108,7 @@
             <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i> Edit
             </a>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteScript({{ sc.id }}, '{{ sc.script_path|escapejs }}')" title="Delete script">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteScript({{ sc.id }}, '{{ sc.script_path|escapejs }}')" title="Delete test">
               <i class="bi bi-trash"></i>
             </button>
           </td>
@@ -116,7 +116,7 @@
         {% empty %}
         <tr><td colspan="7" class="text-muted text-center py-5">No test scripts found.
           {% if not search and not test_type_filter and not env_filter %}
-          <a href="/builder/">Create one in the Script Editor</a>.
+          <a href="/builder/">Create one in the Test Editor</a>.
           {% endif %}
         </td></tr>
         {% endfor %}
@@ -160,7 +160,7 @@ function updateSelection() {
   document.getElementById('selectAll').indeterminate = count > 0 && count < total;
 }
 function deleteScript(id, path) {
-  if (!confirm('Delete script "' + path + '"? This will remove the file and its metadata. This cannot be undone.')) return;
+  if (!confirm('Delete test "' + path + '"? This will remove the file and its metadata. This cannot be undone.')) return;
   fetch('/test-cases/api/delete-script/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
@@ -183,7 +183,7 @@ function applyBulkAction() {
   var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return parseInt(cb.value); });
   if (ids.length === 0) { alert('No rows selected.'); return; }
   if (action === 'delete') {
-    if (!confirm('Delete ' + ids.length + ' selected script' + (ids.length === 1 ? '' : 's') + '? This will remove the files and metadata. This cannot be undone.')) return;
+    if (!confirm('Delete ' + ids.length + ' selected test' + (ids.length === 1 ? '' : 's') + '? This will remove the files and metadata. This cannot be undone.')) return;
     fetch('/test-cases/api/delete-scripts/', {
       method: 'POST',
       headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},

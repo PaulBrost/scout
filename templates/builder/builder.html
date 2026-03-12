@@ -1,28 +1,12 @@
 {% extends "base.html" %}
 {% load core_filters %}
-{% block title %}Script Editor{% endblock %}
-{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Scripts</a> <span class="text-muted mx-1">/</span> {{ script_meta.description|default:filename|default:"New Script" }}{% endblock %}
+{% block title %}Test Editor{% endblock %}
+{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Tests</a> <span class="text-muted mx-1">/</span> {{ script_meta.description|default:filename|default:"New Test" }}{% endblock %}
 
 {% block extra_head %}
 <style>
-  #aiPanel {
-    transition: width 0.3s ease, opacity 0.3s ease, margin-right 0.3s ease;
-    overflow: hidden;
-    opacity: 1;
-    width: 40%;
-    min-width: 320px;
-  }
-  #aiPanel.collapsed {
-    width: 0 !important;
-    min-width: 0 !important;
-    opacity: 0;
-    margin-right: 0 !important;
-  }
-  #aiPanel.collapsed > * {
-    display: none;
-  }
-  #editorPanel {
-    transition: flex 0.3s ease;
+  #summaryDisplay pre, #summaryDisplay code {
+    font-size: .8rem;
   }
   .thinking-dots span {
     animation: dotPulse 1.4s infinite;
@@ -49,7 +33,12 @@
 <ul class="nav nav-tabs mb-3" role="tablist">
   <li class="nav-item">
     <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDesign" type="button" role="tab">
-      <i class="bi bi-code-slash me-1"></i>Design
+      <i class="bi bi-chat-dots me-1"></i>Design
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDetails" type="button" role="tab">
+      <i class="bi bi-info-circle me-1"></i>Meta
     </button>
   </li>
   <li class="nav-item">
@@ -58,8 +47,8 @@
     </button>
   </li>
   <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDetails" type="button" role="tab">
-      <i class="bi bi-info-circle me-1"></i>Details
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabAdvanced" type="button" role="tab">
+      <i class="bi bi-code-slash me-1"></i>Advanced
     </button>
   </li>
 </ul>
@@ -69,27 +58,21 @@
   <!-- ═══ DESIGN TAB ═══ -->
   <div class="tab-pane fade show active" id="tabDesign" role="tabpanel">
 
-    <!-- AI Assist toggle -->
+    {% if not file_path %}
     <div class="d-flex align-items-center mb-3">
-      <div class="form-check form-switch mb-0">
-        <input class="form-check-input" type="checkbox" role="switch" id="aiToggle" checked onchange="toggleAI()">
-        <label class="form-check-label small fw-semibold" for="aiToggle">AI Assist</label>
-      </div>
-      {% if not file_path %}
-      <select id="envPicker" class="form-select form-select-sm ms-auto" style="width:auto;max-width:180px" title="Environment (required for new scripts)">
+      <select id="envPicker" class="form-select form-select-sm" style="width:auto;max-width:180px" title="Environment (required for new tests)">
         <option value="">Environment…</option>
         {% for env in environments %}
         <option value="{{ env.id }}">{{ env.name }}</option>
         {% endfor %}
       </select>
-      {% endif %}
     </div>
+    {% endif %}
 
-    <!-- Editor area: chat + code side by side -->
-    <div class="d-flex" style="min-height:65vh">
+    <div class="row g-3" style="min-height:65vh">
 
       <!-- Left: AI chat panel -->
-      <div id="aiPanel" class="d-flex flex-column me-3">
+      <div class="col-lg-7 d-flex flex-column">
         {% if assessment %}
         <div class="alert alert-info alert-sm py-2 px-3 mb-2 small">
           <i class="bi bi-info-circle"></i>
@@ -100,8 +83,12 @@
         {% endif %}
 
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+          <div class="card-header bg-white d-flex align-items-center py-2">
+            <i class="bi bi-chat-dots me-2 text-primary"></i>
+            <span class="fw-semibold small">AI Chat</span>
+          </div>
           <!-- Message history -->
-          <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:50vh; min-height:200px">
+          <div id="chatMessages" class="flex-grow-1 overflow-auto p-3" style="max-height:55vh; min-height:200px">
             <div id="chatPlaceholder" class="small py-2">
               <p class="text-muted mb-2">Describe the test you want to create, or click an example to get started.</p>
 
@@ -117,13 +104,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Capture reference screenshots for an item in a specific locale. These become the baseline for future comparisons.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a baseline screenshot test for item U501-Hiccups on the ZZZ/eng environment. Navigate to every page in the item (C501P001, item1a, C501P002, C501P003) and capture a full-page screenshot of each one.">
-                        <i class="bi bi-arrow-right-short"></i> Capture baseline screenshots for every page of <strong>U501-Hiccups</strong> on ZZZ/eng
-                      </a>
-                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
-                         onclick="usePrompt(this.dataset.prompt); return false"
                          data-prompt="Write a test that logs in, navigates to the specified item, and captures a full-page screenshot of every screen. Use toHaveScreenshot() for each capture so Playwright stores the baseline automatically.">
-                        <i class="bi bi-arrow-right-short"></i> Generic baseline capture template for any item
+                        <i class="bi bi-arrow-right-short"></i> Example baseline capture for any item
                       </a>
                     </div>
                   </div>
@@ -140,13 +122,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Compare a translated locale against the baseline to detect layout breaks, text overflow, or missing content.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0fff4;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a visual comparison test for U501-Hiccups. Run it on the ROU/ron locale and compare each screen against the ZZZ/eng baseline screenshots from run b26285fb. Use pixelmatch to detect layout differences. Ignore text/color changes but flag structural or layout breaks. Also check for text overflow issues on each screen.">
-                        <i class="bi bi-arrow-right-short"></i> Compare <strong>ROU/ron</strong> vs <strong>ZZZ/eng</strong> baseline for U501-Hiccups
-                      </a>
-                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0fff4;font-size:.75rem"
-                         onclick="usePrompt(this.dataset.prompt); return false"
                          data-prompt="Write a visual comparison test that navigates through every page of an item in a translated locale, takes screenshots, and compares them against a baseline run's screenshots using pixelmatch. Flag any screens where more than 5% of pixels differ (layout break). Also detect text overflow on every page.">
-                        <i class="bi bi-arrow-right-short"></i> Generic cross-locale visual comparison template
+                        <i class="bi bi-arrow-right-short"></i> Sample cross-locale visual comparison
                       </a>
                     </div>
                   </div>
@@ -163,13 +140,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Extract text from each screen and use AI to check for spelling, grammar, and syntax errors in the target language.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fffdf0;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test for U501-Hiccups that navigates through every page/screen in the item on the ZZZ/eng environment. On each page, extract all visible text and use the analyzeItemText AI helper to check for spelling, grammar, and syntax errors in English. Attach the results to the test report and flag any issues found.">
-                        <i class="bi bi-arrow-right-short"></i> Check <strong>U501-Hiccups</strong> for spelling/grammar errors in English
-                      </a>
-                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#fffdf0;font-size:.75rem"
-                         onclick="usePrompt(this.dataset.prompt); return false"
                          data-prompt="Write a test that navigates through every screen of an item and extracts the visible text from each page. Send the text to the AI helper (analyzeItemText) to check for spelling, grammar, and syntax errors. Attach structured results to the report with the page name, issues found, and severity. Do not auto-fail the test — make results advisory for human review.">
-                        <i class="bi bi-arrow-right-short"></i> Generic spelling/grammar check template for any item
+                        <i class="bi bi-arrow-right-short"></i> Sample spelling &amp; grammar check for any item
                       </a>
                     </div>
                   </div>
@@ -186,13 +158,8 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Take a screenshot of each screen and send it to the AI vision model to inspect for layout problems, truncation, overlapping elements, or rendering issues.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f8ff;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test for U501-Hiccups that navigates through every page on the ROU/ron environment. On each page, take a full-page screenshot and send it to the AI vision helper (analyzeItemScreenshot) to check for layout issues like text overflow, truncated content, overlapping elements, or broken formatting. Attach the analysis results to the test report.">
-                        <i class="bi bi-arrow-right-short"></i> AI visual inspection of <strong>U501-Hiccups</strong> layout on ROU/ron
-                      </a>
-                      <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f8ff;font-size:.75rem"
-                         onclick="usePrompt(this.dataset.prompt); return false"
                          data-prompt="Write a test that navigates through every screen of an item, captures a full-page screenshot of each, and sends it to the AI screenshot analysis helper. Have the AI check for visual quality issues: text cut off or overflowing containers, overlapping UI elements, broken layouts, missing images, and rendering problems. Attach structured results per screen to the test report.">
-                        <i class="bi bi-arrow-right-short"></i> Generic AI visual inspection template for any item
+                        <i class="bi bi-arrow-right-short"></i> Sample AI visual inspection for any item
                       </a>
                     </div>
                   </div>
@@ -215,18 +182,35 @@
         </div>
       </div>
 
-      <!-- Right: Code editor panel -->
-      <div id="editorPanel" class="d-flex flex-column flex-grow-1">
+      <!-- Right: Test Summary panel -->
+      <div class="col-lg-5 d-flex flex-column">
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
-          <div class="flex-grow-1 d-flex flex-column p-0 position-relative">
-            <span id="dirtyIndicator" class="text-warning small position-absolute" style="display:none; top:0.5rem; right:0.75rem; z-index:1">● unsaved</span>
-            <textarea id="codeEditor" class="form-control font-monospace border-0 flex-grow-1 rounded-0"
-              style="min-height:55vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
-              spellcheck="false"
-              oninput="markDirty()"
-              placeholder="// AI-generated test code will appear here…">{{ file_content|default:'' }}</textarea>
+          <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+            <div>
+              <i class="bi bi-file-text me-2 text-success"></i>
+              <span class="fw-semibold small">Test Summary</span>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="editSummary()" id="editSummaryBtn" style="font-size:.75rem">
+              <i class="bi bi-pencil"></i> Edit
+            </button>
           </div>
-          <div id="dryRunResult" class="card-footer bg-white border-top py-2 px-3 small" style="display:none"></div>
+          <div class="card-body flex-grow-1 overflow-auto p-3" style="max-height:55vh">
+            <div id="summaryDisplay">
+              {% if test_summary %}
+              <div class="small" style="white-space:pre-wrap">{{ test_summary }}</div>
+              {% else %}
+              <p class="text-muted small mb-0">No summary yet. Chat with the AI to generate a test, and the summary will be created automatically.</p>
+              {% endif %}
+            </div>
+            <div id="summaryEditArea" style="display:none">
+              <textarea id="summaryEditor" class="form-control form-control-sm" rows="12"
+                style="font-size:.8rem" placeholder="Describe what this test does…"></textarea>
+              <div class="d-flex gap-2 mt-2">
+                <button class="btn btn-sm btn-primary" onclick="saveSummary()">Save</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="cancelSummaryEdit()">Cancel</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -234,9 +218,6 @@
     <!-- Bottom action bar -->
     <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
       <span id="runStatus" class="text-muted small me-auto" style="min-height:1.2em"></span>
-      <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()" id="dryRunBtn">
-        <i class="bi bi-check2-circle"></i> Check
-      </button>
       <button class="btn btn-sm btn-success" onclick="saveFile()" id="saveBtn">
         <i class="bi bi-save"></i> Save
       </button>
@@ -253,6 +234,42 @@
           <li><a class="dropdown-item" href="#" onclick="saveAndRun(false); return false;"><i class="bi bi-play-fill me-1"></i>Run Now</a></li>
           <li><a class="dropdown-item" href="#" onclick="openScheduleModal(); return false;"><i class="bi bi-clock me-1"></i>Schedule</a></li>
         </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ADVANCED TAB ═══ -->
+  <div class="tab-pane fade" id="tabAdvanced" role="tabpanel">
+    <div class="d-flex flex-column" style="min-height:65vh">
+      <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <div>
+            <i class="bi bi-code-slash me-2"></i>
+            <span class="fw-semibold small">Script Editor</span>
+            <span class="text-muted small ms-2">{{ filename|default:"untitled.spec.js" }}</span>
+          </div>
+          <span id="dirtyIndicator" class="text-warning small" style="display:none">● unsaved</span>
+        </div>
+        <div class="flex-grow-1 d-flex flex-column p-0">
+          <textarea id="codeEditor" class="form-control font-monospace border-0 flex-grow-1 rounded-0"
+            style="min-height:55vh; resize:none; font-size:0.8rem; background:#1e1e1e; color:#d4d4d4; padding:1rem;"
+            spellcheck="false"
+            oninput="markDirty()"
+            placeholder="// AI-generated test code will appear here…">{{ file_content|default:'' }}</textarea>
+        </div>
+        <div id="dryRunResult" class="card-footer bg-white border-top py-2 px-3 small" style="display:none"></div>
+      </div>
+      <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+        <span id="advRunStatus" class="text-muted small me-auto" style="min-height:1.2em"></span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="dryRun()">
+          <i class="bi bi-check2-circle"></i> Check Syntax
+        </button>
+        <button class="btn btn-sm btn-success" onclick="saveFile()">
+          <i class="bi bi-save"></i> Save
+        </button>
+        <button class="btn btn-sm btn-primary" onclick="saveAndRun(false)" {% if not file_path %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> Save &amp; Run
+        </button>
       </div>
     </div>
   </div>
@@ -286,7 +303,7 @@
               </td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="text-muted text-center py-4">No run history for this script.</td></tr>
+            <tr><td colspan="5" class="text-muted text-center py-4">No run history for this test.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -297,7 +314,7 @@
   <!-- ═══ DETAILS TAB ═══ -->
   <div class="tab-pane fade" id="tabDetails" role="tabpanel">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">Script Details</div>
+      <div class="card-header bg-white fw-semibold">Test Details</div>
       <div class="card-body">
         {% if file_path %}
         <div class="row g-3">
@@ -349,7 +366,7 @@
           </div>
           <div class="col-12">
             <label class="form-label small fw-semibold mb-1">Post-run AI Analysis</label>
-            <p class="text-muted mb-2" style="font-size:.72rem">When enabled, AI analysis runs automatically after the script completes. You can also trigger it manually from the run detail page.</p>
+            <p class="text-muted mb-2" style="font-size:.72rem">When enabled, AI analysis runs automatically after the test completes. You can also trigger it manually from the run detail page.</p>
             <div class="d-flex gap-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="aiTextAnalysis"
@@ -375,12 +392,12 @@
             </button>
             <span id="metaSaveStatus" class="text-muted small ms-2"></span>
             <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteScript()">
-              <i class="bi bi-trash"></i> Delete Script
+              <i class="bi bi-trash"></i> Delete Test
             </button>
           </div>
         </div>
         {% else %}
-        <p class="text-muted small mb-0">Save the script first to edit its details.</p>
+        <p class="text-muted small mb-0">Save the test first to edit its details.</p>
         {% endif %}
       </div>
     </div>
@@ -399,7 +416,7 @@
       <div class="modal-body">
         <label class="form-label small mb-1">Run at</label>
         <input type="datetime-local" id="scheduleTime" class="form-control form-control-sm">
-        <div class="text-muted small mt-1">Script will be saved and scheduled.</div>
+        <div class="text-muted small mt-1">Test will be saved and scheduled.</div>
       </div>
       <div class="modal-footer py-2">
         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -412,9 +429,18 @@
 </div>
 
 <script>
-var conversationId = null;
+var conversationId = {% if chat_conversation_id %}'{{ chat_conversation_id|escapejs }}'{% else %}null{% endif %};
 var currentFilePath = '{{ file_path|default:""|escapejs }}';
 var currentEnvironmentId = '{{ script_meta.environment_id|default:""|escapejs }}';
+var scriptContext = {
+  assessmentId: '{{ script_meta.assessment_id|default:assessment.id|default:""|escapejs }}',
+  assessmentName: '{{ script_meta.assessment_name|default:assessment.name|default:""|escapejs }}',
+  itemId: '{{ script_meta.item_id|default:""|escapejs }}',
+  itemTitle: '{{ script_meta.item_title|default:""|escapejs }}',
+  testType: '{{ script_meta.test_type|default:test_type|default:""|escapejs }}',
+  description: '{{ script_meta.description|default:""|escapejs }}',
+  environmentName: '{{ script_meta.environment_name|default:assessment.env_name|default:""|escapejs }}'
+};
 var isDirty = false;
 
 function getCsrf() {
@@ -427,26 +453,76 @@ function markDirty() {
   document.getElementById('dirtyIndicator').style.display = '';
 }
 
-function toggleAI() {
-  var panel = document.getElementById('aiPanel');
-  var on = document.getElementById('aiToggle').checked;
-  if (on) {
-    panel.classList.remove('collapsed');
-  } else {
-    panel.classList.add('collapsed');
+// --- Summary editing ---
+function editSummary() {
+  var display = document.getElementById('summaryDisplay');
+  var editArea = document.getElementById('summaryEditArea');
+  var editor = document.getElementById('summaryEditor');
+  editor.value = display.innerText.trim();
+  if (editor.value === 'No summary yet. Chat with the AI to generate a test, and the summary will be created automatically.') {
+    editor.value = '';
   }
-  try { localStorage.setItem('scout_ai_assist', on ? '1' : '0'); } catch(e) {}
+  display.style.display = 'none';
+  editArea.style.display = '';
+  editor.focus();
 }
 
-// Restore AI Assist toggle state from previous session
+function cancelSummaryEdit() {
+  document.getElementById('summaryDisplay').style.display = '';
+  document.getElementById('summaryEditArea').style.display = 'none';
+}
+
+function saveSummary() {
+  var text = document.getElementById('summaryEditor').value.trim();
+  if (!currentFilePath) { alert('Save the test first.'); return; }
+  fetch('/builder/api/update-summary/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({ filePath: currentFilePath, summary: text })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { alert('Error: ' + d.error); return; }
+    updateSummaryDisplay(text);
+    cancelSummaryEdit();
+  })
+  .catch(err => alert('Error: ' + err.message));
+}
+
+function updateSummaryDisplay(text) {
+  var display = document.getElementById('summaryDisplay');
+  if (text) {
+    display.innerHTML = '<div class="small" style="white-space:pre-wrap">' + escapeHtml(text) + '</div>';
+  } else {
+    display.innerHTML = '<p class="text-muted small mb-0">No summary yet. Chat with the AI to generate a test, and the summary will be created automatically.</p>';
+  }
+}
+
+// --- Restore chat history on page load ---
 (function() {
-  try {
-    var saved = localStorage.getItem('scout_ai_assist');
-    if (saved === '0') {
-      document.getElementById('aiToggle').checked = false;
-      document.getElementById('aiPanel').classList.add('collapsed');
-    }
-  } catch(e) {}
+  if (!conversationId) return;
+  fetch('/builder/api/chat-history/?conversationId=' + conversationId)
+  .then(r => r.json())
+  .then(d => {
+    if (!d.messages || !d.messages.length) return;
+    var placeholder = document.getElementById('chatPlaceholder');
+    if (placeholder) placeholder.remove();
+    d.messages.forEach(function(m) {
+      if (m.role === 'user' || m.role === 'assistant') {
+        var content = m.content || '';
+        if (typeof content !== 'string') {
+          // Handle structured content (tool calls etc) — show text parts only
+          if (Array.isArray(content)) {
+            content = content.filter(function(c) { return c.type === 'text'; }).map(function(c) { return c.text; }).join('\n');
+          } else {
+            content = String(content);
+          }
+        }
+        if (content.trim()) appendMessage(m.role, content);
+      }
+    });
+  })
+  .catch(function() { /* ignore — conversation may not exist */ });
 })();
 
 function handleKey(e) {
@@ -551,7 +627,8 @@ function sendMessage() {
       message: msg,
       conversationId: conversationId,
       currentCode: code,
-      filename: currentFilePath || 'untitled.spec.js'
+      filename: currentFilePath || 'untitled.spec.js',
+      context: scriptContext
     }),
     signal: chatAbortController.signal
   })
@@ -564,6 +641,15 @@ function sendMessage() {
       return;
     }
     conversationId = d.conversationId || conversationId;
+
+    // Link conversation to this script (fire-and-forget)
+    if (conversationId && currentFilePath) {
+      fetch('/builder/api/link-conversation/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+        body: JSON.stringify({ filePath: currentFilePath, conversationId: conversationId })
+      }).catch(function() {});
+    }
 
     // Show intermediate messages (AI's thinking steps)
     if (d.intermediateMessages && d.intermediateMessages.length) {
@@ -579,6 +665,16 @@ function sendMessage() {
     if (d.codeUpdate && d.codeUpdate.code) {
       document.getElementById('codeEditor').value = d.codeUpdate.code;
       markDirty();
+      // Auto-update summary from the code update summary
+      if (d.codeUpdate.summary) {
+        updateSummaryDisplay(d.codeUpdate.summary);
+        // Persist summary to DB
+        fetch('/builder/api/update-summary/', {
+          method: 'POST',
+          headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+          body: JSON.stringify({ filePath: currentFilePath, summary: d.codeUpdate.summary })
+        }).catch(function() {});
+      }
     }
 
     // Build status message
@@ -633,9 +729,17 @@ function usePrompt(text) {
 }
 
 function clearChat() {
+  // Clear server-side conversation link
+  if (conversationId && currentFilePath) {
+    fetch('/builder/api/clear-chat/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({ filePath: currentFilePath })
+    }).catch(function() {});
+  }
   conversationId = null;
   var msgs = document.getElementById('chatMessages');
-  msgs.innerHTML = '<div class="text-muted text-center small py-4" id="chatPlaceholder">Describe the test you want to create, or ask for help modifying the script.</div>';
+  msgs.innerHTML = '<div class="text-muted text-center small py-4" id="chatPlaceholder">Describe the test you want to create, or ask for help modifying it.</div>';
   setStatus('', '');
 }
 
@@ -646,7 +750,7 @@ function saveFile() {
   var envPicker = document.getElementById('envPicker');
   var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
   if (!currentFilePath && !envId) {
-    alert('Please select an environment before saving a new script.');
+    alert('Please select an environment before saving a new test.');
     return;
   }
 
@@ -758,7 +862,7 @@ function setRunStatus(msg, cls) {
 
 function doRunScript(headed, scheduledAt) {
   if (!currentFilePath) {
-    alert('Save the script first before running.');
+    alert('Save the test first before running.');
     return;
   }
   var envId = currentEnvironmentId || (document.getElementById('envPicker') ? document.getElementById('envPicker').value : '');
@@ -800,7 +904,7 @@ function saveAndRun(headed) {
     var envPicker = document.getElementById('envPicker');
     var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
     if (!currentFilePath && !envId) {
-      alert('Please select an environment before saving a new script.');
+      alert('Please select an environment before saving a new test.');
       return;
     }
 
@@ -861,7 +965,7 @@ function scheduleRun() {
     var envPicker = document.getElementById('envPicker');
     var envId = envPicker ? envPicker.value : currentEnvironmentId || '';
     if (!currentFilePath && !envId) {
-      alert('Please select an environment before saving a new script.');
+      alert('Please select an environment before saving a new test.');
       return;
     }
 
@@ -910,8 +1014,8 @@ function updateRunButtons() {
 }
 
 function deleteScript() {
-  if (!currentFilePath) { alert('No script to delete.'); return; }
-  if (!confirm('Delete this script permanently?\n\n' + currentFilePath + '\n\nThis will remove the file and its metadata. Run history will be preserved.')) return;
+  if (!currentFilePath) { alert('No test to delete.'); return; }
+  if (!confirm('Delete this test permanently?\n\n' + currentFilePath + '\n\nThis will remove the file and its metadata. Run history will be preserved.')) return;
 
   fetch('/builder/api/delete/', {
     method: 'POST',
