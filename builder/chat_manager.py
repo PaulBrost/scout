@@ -239,6 +239,10 @@ test('Visual comparison — translated vs baseline', async ({ page }) => {
 IMPORTANT: When adapting these reference scripts, adjust the formKey, filter values, item count, and language to match the Test Context. Do NOT call `list_helpers`, `read_file`, or `search_tests` for standard requests — use the reference scripts directly.
 
 """
+
+
+def build_system_prompt(current_code, filename, script_context=None):
+    """Build system prompt with tool descriptions, current code, and assessment/item context."""
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT value FROM ai_settings WHERE key = 'system_prompt'")
