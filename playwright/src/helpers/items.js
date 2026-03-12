@@ -79,14 +79,99 @@ async function forceClickNext(page) {
   });
   await page.click('#nextButton');
   await page.waitForTimeout(500);
+
+  // Check if a "must answer" dialog/overlay appeared
+  const blocked = await page.evaluate(() => {
+    const body = document.body.innerText || '';
+    return /you need to answer|must answer|answer this question|before continuing/i.test(body);
+  });
+
+  if (blocked) {
+    await dismissRequiredAnswer(page);
+  }
 }
 
 /**
  * Click the next button (only when enabled).
+ * If the assessment shows a "must answer" validation, dismiss it,
+ * provide a dummy answer, and retry.
  * @param {import('@playwright/test').Page} page
  */
 async function clickNext(page) {
   await page.waitForSelector('#nextButton', { state: 'visible', timeout: 10000 });
+  await page.click('#nextButton');
+  await page.waitForTimeout(500);
+
+  // Check if a "must answer" dialog/overlay appeared
+  const blocked = await page.evaluate(() => {
+    // Look for common NAEP validation text patterns
+    const body = document.body.innerText || '';
+    return /you need to answer|must answer|answer this question|before continuing/i.test(body);
+  });
+
+  if (blocked) {
+    await dismissRequiredAnswer(page);
+  }
+}
+
+/**
+ * Dismiss a "you must answer" validation screen by clicking continue/OK,
+ * providing a dummy answer (first radio button, checkbox, or text input),
+ * then clicking Next again.
+ * @param {import('@playwright/test').Page} page
+ */
+async function dismissRequiredAnswer(page) {
+  // 1) Dismiss the validation dialog — click any continue/OK button
+  const dismissed = await page.evaluate(() => {
+    // Look for buttons/links with "continue", "ok", "close" text
+    const candidates = [...document.querySelectorAll('button, input[type="button"], a, .btn')];
+    for (const el of candidates) {
+      const text = (el.innerText || el.value || '').toLowerCase().trim();
+      if (/^(continue|ok|close|go back)$/.test(text) || /continue/i.test(text)) {
+        el.click();
+        return true;
+      }
+    }
+    return false;
+  });
+  await page.waitForTimeout(500);
+
+  // 2) Provide a dummy answer — select first available input
+  await page.evaluate(() => {
+    // Try radio buttons first (most common for NAEP routing questions)
+    const radios = document.querySelectorAll('#item input[type="radio"], #theItem input[type="radio"], input[type="radio"]');
+    if (radios.length > 0) {
+      radios[0].click();
+      // Trigger change event in case the UI listens for it
+      radios[0].dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    // Try checkboxes
+    const checks = document.querySelectorAll('#item input[type="checkbox"], #theItem input[type="checkbox"]');
+    if (checks.length > 0) {
+      checks[0].click();
+      checks[0].dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    // Try select dropdowns
+    const selects = document.querySelectorAll('#item select, #theItem select');
+    if (selects.length > 0 && selects[0].options.length > 1) {
+      selects[0].selectedIndex = 1;
+      selects[0].dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    // Try text inputs
+    const inputs = document.querySelectorAll('#item input[type="text"], #item textarea, #theItem input[type="text"], #theItem textarea');
+    if (inputs.length > 0) {
+      inputs[0].value = 'test';
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+  });
+  await page.waitForTimeout(300);
+
+  // 3) Retry clicking Next
+  await page.waitForSelector('#nextButton', { state: 'visible', timeout: 5000 });
   await page.click('#nextButton');
   await page.waitForTimeout(500);
 }
@@ -224,6 +309,7 @@ module.exports = {
   forceClickNext,
   clickNext,
   clickBack,
+  dismissRequiredAnswer,
   navigateToItem,
   extractItemText,
   isNextEnabled,
