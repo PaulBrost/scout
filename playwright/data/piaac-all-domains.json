@@ -1,0 +1,719 @@
+{
+  "version": "FT New",
+  "country": "ZZZ",
+  "language": "eng",
+  "discovered_at": "2026-03-12T20:22:35.931Z",
+  "domains": [
+    {
+      "domain": "APS",
+      "domain_label": "APS",
+      "items": [
+        {
+          "item_id": "U101-Transport",
+          "unit_name": "U101-Transport",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U102-GardenTime",
+          "unit_name": "U102-GardenTime",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U103-ShiftRoster",
+          "unit_name": "U103-ShiftRoster",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U104-EndofYearParty",
+          "unit_name": "U104-EndofYearParty",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U105-Tickets",
+          "unit_name": "U105-Tickets",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U106-Troubleshooting",
+          "unit_name": "U106-Troubleshooting",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U107-ProductReturn",
+          "unit_name": "U107-ProductReturn",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U108-PowerPlant",
+          "unit_name": "U108-PowerPlant",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U109-TravelPlanning",
+          "unit_name": "U109-TravelPlanning",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U110-Renovation",
+          "unit_name": "U110-Renovation",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U111-PostOffice",
+          "unit_name": "U111-PostOffice",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U112-Hiking",
+          "unit_name": "U112-Hiking",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U113-Plumbing",
+          "unit_name": "U113-Plumbing",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U114-ShipsAhoy",
+          "unit_name": "U114-ShipsAhoy",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U115-TrafficControl",
+          "unit_name": "U115-TrafficControl",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "Components",
+      "domain_label": "Components",
+      "items": [
+        {
+          "item_id": "U592-ArticlesIntroductionRev",
+          "unit_name": "U592-ArticlesIntroductionRev",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U593-BirthdayParty",
+          "unit_name": "U593-BirthdayParty",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U594-LetterToTheEditor",
+          "unit_name": "U594-LetterToTheEditor",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U595-WorldSports",
+          "unit_name": "U595-WorldSports",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U596-GoingToTheMovies",
+          "unit_name": "U596-GoingToTheMovies",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U598-SentencesRev",
+          "unit_name": "U598-SentencesRev",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "LITNew",
+      "domain_label": "LITNew",
+      "items": [
+        {
+          "item_id": "U501-Hiccups",
+          "unit_name": "U501-Hiccups",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U502-Shades",
+          "unit_name": "U502-Shades",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U503-Banking",
+          "unit_name": "U503-Banking",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U504-Crayons",
+          "unit_name": "U504-Crayons",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U505-EyeProtection",
+          "unit_name": "U505-EyeProtection",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U506-NutritionFacts",
+          "unit_name": "U506-NutritionFacts",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U507-PhotographyClass",
+          "unit_name": "U507-PhotographyClass",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U508-Restaurants",
+          "unit_name": "U508-Restaurants",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U509-BiciMAD",
+          "unit_name": "U509-BiciMAD",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U510-ArtsCenter",
+          "unit_name": "U510-ArtsCenter",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U511-AppComparison",
+          "unit_name": "U511-AppComparison",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U512-Accessibility",
+          "unit_name": "U512-Accessibility",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U513-CandidateForum",
+          "unit_name": "U513-CandidateForum",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U514-DeskCycling",
+          "unit_name": "U514-DeskCycling",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U515-InkStains",
+          "unit_name": "U515-InkStains",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U516-OnlineLearning",
+          "unit_name": "U516-OnlineLearning",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U517-RecyclingGuide",
+          "unit_name": "U517-RecyclingGuide",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U518-Scalds",
+          "unit_name": "U518-Scalds",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "LITTrend",
+      "domain_label": "LITTrend",
+      "items": [
+        {
+          "item_id": "U300-EmploymentAd",
+          "unit_name": "U300-EmploymentAd",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U301-SGIH",
+          "unit_name": "U301-SGIH",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U305-TMN",
+          "unit_name": "U305-TMN",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U306-Canco",
+          "unit_name": "U306-Canco",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U307-MEDCO",
+          "unit_name": "U307-MEDCO",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U310-MemoryTraining",
+          "unit_name": "U310-MemoryTraining",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U315-MexicanCities",
+          "unit_name": "U315-MexicanCities",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U318-CivilEngineering",
+          "unit_name": "U318-CivilEngineering",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U320-DiscussionForum",
+          "unit_name": "U320-DiscussionForum",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U321-InternetPoll",
+          "unit_name": "U321-InternetPoll",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U322-LakesideFunRun",
+          "unit_name": "U322-LakesideFunRun",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U323-LibrarySearch",
+          "unit_name": "U323-LibrarySearch",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U327-SummerStreets",
+          "unit_name": "U327-SummerStreets",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "NUMNew",
+      "domain_label": "NUMNew",
+      "items": [
+        {
+          "item_id": "U801-BikeTour",
+          "unit_name": "U801-BikeTour",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U802-Boxes",
+          "unit_name": "U802-Boxes",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U803-Cake",
+          "unit_name": "U803-Cake",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U804-CarRoutes",
+          "unit_name": "U804-CarRoutes",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U806-ChildMedication",
+          "unit_name": "U806-ChildMedication",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U807-Coupon",
+          "unit_name": "U807-Coupon",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U808-E-Bikes",
+          "unit_name": "U808-E-Bikes",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U809-E-Waste",
+          "unit_name": "U809-E-Waste",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U810-ElectricCars",
+          "unit_name": "U810-ElectricCars",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U811-Expenses",
+          "unit_name": "U811-Expenses",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U812-FlyingHours",
+          "unit_name": "U812-FlyingHours",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U813-HolidayStay",
+          "unit_name": "U813-HolidayStay",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U814-InflationRate",
+          "unit_name": "U814-InflationRate",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U815-Moving",
+          "unit_name": "U815-Moving",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U816-Nutrition",
+          "unit_name": "U816-Nutrition",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U817-RenderMix",
+          "unit_name": "U817-RenderMix",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U818-Paint",
+          "unit_name": "U818-Paint",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U819-PhotoCopier",
+          "unit_name": "U819-PhotoCopier",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U820-Running",
+          "unit_name": "U820-Running",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U821-SalesFigures",
+          "unit_name": "U821-SalesFigures",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U822-Scale",
+          "unit_name": "U822-Scale",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U823-SchoolAttendance",
+          "unit_name": "U823-SchoolAttendance",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U824-StackingGlasses",
+          "unit_name": "U824-StackingGlasses",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U825-TilePattern",
+          "unit_name": "U825-TilePattern",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U826-Tolerances",
+          "unit_name": "U826-Tolerances",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U827-Train",
+          "unit_name": "U827-Train",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U828-Vaccines",
+          "unit_name": "U828-Vaccines",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U829-Wallpaper",
+          "unit_name": "U829-Wallpaper",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U830-WoodScraps",
+          "unit_name": "U830-WoodScraps",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U831-WorkHours",
+          "unit_name": "U831-WorkHours",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U832-WorkplaceAccidents",
+          "unit_name": "U832-WorkplaceAccidents",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U833-ZooVisitors",
+          "unit_name": "U833-ZooVisitors",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U890-NumeracyComponentsRev",
+          "unit_name": "U890-NumeracyComponentsRev",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U890-NumeracyComponents",
+          "unit_name": "U890-NumeracyComponents",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "NUMTrend",
+      "domain_label": "NUMTrend",
+      "items": [
+        {
+          "item_id": "U601-Bottles",
+          "unit_name": "U601-Bottles",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U604-GasGauge",
+          "unit_name": "U604-GasGauge",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U606-Solution",
+          "unit_name": "U606-Solution",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U607-TV",
+          "unit_name": "U607-TV",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U611-TempScale",
+          "unit_name": "U611-TempScale",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U614-Watch",
+          "unit_name": "U614-Watch",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U615-TeaCandles",
+          "unit_name": "U615-TeaCandles",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U618-SixPack",
+          "unit_name": "U618-SixPack",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U619-Tiles",
+          "unit_name": "U619-Tiles",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U624-BMI",
+          "unit_name": "U624-BMI",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U632-EducationLevel",
+          "unit_name": "U632-EducationLevel",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U634-Peanuts",
+          "unit_name": "U634-Peanuts",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U635-ParkingMap",
+          "unit_name": "U635-ParkingMap",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U636-LabReport",
+          "unit_name": "U636-LabReport",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U644-NZExports",
+          "unit_name": "U644-NZExports",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U645-AirportTimetable",
+          "unit_name": "U645-AirportTimetable",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U646-RugProduction",
+          "unit_name": "U646-RugProduction",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U650-UrbanPopulation",
+          "unit_name": "U650-UrbanPopulation",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U651-Fertilizer",
+          "unit_name": "U651-Fertilizer",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U655-Path",
+          "unit_name": "U655-Path",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U657-Package",
+          "unit_name": "U657-Package",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U661-StudyFees",
+          "unit_name": "U661-StudyFees",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U664-OrchestraTicket",
+          "unit_name": "U664-OrchestraTicket",
+          "href": "",
+          "tag": "LI"
+        },
+        {
+          "item_id": "U665-CooperTest",
+          "unit_name": "U665-CooperTest",
+          "href": "",
+          "tag": "LI"
+        }
+      ]
+    },
+    {
+      "domain": "XYZBatch1",
+      "domain_label": "XYZBatch1",
+      "items": []
+    },
+    {
+      "domain": "XYZBatch3",
+      "domain_label": "XYZBatch3",
+      "items": []
+    },
+    {
+      "domain": "XYZScreener",
+      "domain_label": "XYZScreener",
+      "items": []
+    }
+  ]
+}

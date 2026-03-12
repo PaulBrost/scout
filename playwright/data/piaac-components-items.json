@@ -1,0 +1,46 @@
+{
+  "filters_applied": {
+    "version": "FT New",
+    "country": "ZZZ",
+    "language": "eng",
+    "domain": "Components"
+  },
+  "items": [
+    {
+      "item_id": "U592-ArticlesIntroductionRev",
+      "unit_name": "U592-ArticlesIntroductionRev",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U593-BirthdayParty",
+      "unit_name": "U593-BirthdayParty",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U594-LetterToTheEditor",
+      "unit_name": "U594-LetterToTheEditor",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U595-WorldSports",
+      "unit_name": "U595-WorldSports",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U596-GoingToTheMovies",
+      "unit_name": "U596-GoingToTheMovies",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U598-SentencesRev",
+      "unit_name": "U598-SentencesRev",
+      "href": "",
+      "tag": "LI"
+    }
+  ]
+}

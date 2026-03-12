@@ -2,16 +2,21 @@ import json
 from datetime import datetime
 
 from django.core.management.base import BaseCommand, CommandError
-from core.models import Environment, Assessment, Item, TestScript
+from django.db import connection as conn
+from core.models import Environment, Item
 
 
 class Command(BaseCommand):
-    help = 'Import PIAAC items from a discovery JSON file into the SCOUT database.'
+    help = (
+        'Import PIAAC items from discovery JSON into the SCOUT database.\n'
+        'Supports single-domain files (filters_applied + items) and\n'
+        'multi-domain files (domains[] from discover-piaac-domains.js).'
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--file', required=True,
-            help='Path to the discovery JSON file (e.g., playwright/discovery-zzz-eng.json)',
+            help='Path to the discovery JSON file',
         )
         parser.add_argument(
             '--environment', required=True,
@@ -27,13 +32,11 @@ class Command(BaseCommand):
         env_id = options['environment']
         dry_run = options['dry_run']
 
-        # Validate environment exists
         try:
             environment = Environment.objects.get(id=env_id)
         except Environment.DoesNotExist:
             raise CommandError(f'Environment with id "{env_id}" does not exist.')
 
-        # Load discovery JSON
         try:
             with open(file_path, 'r') as f:
                 data = json.load(f)
@@ -42,49 +45,76 @@ class Command(BaseCommand):
         except json.JSONDecodeError as e:
             raise CommandError(f'Invalid JSON in {file_path}: {e}')
 
-        items_data = data.get('items', [])
-        filters = data.get('filters_applied', {})
-
-        if not items_data:
-            self.stderr.write(self.style.WARNING('No items found in discovery file.'))
-            return
-
-        language_tag = f"{filters.get('country', 'UNK')}/{filters.get('language', 'unk')}"
         self.stdout.write(f'Environment: {environment.name} ({environment.id})')
-        self.stdout.write(f'Language tag: {language_tag}')
-        self.stdout.write(f'Items to import: {len(items_data)}')
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('\n--- DRY RUN (no changes will be written) ---\n'))
+            self.stdout.write(self.style.WARNING('--- DRY RUN (no changes will be written) ---\n'))
 
-        # Create/update Assessment
-        domain = filters.get('domain', 'LITNew')
+        # Detect format: multi-domain (has "domains" key) vs single-domain (has "filters_applied")
+        if 'domains' in data:
+            country = data.get('country', 'ZZZ')
+            language = data.get('language', 'eng')
+            total_created = 0
+            total_updated = 0
+            for domain_entry in data['domains']:
+                domain = domain_entry['domain']
+                items_data = domain_entry.get('items', [])
+                language_tag = f'{country}/{language}'
+                self.stdout.write(f'\n--- Domain: {domain} ({len(items_data)} items) ---')
+                self._import_domain(environment, domain, items_data, language_tag, dry_run)
+                c, u = self._import_items(environment, domain, items_data, language_tag, dry_run)
+                total_created += c
+                total_updated += u
+            if not dry_run:
+                self.stdout.write(self.style.SUCCESS(
+                    f'\nImport complete. {len(data["domains"])} domains, '
+                    f'{total_created} items created, {total_updated} updated.'
+                ))
+        else:
+            filters = data.get('filters_applied', {})
+            items_data = data.get('items', [])
+            domain = filters.get('domain', 'LITNew')
+            language_tag = f"{filters.get('country', 'UNK')}/{filters.get('language', 'unk')}"
+            self.stdout.write(f'Domain: {domain} | Language tag: {language_tag} | Items: {len(items_data)}')
+            self._import_domain(environment, domain, items_data, language_tag, dry_run)
+            c, u = self._import_items(environment, domain, items_data, language_tag, dry_run)
+            if not dry_run:
+                self.stdout.write(self.style.SUCCESS(
+                    f'\nImport complete. {c} items created, {u} updated.'
+                ))
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING('\nDry run complete. No changes were made.'))
+
+    def _import_domain(self, environment, domain, items_data, language_tag, dry_run):
+        """Create or update the Assessment record for a domain."""
         assessment_id = f'piaac-{domain.lower()}'
         assessment_name = f'PIAAC {domain}'
         if dry_run:
-            self.stdout.write(f'  Would create/update Assessment: {assessment_id}')
-        else:
-            from django.db import connection as conn
-            with conn.cursor() as cursor:
-                cursor.execute('SELECT id FROM assessments WHERE id = %s', [assessment_id])
-                if cursor.fetchone():
-                    cursor.execute(
-                        """UPDATE assessments SET name=%s, subject=%s, environment_id=%s,
-                           description=%s, updated_at=now() WHERE id=%s""",
-                        [assessment_name, domain, str(environment.id),
-                         f'PIAAC {domain} domain items', assessment_id]
-                    )
-                    self.stdout.write(f'  Updated Assessment: {assessment_id}')
-                else:
-                    cursor.execute(
-                        """INSERT INTO assessments (id, name, subject, environment_id, description, intro_screens, created_at, updated_at)
-                           VALUES (%s, %s, %s, %s::uuid, %s, 5, now(), now())""",
-                        [assessment_id, assessment_name, domain, str(environment.id),
-                         f'PIAAC {domain} domain items']
-                    )
-                    self.stdout.write(f'  Created Assessment: {assessment_id}')
+            self.stdout.write(f'  Would create/update Assessment: {assessment_id} ({len(items_data)} items)')
+            return
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT id FROM assessments WHERE id = %s', [assessment_id])
+            if cursor.fetchone():
+                cursor.execute(
+                    """UPDATE assessments SET name=%s, subject=%s, environment_id=%s,
+                       item_count=%s, description=%s, updated_at=now() WHERE id=%s""",
+                    [assessment_name, domain, str(environment.id),
+                     len(items_data), f'PIAAC {domain} domain items', assessment_id]
+                )
+                self.stdout.write(f'  Updated Assessment: {assessment_id}')
+            else:
+                cursor.execute(
+                    """INSERT INTO assessments (id, name, subject, environment_id, item_count, description, intro_screens, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s::uuid, %s, %s, 0, now(), now())""",
+                    [assessment_id, assessment_name, domain, str(environment.id),
+                     len(items_data), f'PIAAC {domain} domain items']
+                )
+                self.stdout.write(f'  Created Assessment: {assessment_id}')
 
-        # Import items
+    def _import_items(self, environment, domain, items_data, language_tag, dry_run):
+        """Import items for a domain. Returns (created_count, updated_count)."""
+        assessment_id = f'piaac-{domain.lower()}'
         created_count = 0
         updated_count = 0
 
@@ -102,19 +132,20 @@ class Command(BaseCommand):
 
             try:
                 item = Item.objects.get(item_id=item_id)
-                # Merge language tag into existing languages list
+                # Merge language tag
                 languages = item.languages or []
                 if language_tag not in languages:
                     languages.append(language_tag)
                     item.languages = languages
-
                 # Update metadata
                 metadata = item.metadata or {}
                 metadata['href'] = href
                 metadata['source'] = 'piaac-discovery'
                 metadata['discovered_at'] = datetime.utcnow().isoformat()
                 item.metadata = metadata
-
+                # Update assessment link if not already set
+                if not item.assessment_id:
+                    item.assessment_id = assessment_id
                 item.save()
                 updated_count += 1
             except Item.DoesNotExist:
@@ -135,41 +166,4 @@ class Command(BaseCommand):
         if not dry_run:
             self.stdout.write(f'  Items created: {created_count}, updated: {updated_count}')
 
-        # Register test scripts
-        scripts = [
-            {
-                'script_path': 'tests/items/piaac-visual-baseline.spec.js',
-                'description': 'PIAAC LITNew master visual baseline capture (ZZZ/eng)',
-                'test_type': 'visual_regression',
-                'tags': ['piaac', 'visual', 'baseline', 'LITNew'],
-            },
-            {
-                'script_path': 'tests/items/piaac-content-validation.spec.js',
-                'description': 'PIAAC LITNew AI content and vision analysis',
-                'test_type': 'ai_content',
-                'tags': ['piaac', 'ai', 'content', 'LITNew'],
-            },
-        ]
-
-        for script_data in scripts:
-            if dry_run:
-                self.stdout.write(f"  Would register script: {script_data['script_path']}")
-                continue
-
-            _, created = TestScript.objects.update_or_create(
-                script_path=script_data['script_path'],
-                defaults={
-                    'description': script_data['description'],
-                    'environment': environment,
-                    'assessment_id': assessment_id,
-                    'test_type': script_data['test_type'],
-                    'tags': script_data['tags'],
-                },
-            )
-            action = 'Registered' if created else 'Updated'
-            self.stdout.write(f"  {action} script: {script_data['script_path']}")
-
-        if dry_run:
-            self.stdout.write(self.style.WARNING('\nDry run complete. No changes were made.'))
-        else:
-            self.stdout.write(self.style.SUCCESS('\nImport complete.'))
+        return created_count, updated_count

@@ -1,0 +1,88 @@
+{
+  "filters_applied": {
+    "version": "FT New",
+    "country": "ZZZ",
+    "language": "eng",
+    "domain": "LITTrend"
+  },
+  "items": [
+    {
+      "item_id": "U300-EmploymentAd",
+      "unit_name": "U300-EmploymentAd",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U301-SGIH",
+      "unit_name": "U301-SGIH",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U305-TMN",
+      "unit_name": "U305-TMN",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U306-Canco",
+      "unit_name": "U306-Canco",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U307-MEDCO",
+      "unit_name": "U307-MEDCO",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U310-MemoryTraining",
+      "unit_name": "U310-MemoryTraining",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U315-MexicanCities",
+      "unit_name": "U315-MexicanCities",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U318-CivilEngineering",
+      "unit_name": "U318-CivilEngineering",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U320-DiscussionForum",
+      "unit_name": "U320-DiscussionForum",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U321-InternetPoll",
+      "unit_name": "U321-InternetPoll",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U322-LakesideFunRun",
+      "unit_name": "U322-LakesideFunRun",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U323-LibrarySearch",
+      "unit_name": "U323-LibrarySearch",
+      "href": "",
+      "tag": "LI"
+    },
+    {
+      "item_id": "U327-SummerStreets",
+      "unit_name": "U327-SummerStreets",
+      "href": "",
+      "tag": "LI"
+    }
+  ]
+}

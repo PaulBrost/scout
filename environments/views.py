@@ -68,9 +68,9 @@ def environment_create(request):
     env_id = uuid.uuid4()
     with connection.cursor() as cursor:
         cursor.execute(
-            """INSERT INTO environments (id, name, base_url, auth_type, credentials, notes, is_default)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            [env_id, name, base_url, auth_type, json.dumps(creds), notes, is_default]
+            """INSERT INTO environments (id, name, base_url, auth_type, credentials, launcher_config, notes, is_default, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())""",
+            [env_id, name, base_url, auth_type, json.dumps(creds), '{}', notes, is_default]
         )
 
     return redirect('/environments/')
