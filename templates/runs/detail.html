@@ -21,7 +21,7 @@
 
 {% block content %}
 <!-- Stuck run alert (shown by JS if run appears stuck) -->
-<div class="alert alert-warning py-2 d-flex align-items-center gap-2" id="stuckRunAlert" style="display:none">
+<div class="alert alert-warning py-2 align-items-center gap-2 d-none" id="stuckRunAlert">
   <i class="bi bi-exclamation-triangle-fill"></i>
   <span id="stuckRunMsg" class="small"></span>
 </div>
@@ -688,7 +688,9 @@ function checkIfStuck(data) {
     var msg = 'This run appears stuck — queued ' + (mins > 0 ? mins + ' minute' + (mins === 1 ? '' : 's') : Math.floor(elapsedSec) + ' seconds') +
       ' ago with no scripts started. The execution thread may have died (e.g. server restart). Use Retry to re-trigger execution.';
     document.getElementById('stuckRunMsg').textContent = msg;
-    document.getElementById('stuckRunAlert').style.display = '';
+    var alertEl = document.getElementById('stuckRunAlert');
+    alertEl.classList.remove('d-none');
+    alertEl.classList.add('d-flex');
     var retryBtn = document.getElementById('retryRunBtn');
     if (retryBtn) retryBtn.style.display = '';
   }

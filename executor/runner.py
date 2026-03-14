@@ -237,7 +237,7 @@ BROWSER_TO_PROJECT = {
 }
 
 
-def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False, viewport=None):
+def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False, viewport=None, update_snapshots=False):
     """Execute a single Playwright test script."""
     if timeout is None:
         timeout = settings.SCOUT_SCRIPT_TIMEOUT / 1000  # convert ms to seconds
@@ -280,6 +280,8 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
     json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
 
     args = ['npx', 'playwright', 'test', str(full_path), '--reporter=list,json', '--retries=0']
+    if update_snapshots:
+        args.append('--update-snapshots')
     if headed:
         args.append('--headed')
         # Default to single project so only one browser window opens
@@ -541,11 +543,15 @@ def execute_run(run_id, script_paths, options=None):
             # Per-entry browser/viewport from test_run_scripts
             script_project = options.get('project') or BROWSER_TO_PROJECT.get(entry['browser'], 'chrome-desktop')
 
+            # Release DB connection before subprocess wait
+            connection.close()
+
             result = execute_script(
                 script_path,
                 project=script_project,
                 env_vars=env_vars if env_vars else None,
                 viewport=entry['viewport'],
+                update_snapshots=is_baseline_run,
             )
 
             # Archive artifacts to persistent storage

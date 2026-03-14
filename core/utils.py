@@ -1,6 +1,6 @@
 """Shared utilities for SCOUT."""
 import threading
-from django.db import close_old_connections
+from django.db import connection
 
 
 def spawn_background_task(fn, *args, **kwargs):
@@ -11,10 +11,9 @@ def spawn_background_task(fn, *args, **kwargs):
     until PostgreSQL runs out of connection slots.
     """
     def wrapper():
-        close_old_connections()  # drop any inherited stale connection
         try:
             fn(*args, **kwargs)
         finally:
-            close_old_connections()  # release connection when done
+            connection.close()
 
     threading.Thread(target=wrapper, daemon=True).start()

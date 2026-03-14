@@ -68,7 +68,7 @@ WSGI_APPLICATION = 'scout.wsgi.application'
 # Database
 _database_url = config('DATABASE_URL', default='postgresql://scout:scout@localhost:5432/scout')
 DATABASES = {
-    'default': dj_database_url.parse(_database_url, conn_max_age=600)
+    'default': dj_database_url.parse(_database_url, conn_max_age=0)
 }
 
 AUTH_PASSWORD_VALIDATORS = [

@@ -202,6 +202,7 @@ def run_text_analysis(run_id):
 
         start = time.time()
         try:
+            connection.close()
             analysis = provider.analyze_text(text)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
@@ -215,6 +216,7 @@ def run_text_analysis(run_id):
             )
         except Exception as e:
             print(f'[PostExec] Text analysis failed for result {result["id"]}: {e}')
+        connection.close()
 
 
 def run_visual_analysis(run_id):
@@ -245,6 +247,7 @@ def run_visual_analysis(run_id):
         start = time.time()
         try:
             b64 = base64.b64encode(screenshot_path.read_bytes()).decode()
+            connection.close()
             analysis = provider.analyze_screenshot(b64, result.get('title') or '')
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
@@ -258,6 +261,7 @@ def run_visual_analysis(run_id):
             )
         except Exception as e:
             print(f'[PostExec] Visual analysis failed for result {result["id"]}: {e}')
+        connection.close()
 
 
 def _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root):
@@ -370,6 +374,8 @@ def analyze_run_screenshots(run_id):
         try:
             b64 = base64.b64encode(full_path.read_bytes()).decode()
             context = f"Screenshot: {ss['name']}"
+            # Release DB connection before AI API call
+            connection.close()
             analysis = provider.analyze_screenshot(b64, context)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
@@ -387,6 +393,7 @@ def analyze_run_screenshots(run_id):
             print(f'[PostExec] Visual analysis failed for screenshot {ss["name"]}: {e}')
 
         _update_analysis_progress(run_id, i + 1, total)
+        connection.close()
 
     _update_analysis_progress(run_id, total, total, status='completed')
     print(f'[PostExec] Analyzed {analyzed} screenshots for run {str(run_id)[:8]}')
@@ -419,6 +426,7 @@ def analyze_run_text(run_id):
 
         start = time.time()
         try:
+            connection.close()
             analysis = provider.analyze_text(text)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
@@ -432,6 +440,7 @@ def analyze_run_text(run_id):
             )
         except Exception as e:
             print(f'[PostExec] Text analysis failed for script {script["script_path"]}: {e}')
+        connection.close()
 
 
 def _create_pending_baseline(item_id, browser, device_profile, screenshot_path, environment_id):
