@@ -382,9 +382,10 @@
           {% for bl in baselines %}
           <div class="col-md-4 col-lg-3">
             <div class="card border h-100">
-              <a href="/runs/screenshot/img/{{ bl.file_path }}" target="_blank">
+              <a href="#" class="bl-thumb" data-bl-index="{{ forloop.counter0 }}"
+                 data-bl-name="{{ bl.name }}" data-bl-src="/runs/screenshot/img/{{ bl.file_path }}">
                 <img src="/runs/screenshot/img/{{ bl.file_path }}" class="card-img-top"
-                  alt="{{ bl.name }}" style="max-height:200px; object-fit:contain; background:#f8f9fa; padding:4px">
+                  alt="{{ bl.name }}" style="max-height:200px; object-fit:contain; background:#f8f9fa; padding:4px; cursor:pointer">
               </a>
               <div class="card-body p-2">
                 <div class="fw-semibold small text-truncate" title="{{ bl.name }}">{{ bl.name }}</div>
@@ -587,18 +588,70 @@
   </div>
 </div>
 
+<!-- Baseline Lightbox Modal -->
+<div class="modal fade" id="blLightboxModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="blLightboxTitle">Baseline</h6>
+        <div class="ms-auto me-3">
+          <span class="text-muted small" id="blLightboxCounter"></span>
+        </div>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2 position-relative">
+        <button class="btn btn-light position-absolute top-50 start-0 translate-middle-y ms-1 rounded-circle shadow-sm" id="blNavPrev" onclick="blNavigate(-1)" style="z-index:10;width:40px;height:40px;opacity:.85">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <button class="btn btn-light position-absolute top-50 end-0 translate-middle-y me-1 rounded-circle shadow-sm" id="blNavNext" onclick="blNavigate(1)" style="z-index:10;width:40px;height:40px;opacity:.85">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+        <div class="text-center">
+          <img id="blLightboxImg" src="" class="img-fluid" style="max-height:80vh" alt="">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Duplicate Test Modal -->
 <div class="modal fade" id="duplicateModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
+  <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header py-2">
         <h6 class="modal-title">Duplicate Test</h6>
         <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label small fw-semibold mb-1">New Test Name</label>
-        <input type="text" id="duplicateName" class="form-control form-control-sm" placeholder="e.g. Baseline Screenshots v2">
-        <div class="text-muted small mt-1">The script code and all metadata (item, assessment, type, browser, viewport, AI config) will be copied.</div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-1">New Test Name</label>
+          <input type="text" id="duplicateName" class="form-control form-control-sm" placeholder="e.g. Baseline Screenshots v2">
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Item</label>
+            <select id="duplicateItemId" class="form-select form-select-sm">
+              <option value="">— Same as source —</option>
+              <option value="__none__">— None —</option>
+              {% for item in items %}
+              <option value="{{ item.item_id }}">
+                {{ item.item_id }}{% if item.title %} — {{ item.title|truncatechars:40 }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Assessment</label>
+            <select id="duplicateAssessmentId" class="form-select form-select-sm">
+              <option value="">— Same as source —</option>
+              <option value="__none__">— None —</option>
+              {% for a in assessments %}
+              <option value="{{ a.id }}">{{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="text-muted small">The script code, environment, and other metadata will be copied. You can use the AI chat to update the script for the new item/assessment after duplicating.</div>
         <div id="duplicateError" class="text-danger small mt-2" style="display:none"></div>
       </div>
       <div class="modal-footer py-2">
@@ -1299,6 +1352,8 @@ function openDuplicateModal() {
   // Default name: current description + " (copy)"
   var desc = (scriptContext && scriptContext.description) || '';
   document.getElementById('duplicateName').value = desc ? desc + ' (copy)' : 'Copy of test';
+  document.getElementById('duplicateItemId').value = '';
+  document.getElementById('duplicateAssessmentId').value = '';
   document.getElementById('duplicateError').style.display = 'none';
   var modal = new bootstrap.Modal(document.getElementById('duplicateModal'));
   modal.show();
@@ -1317,10 +1372,16 @@ function doDuplicate() {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Duplicating…';
   document.getElementById('duplicateError').style.display = 'none';
 
+  var payload = { sourcePath: currentFilePath, newName: name };
+  var itemVal = document.getElementById('duplicateItemId').value;
+  var assessVal = document.getElementById('duplicateAssessmentId').value;
+  if (itemVal) payload.itemId = itemVal;
+  if (assessVal) payload.assessmentId = assessVal;
+
   fetch('/builder/api/duplicate/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
-    body: JSON.stringify({ sourcePath: currentFilePath, newName: name })
+    body: JSON.stringify(payload)
   })
   .then(r => r.json())
   .then(d => {
@@ -1357,6 +1418,48 @@ function deleteTest() {
     window.location.href = '/test-cases/';
   })
   .catch(err => alert('Error: ' + err.message));
+}
+
+// ── Baseline Lightbox ──
+var blList = [];
+var blCurrentIndex = 0;
+document.querySelectorAll('.bl-thumb').forEach(function(link) {
+  blList.push({ name: link.dataset.blName, src: link.dataset.blSrc });
+});
+
+document.addEventListener('click', function(e) {
+  var link = e.target.closest('.bl-thumb');
+  if (!link) return;
+  e.preventDefault();
+  blCurrentIndex = parseInt(link.dataset.blIndex) || 0;
+  blShowCurrent();
+});
+
+document.addEventListener('keydown', function(e) {
+  var modal = document.getElementById('blLightboxModal');
+  if (!modal.classList.contains('show')) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); blNavigate(-1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); blNavigate(1); }
+});
+
+function blNavigate(delta) {
+  if (blList.length <= 1) return;
+  blCurrentIndex = (blCurrentIndex + delta + blList.length) % blList.length;
+  blShowCurrent();
+}
+
+var _blModal = null;
+function blShowCurrent() {
+  var item = blList[blCurrentIndex];
+  if (!item) return;
+  document.getElementById('blLightboxTitle').textContent = item.name;
+  document.getElementById('blLightboxImg').src = item.src;
+  document.getElementById('blNavPrev').style.display = blList.length > 1 ? '' : 'none';
+  document.getElementById('blNavNext').style.display = blList.length > 1 ? '' : 'none';
+  document.getElementById('blLightboxCounter').textContent = blList.length > 1
+    ? (blCurrentIndex + 1) + ' / ' + blList.length : '';
+  if (!_blModal) _blModal = new bootstrap.Modal(document.getElementById('blLightboxModal'));
+  _blModal.show();
 }
 
 // ── Baseline Management ──

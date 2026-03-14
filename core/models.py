@@ -260,6 +260,7 @@ class AIAnalysis(models.Model):
     raw_response = models.TextField(null=True, blank=True)
     model_used = models.TextField(null=True, blank=True)
     duration_ms = models.IntegerField(null=True, blank=True)
+    screenshot_name = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

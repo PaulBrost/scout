@@ -150,4 +150,4 @@ def api_list(request):
         """, params + [page_size, (page - 1) * page_size])
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
-    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, default=str)
+    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})

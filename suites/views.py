@@ -310,7 +310,7 @@ def suite_run(request, suite_id):
                 )
 
         # Run task in background thread
-        import threading
+        from core.utils import spawn_background_task
         def _run_suite(rid=str(run_id)):
             try:
                 from tasks.run_tasks import execute_suite_run
@@ -320,7 +320,7 @@ def suite_run(request, suite_id):
                 from django.db import connection as conn
                 with conn.cursor() as cur:
                     cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
-        threading.Thread(target=_run_suite, daemon=True).start()
+        spawn_background_task(_run_suite)
 
         return JsonResponse({'runId': str(run_id), 'status': 'running', 'scripts': len(suite_entries)})
     except Exception as e:
@@ -374,7 +374,7 @@ def run_script(request):
 
         # Only queue for immediate execution if not scheduled
         if not scheduled_at:
-            import threading
+            from core.utils import spawn_background_task
             def _run_task(rid=str(run_id), sp=script_path):
                 try:
                     from tasks.run_tasks import execute_single_script
@@ -385,7 +385,7 @@ def run_script(request):
                     with conn.cursor() as cur:
                         cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
                         cur.execute("UPDATE test_run_scripts SET status='error', error_message=%s, completed_at=now() WHERE run_id=%s AND status IN ('queued','running')", [str(e), rid])
-            threading.Thread(target=_run_task, daemon=True).start()
+            spawn_background_task(_run_task)
 
         return JsonResponse({'runId': str(run_id), 'status': run_status})
     except Exception as e:

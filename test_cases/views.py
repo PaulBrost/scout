@@ -323,7 +323,7 @@ def api_list(request):
     env_ids = get_user_env_ids(request.user)
     if env_ids is not None:
         if not env_ids:
-            return JsonResponse({'scripts': [], 'total': 0}, default=str)
+            return JsonResponse({'scripts': [], 'total': 0}, json_dumps_params={'default': str})
         params.append(tuple(str(e) for e in env_ids))
         where.append('ts.environment_id = ANY(%s::uuid[])')
 
@@ -351,4 +351,4 @@ def api_list(request):
         cols = [c[0] for c in cursor.description]
         scripts = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
-    return JsonResponse({'scripts': scripts, 'total': len(scripts)}, default=str)
+    return JsonResponse({'scripts': scripts, 'total': len(scripts)}, json_dumps_params={'default': str})

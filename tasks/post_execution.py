@@ -298,27 +298,40 @@ def _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root)
 
 
 def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, issues,
-                                raw_response='', model_used='', duration_ms=0):
+                                raw_response='', model_used='', duration_ms=0,
+                                screenshot_name=None):
     """Create an AIAnalysis record, and a Review if issues were found."""
     issues_found = len(issues) > 0
 
     with connection.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO ai_analyses (run_id, item_id, test_result_id, analysis_type,
+            INSERT INTO ai_analyses (id, run_id, item_id, test_result_id, analysis_type,
                                      status, issues_found, issues, raw_response,
-                                     model_used, duration_ms)
-            VALUES (%s, %s, %s, %s, 'completed', %s, %s, %s, %s, %s)
+                                     model_used, duration_ms, screenshot_name, created_at)
+            VALUES (gen_random_uuid(), %s, %s, %s, %s, 'completed', %s, %s, %s, %s, %s, %s, now())
             RETURNING id
         """, [run_id, item_id, test_result_id, analysis_type,
               issues_found, json.dumps(issues), raw_response,
-              model_used, duration_ms])
+              model_used, duration_ms, screenshot_name])
         analysis_id = cursor.fetchone()[0]
 
         if issues_found:
             cursor.execute("""
-                INSERT INTO reviews (analysis_id, status)
-                VALUES (%s, 'pending')
+                INSERT INTO reviews (id, analysis_id, status, created_at)
+                VALUES (gen_random_uuid(), %s, 'pending', now())
             """, [str(analysis_id)])
+
+
+def _update_analysis_progress(run_id, current, total, status='processing'):
+    """Update analysis progress in ai_settings for polling."""
+    key = f'analysis_progress_{run_id}'
+    progress = json.dumps({'current': current, 'total': total, 'status': status})
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO ai_settings (key, value, updated_at)
+            VALUES (%s, %s::jsonb, now())
+            ON CONFLICT (key) DO UPDATE SET value = %s::jsonb, updated_at = now()
+        """, [key, progress, progress])
 
 
 def analyze_run_screenshots(run_id):
@@ -341,12 +354,16 @@ def analyze_run_screenshots(run_id):
         print(f'[PostExec] No screenshots to analyze for run {str(run_id)[:8]}')
         return
 
+    total = len(screenshots)
+    _update_analysis_progress(run_id, 0, total)
+
     provider = get_provider_for_feature('vision')
     analyzed = 0
 
-    for ss in screenshots:
+    for i, ss in enumerate(screenshots):
         full_path = _resolve_artifact_path(ss['file_path'])
         if not full_path.exists():
+            _update_analysis_progress(run_id, i + 1, total)
             continue
 
         start = time.time()
@@ -363,11 +380,15 @@ def analyze_run_screenshots(run_id):
                 raw_response=analysis.get('raw', ''),
                 model_used=analysis.get('model', ''),
                 duration_ms=duration_ms,
+                screenshot_name=ss['name'],
             )
             analyzed += 1
         except Exception as e:
             print(f'[PostExec] Visual analysis failed for screenshot {ss["name"]}: {e}')
 
+        _update_analysis_progress(run_id, i + 1, total)
+
+    _update_analysis_progress(run_id, total, total, status='completed')
     print(f'[PostExec] Analyzed {analyzed} screenshots for run {str(run_id)[:8]}')
 
 

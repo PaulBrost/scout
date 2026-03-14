@@ -41,8 +41,8 @@
       <thead class="table-light">
         <tr>
           <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
+          <th><a href="?sort=suite&dir={% if sort == 'suite' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Name {% if sort == 'suite' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=started&dir={% if sort == 'started' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Queued {% if sort == 'started' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
-          <th><a href="?sort=suite&dir={% if sort == 'suite' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Suite {% if sort == 'suite' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=status&dir={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Status {% if sort == 'status' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th><a href="?sort=trigger&dir={% if sort == 'trigger' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}">Trigger {% if sort == 'trigger' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Scripts</th>
@@ -56,9 +56,11 @@
         <tr id="run-row-{{ run.id }}">
           <td><input type="checkbox" class="form-check-input row-check" value="{{ run.id }}" onchange="updateSelection()"></td>
           <td>
-            <a href="/runs/{{ run.id }}/">{{ run.queued_at|shorttime:user_timezone }}</a>
+            <a href="/runs/{{ run.id }}/">{% if run.suite_name %}{{ run.suite_name }}{% elif run.first_script_name %}{{ run.first_script_name }}{% else %}Run {{ run.id|truncatechars:12 }}{% endif %}</a>
           </td>
-          <td>{% if run.suite_id %}<a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% else %}<span class="text-muted">Ad-hoc</span>{% endif %}</td>
+          <td>
+            <a href="/runs/{{ run.id }}/" class="text-muted text-decoration-none">{{ run.queued_at|shorttime:user_timezone }}</a>
+          </td>
           <td><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></td>
           <td>{{ run.trigger_type }}</td>
           <td>{{ run.script_count }}</td>

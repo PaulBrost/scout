@@ -84,7 +84,11 @@ def index(request):
         cursor.execute(f"""
             SELECT r.id, r.queued_at, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary, r.notes,
                    s.id AS suite_id, s.name AS suite_name,
-                   (SELECT COUNT(*) FROM test_run_scripts rs WHERE rs.run_id = r.id) AS script_count
+                   (SELECT COUNT(*) FROM test_run_scripts rs WHERE rs.run_id = r.id) AS script_count,
+                   (SELECT COALESCE(ts.description, trs.script_path)
+                    FROM test_run_scripts trs
+                    LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+                    WHERE trs.run_id = r.id LIMIT 1) AS first_script_name
             FROM test_runs r
             LEFT JOIN test_suites s ON r.suite_id = s.id
             {where_clause}
@@ -186,7 +190,7 @@ def detail(request, run_id):
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT id, analysis_type, status, issues_found, issues,
-                   model_used, duration_ms, created_at
+                   model_used, duration_ms, screenshot_name, created_at
             FROM ai_analyses WHERE run_id = %s
             ORDER BY created_at DESC
         """, [run_id])
@@ -343,7 +347,7 @@ def api_list(request):
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
-    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, default=str)
+    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
@@ -360,7 +364,7 @@ def api_latest(request):
             run['summary'] = json.loads(run['summary'])
         except Exception:
             pass
-    return JsonResponse({'run': run}, default=str)
+    return JsonResponse({'run': run}, json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
@@ -432,7 +436,7 @@ def api_run_screenshots(request, run_id):
         )
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
-    return JsonResponse({'screenshots': rows}, default=str)
+    return JsonResponse({'screenshots': rows}, json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
@@ -455,14 +459,113 @@ def api_run_analyze(request, run_id):
     if row[0] in ('running', 'scheduled'):
         return JsonResponse({'error': 'Run is still in progress'}, status=400)
 
-    from django_q.tasks import async_task
-    task_id = async_task(
-        'tasks.post_execution.run_analysis_on_demand',
-        str(run_id), analysis_type,
-        task_name=f'analyze-{str(run_id)[:8]}'
-    )
+    from core.utils import spawn_background_task
 
-    return JsonResponse({'ok': True, 'taskId': str(task_id), 'type': analysis_type})
+    def _run_analysis(rid=str(run_id), atype=analysis_type):
+        try:
+            from tasks.post_execution import run_analysis_on_demand
+            run_analysis_on_demand(rid, atype)
+        except Exception as e:
+            print(f'[Analysis] on-demand error: {e}')
+
+    spawn_background_task(_run_analysis)
+
+    return JsonResponse({'ok': True, 'type': analysis_type})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_retry_run(request, run_id):
+    """Re-trigger execution for a stuck run (running/scheduled but no scripts started)."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status, suite_id FROM test_runs WHERE id = %s",
+                [str(run_id)]
+            )
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Run not found'}, status=404)
+
+        run_status, suite_id = row
+
+        if run_status not in ('running', 'scheduled', 'failed'):
+            return JsonResponse({'error': f'Run is {run_status}, cannot retry'}, status=400)
+
+        # Reset run and script statuses
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE test_runs SET status = 'running', queued_at = now(), started_at = NULL, completed_at = NULL WHERE id = %s",
+                [str(run_id)]
+            )
+            cursor.execute(
+                "UPDATE test_run_scripts SET status = 'queued', started_at = NULL, completed_at = NULL, "
+                "error_message = NULL, execution_log = NULL, duration_ms = NULL "
+                "WHERE run_id = %s AND status NOT IN ('passed')",
+                [str(run_id)]
+            )
+            # Get script paths for execution
+            cursor.execute(
+                "SELECT script_path FROM test_run_scripts WHERE run_id = %s ORDER BY script_path",
+                [str(run_id)]
+            )
+            script_paths = [r[0] for r in cursor.fetchall()]
+
+        if not script_paths:
+            return JsonResponse({'error': 'No scripts in this run'}, status=400)
+
+        from core.utils import spawn_background_task
+        if suite_id or len(script_paths) > 1:
+            def _run_suite(rid=str(run_id)):
+                try:
+                    from tasks.run_tasks import execute_suite_run
+                    execute_suite_run(rid)
+                except Exception as e:
+                    print(f'[retry_run] error: {e}')
+                    from django.db import connection as conn
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+            spawn_background_task(_run_suite)
+        else:
+            def _run_task(rid=str(run_id), sp=script_paths[0]):
+                try:
+                    from tasks.run_tasks import execute_single_script
+                    execute_single_script(rid, sp)
+                except Exception as e:
+                    print(f'[retry_run] error: {e}')
+                    from django.db import connection as conn
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+                        cur.execute("UPDATE test_run_scripts SET status='error', error_message=%s, completed_at=now() WHERE run_id=%s AND status IN ('queued','running')", [str(e), rid])
+            spawn_background_task(_run_task)
+
+        return JsonResponse({'ok': True, 'scripts': len(script_paths)})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_cancel_run(request, run_id):
+    """Cancel a running or scheduled test run."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE test_runs SET status = 'cancelled', completed_at = now() WHERE id = %s AND status IN ('running', 'scheduled')",
+                [str(run_id)]
+            )
+            if cursor.rowcount == 0:
+                return JsonResponse({'error': 'Run not found or not in a cancellable state'}, status=400)
+            # Mark any pending/running scripts as cancelled
+            cursor.execute(
+                "UPDATE test_run_scripts SET status = 'cancelled', completed_at = now() WHERE run_id = %s AND status IN ('pending', 'running', 'queued')",
+                [str(run_id)]
+            )
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
@@ -473,6 +576,7 @@ def api_delete_run(request, run_id):
     try:
         with connection.cursor() as cursor:
             # Delete in FK order to avoid constraint violations
+            cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = %s)', [str(run_id)])
             cursor.execute('DELETE FROM ai_analyses WHERE run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM run_screenshots WHERE run_id = %s', [str(run_id)])
@@ -502,6 +606,7 @@ def api_delete_runs_bulk(request):
             return JsonResponse({'error': 'No IDs provided'}, status=400)
         with connection.cursor() as cursor:
             # Delete in FK order to avoid constraint violations
+            cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = ANY(%s::uuid[]))', [ids])
             cursor.execute('DELETE FROM ai_analyses WHERE run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM run_screenshots WHERE run_id = ANY(%s::uuid[])', [ids])
@@ -522,11 +627,11 @@ def api_delete_runs_bulk(request):
 
 @login_required(login_url='/login/')
 def api_run_analyses(request, run_id):
-    """Return AI analysis results for a run."""
+    """Return AI analysis results for a run, plus progress info."""
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT id, analysis_type, status, issues_found, issues,
-                   model_used, duration_ms, created_at
+                   model_used, duration_ms, screenshot_name, created_at
             FROM ai_analyses WHERE run_id = %s
             ORDER BY created_at DESC
         """, [run_id])
@@ -541,4 +646,21 @@ def api_run_analyses(request, run_id):
             except Exception:
                 row['issues'] = []
 
-    return JsonResponse({'analyses': rows}, default=str)
+    # Fetch analysis progress if available
+    progress = None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT value FROM ai_settings WHERE key = %s",
+            [f'analysis_progress_{run_id}']
+        )
+        prow = cursor.fetchone()
+        if prow:
+            p = prow[0]
+            if isinstance(p, str):
+                try:
+                    p = json.loads(p)
+                except Exception:
+                    p = None
+            progress = p
+
+    return JsonResponse({'analyses': rows, 'progress': progress}, json_dumps_params={'default': str})

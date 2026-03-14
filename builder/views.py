@@ -276,8 +276,28 @@ def _get_archiving_config(cursor):
     return enabled, days
 
 
+def _cancel_runs_for_script(cursor, script_path):
+    """Cancel any running or queued test runs that include this script."""
+    cursor.execute("""
+        SELECT DISTINCT trs.run_id FROM test_run_scripts trs
+        JOIN test_runs r ON r.id = trs.run_id
+        WHERE trs.script_path = %s AND r.status IN ('running', 'scheduled', 'queued')
+    """, [script_path])
+    run_ids = [row[0] for row in cursor.fetchall()]
+    for run_id in run_ids:
+        cursor.execute(
+            "UPDATE test_runs SET status = 'cancelled', completed_at = COALESCE(completed_at, now()) WHERE id = %s",
+            [run_id]
+        )
+        cursor.execute(
+            "UPDATE test_run_scripts SET status = 'cancelled', completed_at = COALESCE(completed_at, now()) WHERE run_id = %s AND status IN ('pending', 'running', 'queued')",
+            [run_id]
+        )
+
+
 def _archive_script(cursor, script_path, full_path, user):
     """Move a script into the archive table."""
+    _cancel_runs_for_script(cursor, script_path)
     _, retention_days = _get_archiving_config(cursor)
 
     # Read script metadata
@@ -315,9 +335,9 @@ def _archive_script(cursor, script_path, full_path, user):
         INSERT INTO test_script_archives
             (script_path, description, environment_id, item_id, assessment_id, test_type,
              ai_config, tags, category, test_summary, browser, viewport,
-             file_content, original_id, archived_by_id, expires_at, original_created_at)
+             file_content, original_id, archived_by_id, archived_at, expires_at, original_created_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s,
-                %s, %s, %s, now() + interval '%s days', %s)
+                %s, %s, %s, now(), now() + interval '%s days', %s)
     """, [script_path, description,
           str(environment_id) if environment_id else None,
           item_id,
@@ -338,6 +358,7 @@ def _archive_script(cursor, script_path, full_path, user):
 
 def _hard_delete_script(cursor, script_path, full_path):
     """Permanently delete a script and cascade-delete all associated run data."""
+    _cancel_runs_for_script(cursor, script_path)
     from admin_config.views import _cascade_delete_run_data
 
     # Delete suite references
@@ -489,6 +510,10 @@ def api_duplicate(request):
         if not new_name:
             return JsonResponse({'error': 'Missing newName'}, status=400)
 
+        # Optional overrides for item/assessment
+        override_item = data.get('itemId')         # '' = keep source, '__none__' = clear
+        override_assessment = data.get('assessmentId')  # '' = keep source, '__none__' = clear
+
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
         source_full = (tests_dir / source_path).resolve()
 
@@ -525,6 +550,17 @@ def api_duplicate(request):
             # Use the user-provided name as the description
             new_desc = new_name
 
+            # Apply item/assessment overrides
+            if override_item == '__none__':
+                item_id = None
+            elif override_item:
+                item_id = override_item
+
+            if override_assessment == '__none__':
+                assessment_id = None
+            elif override_assessment:
+                assessment_id = override_assessment
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO test_scripts
@@ -532,17 +568,20 @@ def api_duplicate(request):
                         environment_id, browser, viewport, ai_config, test_summary, tags, created_at, updated_at)
                        VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s,
                                %s::uuid, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s, '[]'::jsonb, now(), now())""",
-                    [new_rel_path, item_id, assessment_id, category, test_type, new_desc,
+                    [new_rel_path, item_id, str(assessment_id) if assessment_id else None,
+                     category, test_type, new_desc,
                      environment_id, browser or 'chromium', viewport or '1920x1080', ai_config, test_summary]
                 )
         else:
-            # No source metadata — create minimal record
+            # No source metadata — create minimal record with any overrides
+            new_item = None if (not override_item or override_item == '__none__') else override_item
+            new_assess = None if (not override_assessment or override_assessment == '__none__') else override_assessment
             with connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO test_scripts
-                       (script_path, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())""",
-                    [new_rel_path]
+                       (script_path, item_id, assessment_id, description, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())""",
+                    [new_rel_path, new_item, new_assess, new_name]
                 )
 
         return JsonResponse({'ok': True, 'path': new_rel_path})
@@ -589,7 +628,7 @@ def api_generate_baseline(request):
                 [str(run_id), script_path, script_browser, script_viewport]
             )
 
-        import threading
+        from core.utils import spawn_background_task
         def _run_baseline(rid=str(run_id), sp=script_path):
             try:
                 from tasks.run_tasks import execute_baseline_generation
@@ -600,7 +639,7 @@ def api_generate_baseline(request):
                 with conn.cursor() as cur:
                     cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
                     cur.execute("UPDATE test_run_scripts SET status='error', error_message=%s, completed_at=now() WHERE run_id=%s AND status IN ('queued','running')", [str(e), rid])
-        threading.Thread(target=_run_baseline, daemon=True).start()
+        spawn_background_task(_run_baseline)
 
         return JsonResponse({'runId': str(run_id), 'status': 'running'})
     except Exception as e:

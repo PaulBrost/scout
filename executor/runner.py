@@ -449,9 +449,12 @@ def execute_run(run_id, script_paths, options=None):
     # Prepare test data and environment config if environment is set on the run
     test_data_path = None
     env_config_json = None
+    is_baseline_run = False
     with connection.cursor() as cursor:
-        cursor.execute('SELECT environment_id FROM test_runs WHERE id = %s', [run_id])
+        cursor.execute('SELECT environment_id, trigger_type FROM test_runs WHERE id = %s', [run_id])
         row = cursor.fetchone()
+        if row and row[1] == 'baseline':
+            is_baseline_run = True
         if row and row[0]:
             environment_id = row[0]
             test_data_path = prepare_test_data(run_id, environment_id)
@@ -501,6 +504,24 @@ def execute_run(run_id, script_paths, options=None):
         run_script_entries = [{'id': r[0], 'script_path': r[1], 'browser': r[2] or 'chromium', 'viewport': r[3] or '1920x1080'} for r in cursor.fetchall()]
 
     for entry in run_script_entries:
+        # Check if run was cancelled before starting next script
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT status FROM test_runs WHERE id = %s', [run_id])
+            run_row = cursor.fetchone()
+            if run_row and run_row[0] == 'cancelled':
+                # Mark remaining scripts as cancelled
+                cursor.execute(
+                    "UPDATE test_run_scripts SET status = 'cancelled', completed_at = now() WHERE run_id = %s AND status IN ('pending', 'queued')",
+                    [run_id]
+                )
+                print(f'[Executor] Run {str(run_id)[:8]} cancelled by user')
+                if test_data_path:
+                    try:
+                        os.unlink(test_data_path)
+                    except OSError:
+                        pass
+                return
+
         script_path = entry['script_path']
         run_script_id = entry['id']
 
@@ -548,9 +569,10 @@ def execute_run(run_id, script_paths, options=None):
 
             # Save captured snapshots as RunScreenshot records (archived paths)
             # Auto-flag comparison artifacts (diff/actual from screenshot mismatches)
+            # Skip auto-flagging for baseline runs — comparison diffs are expected
             ss_mismatches = result.get('screenshot_mismatches', [])
             for snap in archived_snaps:
-                is_comparison = snap.get('project_name') == 'comparison'
+                is_comparison = snap.get('project_name') == 'comparison' and not is_baseline_run
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at)

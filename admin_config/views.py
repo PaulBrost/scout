@@ -417,6 +417,8 @@ def _cascade_delete_run_data(cursor, script_path):
 
     if run_ids:
         run_id_list = [str(rid) for rid in run_ids]
+        # Nullify baseline FK references before deleting runs
+        cursor.execute("UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = ANY(%s::uuid[])", [run_id_list])
         # Delete run_screenshots for these runs
         cursor.execute("DELETE FROM run_screenshots WHERE run_id = ANY(%s::uuid[])", [run_id_list])
         # Delete test_results + ai_analyses + reviews cascade via run
