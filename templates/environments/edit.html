@@ -70,7 +70,7 @@
           <div class="mb-3">
             <label class="form-label">Intro Screens to Skip</label>
             <input type="number" name="intro_screens" class="form-control form-control-sm" style="width:120px"
-              value="{{ launcher_config.intro_screens|default:'' }}" placeholder="5" min="0">
+              value="{{ launcher_config.intro_screens|default_if_none:'' }}" placeholder="5" min="0">
             <div class="form-text">Number of intro/tutorial screens before assessment items.</div>
           </div>
 
@@ -111,6 +111,39 @@
             <input type="text" name="item_content_frame" class="form-control form-control-sm"
               value="{{ launcher_config.item_selectors.content_frame|default:'' }}" placeholder="iframe#content">
             <div class="form-text">If item content renders inside an iframe, specify its selector here.</div>
+          </div>
+
+          <hr>
+          <h6 class="fw-semibold mb-3">Screen Navigation</h6>
+          <p class="text-muted small mb-3">Controls how <code>navigateAllScreens()</code> walks through every screen (intro, items, end). Used by baseline tests to capture all screens.</p>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">End Indicator</label>
+              <input type="text" name="end_indicator" class="form-control form-control-sm"
+                value="{{ launcher_config.end_indicator|default:'' }}" placeholder="text=&quot;You have completed&quot;">
+              <div class="form-text">CSS/text selector visible on the final screen. Stops navigation when detected.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Done/OK Button</label>
+              <input type="text" name="done_button" class="form-control form-control-sm"
+                value="{{ launcher_config.done_button|default:'' }}" placeholder="button:has-text(&quot;OK&quot;)">
+              <div class="form-text">Button to click on the end screen to finish the assessment.</div>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Video Progress Selector</label>
+              <input type="text" name="video_progress_selector" class="form-control form-control-sm"
+                value="{{ launcher_config.video_progress_selector|default:'' }}" placeholder="video">
+              <div class="form-text">Selector for video element or progress bar. Test will seek to end to skip playback.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Max Screens</label>
+              <input type="number" name="max_screens" class="form-control form-control-sm" style="width:120px"
+                value="{{ launcher_config.max_screens|default_if_none:'' }}" placeholder="100" min="1">
+              <div class="form-text">Safety limit on total screens to navigate (default: 100).</div>
+            </div>
           </div>
 
           <div class="d-flex gap-2">

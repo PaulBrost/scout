@@ -100,9 +100,8 @@ ${helperList || `- loginAndNavigate(page, url) — logs in and navigates to the 
 
 Conventions:
 - Use require('@playwright/test') for test and expect
-- Use toHaveScreenshot() for visual regression against baselines
-- Use maxDiffPixelRatio: 0.01 as default threshold
-- Name screenshots descriptively: item-{id}-{context}.png
+- Use page.screenshot() for captures — SCOUT handles baseline comparison (do NOT use toHaveScreenshot)
+- Name screenshots descriptively: test-results/item-{id}-{context}.png
 - Group related tests in test.describe() blocks
 - Add a comment header with generation date and purpose
 - Tag tests with @smoke, @visual, @content, @feature as appropriate

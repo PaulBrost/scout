@@ -8,6 +8,7 @@ import json
 import time
 import tempfile
 import re
+import threading
 from pathlib import Path
 from django.conf import settings
 from django.db import connection
@@ -237,8 +238,12 @@ BROWSER_TO_PROJECT = {
 }
 
 
-def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False, viewport=None, update_snapshots=False):
-    """Execute a single Playwright test script."""
+def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False, viewport=None, update_snapshots=False, log_callback=None):
+    """Execute a single Playwright test script.
+
+    log_callback: optional callable(stdout_so_far: str) called periodically during
+    execution so callers can stream live output to the UI.
+    """
     if timeout is None:
         timeout = settings.SCOUT_SCRIPT_TIMEOUT / 1000  # convert ms to seconds
 
@@ -310,14 +315,54 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        try:
-            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout_bytes, stderr_bytes = proc.communicate()
-            exit_code = -1
-            timed_out = True
+
+        if log_callback:
+            # Stream stdout line-by-line for live updates
+            stdout_lines = []
+            stderr_lines = []
+
+            def _read_stream(stream, lines):
+                for raw_line in stream:
+                    lines.append(raw_line.decode('utf-8', errors='replace'))
+
+            stdout_thread = threading.Thread(target=_read_stream, args=(proc.stdout, stdout_lines), daemon=True)
+            stderr_thread = threading.Thread(target=_read_stream, args=(proc.stderr, stderr_lines), daemon=True)
+            stdout_thread.start()
+            stderr_thread.start()
+
+            last_cb = 0
+            while proc.poll() is None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    proc.kill()
+                    timed_out = True
+                    break
+                now = time.time()
+                if now - last_cb >= 3:
+                    log_callback(''.join(stdout_lines))
+                    last_cb = now
+                time.sleep(0.5)
+
+            stdout_thread.join(5)
+            stderr_thread.join(5)
+            # Final callback with complete output
+            log_callback(''.join(stdout_lines))
+            stdout = ''.join(stdout_lines)
+            stderr = ''.join(stderr_lines)
+            exit_code = proc.returncode if proc.returncode is not None else -1
+        else:
+            # Original blocking behavior
+            try:
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
+                exit_code = proc.returncode
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout_bytes, stderr_bytes = proc.communicate()
+                exit_code = -1
+                timed_out = True
+            stdout = stdout_bytes.decode('utf-8', errors='replace')
+            stderr = stderr_bytes.decode('utf-8', errors='replace')
+
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         return {
@@ -331,8 +376,6 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         }
 
     duration_ms = int((time.time() - start_time) * 1000)
-    stdout = stdout_bytes.decode('utf-8', errors='replace')
-    stderr = stderr_bytes.decode('utf-8', errors='replace')
 
     # Build execution log
     log_lines = [
@@ -546,12 +589,28 @@ def execute_run(run_id, script_paths, options=None):
             # Release DB connection before subprocess wait
             connection.close()
 
+            # Live log callback — updates execution_log in DB periodically
+            # so the UI can show Playwright output in real time
+            def _log_callback(stdout_so_far):
+                try:
+                    # Truncate to last 10KB to keep DB writes small
+                    log_preview = f'[Live] Running: {script_path}\n\n{stdout_so_far[-10000:]}'
+                    with connection.cursor() as cur:
+                        cur.execute(
+                            "UPDATE test_run_scripts SET execution_log = %s WHERE id = %s",
+                            [log_preview, run_script_id]
+                        )
+                    connection.close()
+                except Exception:
+                    pass
+
             result = execute_script(
                 script_path,
                 project=script_project,
                 env_vars=env_vars if env_vars else None,
                 viewport=entry['viewport'],
                 update_snapshots=is_baseline_run,
+                log_callback=_log_callback,
             )
 
             # Archive artifacts to persistent storage

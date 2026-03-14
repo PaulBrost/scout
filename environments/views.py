@@ -77,6 +77,17 @@ def _build_launcher_config(post):
     if item_selectors:
         config['item_selectors'] = item_selectors
 
+    # Screen navigation config (used by navigateAllScreens)
+    for field in ['end_indicator', 'done_button', 'video_progress_selector']:
+        val = post.get(field, '').strip()
+        if val:
+            config[field] = val
+    if post.get('max_screens', '').strip():
+        try:
+            config['max_screens'] = int(post['max_screens'])
+        except ValueError:
+            pass
+
     return config
 
 
@@ -139,7 +150,15 @@ def environment_update(request, env_id):
     notes = request.POST.get('notes', '') or None
     is_default = request.POST.get('is_default') == 'on'
 
-    creds = {}
+    # Merge credentials with existing — don't wipe password when field is left blank
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT credentials FROM environments WHERE id = %s', [env_id])
+        row = cursor.fetchone()
+    existing_creds = {}
+    if row and row[0]:
+        existing_creds = row[0] if isinstance(row[0], dict) else json.loads(row[0]) if isinstance(row[0], str) else {}
+
+    creds = dict(existing_creds)
     if request.POST.get('username'):
         creds['username'] = request.POST.get('username')
     if request.POST.get('password'):

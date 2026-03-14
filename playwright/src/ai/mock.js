@@ -119,7 +119,7 @@ test.describe('Mock Generated Test', () => {
   test('placeholder test @smoke', async ({ page }) => {
     // This is a mock-generated test. Replace with actual implementation.
     await loginAndNavigate(page, getItemUrl('001'));
-    await expect(page).toHaveScreenshot('mock-test.png');
+    await page.screenshot({ path: 'test-results/mock-test.png', fullPage: true });
   });
 });
 `;

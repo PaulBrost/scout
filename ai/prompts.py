@@ -50,7 +50,8 @@ Generate clean, well-commented Playwright tests using:
 - @playwright/test framework
 - Helper functions from src/helpers/
 - test.describe() blocks with descriptive names
-- Proper assertions (toBeVisible, toHaveText, toHaveScreenshot)
+- Proper assertions (toBeVisible, toHaveText)
+- page.screenshot() for captures (SCOUT handles baseline comparison — do NOT use toHaveScreenshot)
 - @smoke, @visual, @content, @feature tags{helper_section}
 
 Return ONLY the JavaScript code, no explanation."""

@@ -74,6 +74,27 @@
   </div>
 </div>
 
+<!-- Run progress (shown while running) -->
+<div class="card border-0 shadow-sm mb-4 d-none" id="runProgressCard">
+  <div class="card-body py-2">
+    <div class="d-flex align-items-center justify-content-between mb-1">
+      <span class="small fw-semibold" id="runProgressLabel">Running...</span>
+      <span class="small text-muted" id="runProgressElapsed"></span>
+    </div>
+    <div class="progress" style="height:6px">
+      <div class="progress-bar bg-success" id="runProgressBar" role="progressbar" style="width:0%"></div>
+    </div>
+    <!-- Live output panel -->
+    <div class="d-none mt-2" id="liveOutputPanel">
+      <div class="d-flex align-items-center justify-content-between">
+        <span class="small text-muted">Live Output</span>
+        <button class="btn btn-sm btn-link text-muted p-0" onclick="toggleLiveOutput()" id="liveOutputToggle" style="font-size:.75rem">Show</button>
+      </div>
+      <pre class="bg-dark text-light p-2 rounded small d-none" id="liveOutputContent" style="max-height:300px;overflow-y:auto;font-size:.7rem;white-space:pre-wrap;word-break:break-all"></pre>
+    </div>
+  </div>
+</div>
+
 <div class="card border-0 shadow-sm">
   <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
     Test Results
@@ -419,16 +440,37 @@ function pollRunStatus() {
         summaryEl.querySelector('.summary-values').innerHTML = html;
       }
 
-      // Update script rows
+      // Update script rows and compute progress
       if (d.scripts) {
+        var totalScripts = d.scripts.length;
+        var completedScripts = 0;
+        var runningScript = null;
+
         d.scripts.forEach(function(s) {
           var row = document.getElementById('script-' + s.id);
           if (!row) return;
           row.querySelector('.script-status').innerHTML = statusBadgeHtml(s.status);
-          row.querySelector('.script-duration').textContent = formatDuration(s.duration_ms);
 
           var startedCell = row.querySelector('.script-started');
           if (startedCell) startedCell.textContent = formatTime(s.started_at);
+
+          // Duration: show live elapsed for running scripts, final for completed
+          var durationCell = row.querySelector('.script-duration');
+          if (s.duration_ms) {
+            durationCell.textContent = formatDuration(s.duration_ms);
+          } else if (s.status === 'running' && s.started_at) {
+            var elapsed = Date.now() - new Date(s.started_at).getTime();
+            durationCell.innerHTML = '<span class="text-info">' + formatDuration(elapsed) + '\u2026</span>';
+          } else {
+            durationCell.textContent = '\u2014';
+          }
+
+          // Track progress
+          if (s.status === 'passed' || s.status === 'failed' || s.status === 'error' || s.status === 'cancelled') {
+            completedScripts++;
+          } else if (s.status === 'running') {
+            runningScript = s;
+          }
 
           var errCell = row.querySelector('.script-error');
           if (s.error_message) {
@@ -449,6 +491,53 @@ function pollRunStatus() {
             actionsCell.insertBefore(btn, actionsCell.firstChild);
           }
         });
+
+        // Update progress card
+        var progressCard = document.getElementById('runProgressCard');
+        if (d.status === 'running' || d.status === 'scheduled') {
+          progressCard.classList.remove('d-none');
+          var pct = totalScripts > 0 ? Math.round((completedScripts / totalScripts) * 100) : 0;
+          document.getElementById('runProgressBar').style.width = pct + '%';
+
+          var label = 'Running';
+          if (runningScript) {
+            var scriptName = runningScript.script_path.replace(/\.spec\.js$/, '').replace(/.*\//, '');
+            label = 'Running script ' + (completedScripts + 1) + ' of ' + totalScripts + ': ' + scriptName;
+          } else if (completedScripts === 0) {
+            label = 'Waiting to start (' + totalScripts + ' script' + (totalScripts === 1 ? '' : 's') + ' queued)';
+          }
+          document.getElementById('runProgressLabel').textContent = label;
+
+          // Show overall elapsed
+          var runStarted = d.started_at ? new Date(d.started_at) : (d.queued_at ? new Date(d.queued_at) : null);
+          if (runStarted) {
+            var totalElapsed = Date.now() - runStarted.getTime();
+            document.getElementById('runProgressElapsed').textContent = formatDuration(totalElapsed) + ' elapsed';
+          }
+
+          // Show live output if available
+          var livePanel = document.getElementById('liveOutputPanel');
+          var liveContent = document.getElementById('liveOutputContent');
+          if (runningScript && runningScript.live_log) {
+            livePanel.classList.remove('d-none');
+            // Strip the [Live] prefix for display
+            var logText = runningScript.live_log.replace(/^\[Live\] Running:.*\n\n/, '');
+            liveContent.textContent = logText || 'Waiting for output...';
+            // Auto-scroll to bottom
+            if (!liveContent.classList.contains('d-none')) {
+              liveContent.scrollTop = liveContent.scrollHeight;
+            }
+          } else if (runningScript) {
+            livePanel.classList.remove('d-none');
+            if (!liveContent.textContent) {
+              liveContent.textContent = 'Waiting for output...';
+            }
+          } else {
+            livePanel.classList.add('d-none');
+          }
+        } else {
+          progressCard.classList.add('d-none');
+        }
       }
 
       // When run finishes, reload page to show screenshots and final state
@@ -469,6 +558,7 @@ function escapeHtml(text) {
 
 function formatDuration(ms) {
   if (!ms) return '\u2014';
+  if (ms < 0) return '0s';
   if (ms < 1000) return ms + 'ms';
   var total = Math.floor(ms / 1000);
   var h = Math.floor(total / 3600);
@@ -612,6 +702,19 @@ function doToggleFlag(id, forceFlagged, notes) {
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
+}
+
+function toggleLiveOutput() {
+  var content = document.getElementById('liveOutputContent');
+  var toggle = document.getElementById('liveOutputToggle');
+  if (content.classList.contains('d-none')) {
+    content.classList.remove('d-none');
+    toggle.textContent = 'Hide';
+    content.scrollTop = content.scrollHeight;
+  } else {
+    content.classList.add('d-none');
+    toggle.textContent = 'Show';
+  }
 }
 
 function cancelRun() {

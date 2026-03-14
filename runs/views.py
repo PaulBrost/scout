@@ -179,7 +179,7 @@ def detail(request, run_id):
         cursor.execute(
             """SELECT * FROM run_screenshots WHERE run_id = %s
                ORDER BY regexp_replace(name, '\\d+', '', 'g'),
-                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::int, 0),
+                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::numeric, 0),
                         name""",
             [run_id]
         )
@@ -277,6 +277,7 @@ def api_run_status(request, run_id):
         cursor.execute(
             """SELECT id, script_path, status, duration_ms, error_message,
                       execution_log IS NOT NULL AS has_log,
+                      CASE WHEN status = 'running' THEN execution_log ELSE NULL END AS live_log,
                       started_at, completed_at, browser, viewport
                FROM test_run_scripts WHERE run_id = %s
                ORDER BY completed_at DESC NULLS LAST, script_path""",

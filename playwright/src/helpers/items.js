@@ -353,6 +353,126 @@ async function openScratchwork(page) {
   await page.waitForTimeout(300);
 }
 
+/**
+ * If a video is present on the current screen, skip it by clicking near the end of the progress bar.
+ * Uses the video_progress_selector from launcher_config. If not configured, tries common selectors.
+ * @param {import('@playwright/test').Page} page
+ * @param {object} launcherConfig - launcher_config from environment
+ */
+async function skipVideoIfPresent(page, launcherConfig = {}) {
+  const selectors = [
+    launcherConfig.video_progress_selector,
+    'video',                          // HTML5 <video> element
+    '.video-progress',                // Common progress bar class
+    '[class*="progress-bar"]',        // Progress bar variations
+  ].filter(Boolean);
+
+  for (const sel of selectors) {
+    try {
+      const el = page.locator(sel).first();
+      const isVisible = await el.isVisible({ timeout: 1000 });
+      if (!isVisible) continue;
+
+      if (sel === 'video') {
+        // For HTML5 video, seek to near the end via JS
+        await page.evaluate(() => {
+          const video = document.querySelector('video');
+          if (video && video.duration) {
+            video.currentTime = video.duration - 0.5;
+          }
+        });
+        await page.waitForTimeout(1500);
+        return true;
+      } else {
+        // For progress bars, click near the end (95% from left)
+        const box = await el.boundingBox();
+        if (box && box.width > 10) {
+          await page.mouse.click(box.x + box.width * 0.95, box.y + box.height / 2);
+          await page.waitForTimeout(1500);
+          return true;
+        }
+      }
+    } catch {
+      // Selector not found, try next
+    }
+  }
+  return false;
+}
+
+/**
+ * Navigate through ALL screens (intro + items + end) of a CRA/NAEP assessment.
+ * Calls onScreen on each screen before advancing. Detects end of assessment via
+ * configurable selectors or when Next cannot be clicked.
+ *
+ * Config read from envConfig.launcher_config:
+ *   - end_indicator: CSS selector for element visible on the final screen
+ *   - done_button: CSS selector for OK/Done/Finish button on end screen
+ *   - video_progress_selector: CSS selector for video progress bar
+ *   - max_screens: safety limit (default 100)
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {object|null} envConfig - Environment config from SCOUT_ENV_CONFIG
+ * @param {function} onScreen - async callback(page, screenIndex) called on each screen
+ * @returns {Promise<number>} Total number of screens visited
+ */
+async function navigateAllScreens(page, envConfig, onScreen) {
+  const lc = (envConfig && envConfig.launcher_config) || {};
+  const maxScreens = lc.max_screens || 100;
+  let screenIndex = 1;
+
+  while (screenIndex <= maxScreens) {
+    await page.waitForLoadState('networkidle');
+
+    // Handle video screens — seek to end before screenshotting
+    await skipVideoIfPresent(page, lc);
+
+    // Call user's callback on this screen
+    await onScreen(page, screenIndex);
+
+    // Check if we've reached the end indicator
+    if (lc.end_indicator) {
+      try {
+        const endEl = page.locator(lc.end_indicator);
+        if (await endEl.isVisible({ timeout: 1000 })) {
+          // Click done/OK button if configured
+          if (lc.done_button) {
+            try {
+              const doneBtn = page.locator(lc.done_button);
+              if (await doneBtn.isVisible({ timeout: 2000 })) {
+                await doneBtn.click();
+                await page.waitForTimeout(500);
+              }
+            } catch { /* done button not found */ }
+          }
+          break;
+        }
+      } catch { /* end indicator not visible, continue */ }
+    }
+
+    // Try to advance — force-click handles disabled buttons (audio/video gates)
+    try {
+      const nextExists = await page.locator('#nextButton').count();
+      if (nextExists === 0) break; // No next button at all — we're done
+
+      // Check if next button is visible and not permanently hidden
+      const nextVisible = await page.locator('#nextButton').isVisible({ timeout: 2000 });
+      if (!nextVisible) break;
+
+      await forceClickNext(page);
+    } catch {
+      // Can't advance — end of assessment
+      break;
+    }
+
+    screenIndex++;
+  }
+
+  // Handle end-of-assessment dialog (NAEP shows confirmation on last Next click)
+  // The forceClickNext dialog handler accepts these automatically
+
+  return screenIndex;
+}
+
 module.exports = {
   TEST_FORMS,
   INTRO_SCREENS,
@@ -372,4 +492,6 @@ module.exports = {
   openHelp,
   closeHelp,
   openScratchwork,
+  skipVideoIfPresent,
+  navigateAllScreens,
 };

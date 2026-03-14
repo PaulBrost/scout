@@ -62,7 +62,7 @@ const {{ loginAndNavigate }} = require('../../src/helpers/auth');
 test.describe('Mock Generated Test', () => {{
   test('placeholder test @smoke', async ({{ page }}) => {{
     await loginAndNavigate(page, '/items/001');
-    await expect(page).toHaveScreenshot('mock-test.png');
+    await page.screenshot({{ path: 'test-results/mock-test.png', fullPage: true }});
   }});
 }});
 """

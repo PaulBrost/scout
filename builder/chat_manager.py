@@ -67,9 +67,9 @@ Adapt these working examples for standard requests. Replace item names, form key
 
 ### Baseline Screenshots (CRA)
 ```javascript
-const { test, expect } = require('@playwright/test');
+const { test } = require('@playwright/test');
 const { loginAndStartTest } = require('../src/helpers/auth');
-const { clickNext, extractItemText } = require('../src/helpers/items');
+const { navigateAllScreens } = require('../src/helpers/items');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
@@ -78,14 +78,12 @@ function loadEnvConfig() {
 test('Baseline screenshots — CRA Form 1', async ({ page }) => {
   test.setTimeout(300000);
   const envConfig = loadEnvConfig();
-  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig });
+  // skipIntro: false to capture intro/tutorial screens as part of the baseline
+  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig, skipIntro: false });
 
-  const TOTAL_ITEMS = 25;
-  for (let i = 1; i <= TOTAL_ITEMS; i++) {
-    await page.waitForLoadState('networkidle');
-    await expect.soft(page).toHaveScreenshot(`item-${i}.png`, { fullPage: true });
-    if (i < TOTAL_ITEMS) await clickNext(page);
-  }
+  await navigateAllScreens(page, envConfig, async (pg, idx) => {
+    await pg.screenshot({ path: `test-results/screen-${idx}.png`, fullPage: true });
+  });
 });
 ```
 
@@ -109,7 +107,7 @@ test('Baseline screenshots — PIAAC items', async ({ page }) => {
   for (const item of items) {
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
-      await expect.soft(pg).toHaveScreenshot(`${item.itemId}-screen-${idx}.png`, { fullPage: true });
+      await pg.screenshot({ path: `test-results/${item.itemId}-screen-${idx}.png`, fullPage: true });
     });
     await itemPage.close();
   }
@@ -286,8 +284,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  }\n'
     prompt += '  ```\n'
     prompt += '- Then pass it to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
-    prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n'
-    prompt += '- IMPORTANT: Always use `expect.soft(page).toHaveScreenshot()` (NOT `expect(page).toHaveScreenshot()`) for screenshot comparisons. Soft assertions let the test continue capturing all screenshots even when some do not match the baseline. Mismatches are tracked as issues, not test failures.\n'
+    prompt += '- Use `page.screenshot({ path: `test-results/name.png`, fullPage: true })` to capture screenshots. SCOUT handles baseline comparison — do NOT use Playwright\'s `toHaveScreenshot()` assertion.\n'
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
@@ -297,11 +294,13 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  ```\n'
     prompt += '  const { navigateItemScreens } = require("../../src/helpers/piaac");\n'
     prompt += '  await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {\n'
-    prompt += '    await expect.soft(pg).toHaveScreenshot(`${itemId}-screen-${idx}.png`, { fullPage: true });\n'
+    prompt += '    await pg.screenshot({ path: `test-results/${itemId}-screen-${idx}.png`, fullPage: true });\n'
     prompt += '  });\n'
     prompt += '  ```\n'
     prompt += '- Do NOT hardcode Next/Finish/Continue button selectors in test scripts. Always use `navigateItemScreens()` which reads selectors from the environment config.\n'
-    prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n\n'
+    prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n'
+    prompt += '- For NAEP/CRA **baseline** tests, use `navigateAllScreens(page, envConfig, onScreen)` from `src/helpers/items.js` instead of a TOTAL_ITEMS loop. It walks through ALL screens (intro, items, end) automatically, handles video screens by seeking to end, and detects end-of-assessment via configurable selectors in `launcher_config`. Pass `skipIntro: false` to `loginAndStartTest` so intro screens are captured.\n'
+    prompt += '- For NAEP/CRA non-baseline tests that only need assessment items (not intros), use `loginAndStartTest` with default `skipIntro: true` and a TOTAL_ITEMS loop with `clickNext()`.\n\n'
 
     # QC Checklist instructions
     prompt += '## QC Checklist Tests\n'
@@ -522,7 +521,7 @@ def _build_test_template(args, context, project_root):
     # Build templates per type and platform
     if template_type == 'baseline':
         if env_platform == 'piaac':
-            code = f"""const {{ test, expect }} = require('@playwright/test');
+            code = f"""const {{ test }} = require('@playwright/test');
 const {{ login }} = require('../src/helpers/auth');
 const {{ selectFilters, getItemLinks, openItem, navigateItemScreens }} = require('../src/helpers/piaac');
 
@@ -538,29 +537,27 @@ test('Baseline screenshots — {sc.get("assessmentName", "PIAAC")}', async ({{ p
   for (const item of items) {{
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
-      await expect.soft(pg).toHaveScreenshot(`${{item.itemId}}-screen-${{idx}}.png`, {{ fullPage: true }});
+      await pg.screenshot({{ path: `test-results/${{item.itemId}}-screen-${{idx}}.png`, fullPage: true }});
     }});
     await itemPage.close();
   }}
 }});"""
         else:
-            code = f"""const {{ test, expect }} = require('@playwright/test');
+            code = f"""const {{ test }} = require('@playwright/test');
 const {{ loginAndStartTest }} = require('../src/helpers/auth');
-const {{ clickNext }} = require('../src/helpers/items');
+const {{ navigateAllScreens }} = require('../src/helpers/items');
 
 {env_config_block}
 
 test('Baseline screenshots — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
   test.setTimeout(300000);
   const envConfig = loadEnvConfig();
-  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+  // skipIntro: false to capture intro/tutorial screens as part of the baseline
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig, skipIntro: false }});
 
-  const TOTAL_ITEMS = {total_items};
-  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveScreenshot(`item-${{i}}.png`, {{ fullPage: true }});
-    if (i < TOTAL_ITEMS) await clickNext(page);
-  }}
+  await navigateAllScreens(page, envConfig, async (pg, idx) => {{
+    await pg.screenshot({{ path: `test-results/screen-${{idx}}.png`, fullPage: true }});
+  }});
 }});"""
 
     elif template_type == 'ai_content':

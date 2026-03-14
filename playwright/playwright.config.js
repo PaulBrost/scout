@@ -43,15 +43,15 @@ module.exports = {
   projects: [
     {
       name: 'chrome-desktop',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], ...(viewportOverride ? { viewport: viewportOverride } : {}) },
     },
     {
       name: 'firefox-desktop',
-      use: { ...devices['Desktop Firefox'] },
+      use: { ...devices['Desktop Firefox'], ...(viewportOverride ? { viewport: viewportOverride } : {}) },
     },
     {
       name: 'webkit-desktop',
-      use: { ...devices['Desktop Safari'] },
+      use: { ...devices['Desktop Safari'], ...(viewportOverride ? { viewport: viewportOverride } : {}) },
     },
   ],
 

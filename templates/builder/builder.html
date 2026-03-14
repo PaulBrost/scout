@@ -115,7 +115,7 @@
                       <p class="text-muted mb-1" style="font-size:.72rem">Capture reference screenshots for an item in a specific locale. These become the baseline for future comparisons.</p>
                       <a href="#" class="d-block text-decoration-none prompt-example mb-1 p-2 rounded" style="background:#f0f4ff;font-size:.75rem"
                          onclick="usePrompt(this.dataset.prompt); return false"
-                         data-prompt="Write a test that logs in, navigates to this item, and captures a full-page screenshot of every screen. Use toHaveScreenshot() for each capture so Playwright stores the baseline automatically.">
+                         data-prompt="Write a baseline test that logs in and captures a full-page screenshot of every screen including intro/tutorial screens. Use navigateAllScreens() with skipIntro: false to walk through all screens. Use page.screenshot() for each capture — SCOUT handles baseline comparison automatically.">
                         <i class="bi bi-arrow-right-short"></i> Capture baseline screenshots for this item
                       </a>
                     </div>

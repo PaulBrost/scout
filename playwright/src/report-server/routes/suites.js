@@ -72,7 +72,7 @@ function generateMockLog(scriptPath, status, durationMs) {
     t += 300 + Math.floor(Math.random() * 200);
     steps.push('[' + t + 'ms] ✓ Screenshot captured (1366×768)');
     t += 100;
-    steps.push('[' + t + 'ms] ▶ expect(page).toHaveScreenshot(\'item-042.png\', { maxDiffPixelRatio: 0.01 })');
+    steps.push('[' + t + 'ms] ▶ page.screenshot({ path: \'test-results/item-042.png\', fullPage: true })');
   } else if (filename.includes('content') || filename.includes('spelling')) {
     t += 100;
     steps.push('[' + t + 'ms] ▶ page.locator(\'.item-content\').textContent()');
