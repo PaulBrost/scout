@@ -169,20 +169,8 @@ def api_create_script(request):
         if not environment_id:
             return JsonResponse({'error': 'Environment is required'}, status=400)
 
-        # Sanitize name into a valid filename
-        safe_name = name.replace(' ', '-').lower()
-        safe_name = ''.join(c for c in safe_name if c.isalnum() or c in '-_')
-        if not safe_name:
-            safe_name = 'new-script'
-        if not safe_name.endswith('.spec.js'):
-            safe_name += '.spec.js'
-
-        # Check for duplicates
-        script_path = safe_name
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT 1 FROM test_scripts WHERE script_path = %s', [script_path])
-            if cursor.fetchone():
-                return JsonResponse({'error': f'Script "{script_path}" already exists'}, status=409)
+        import uuid as _uuid
+        script_path = f'{_uuid.uuid4()}.spec.js'
 
         # Create the file on disk with a starter template
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
@@ -201,9 +189,9 @@ def api_create_script(request):
         # Register in DB
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, environment_id, assessment_id, description, test_type, tags, ai_config, created_at, updated_at)
-                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())""",
-                [script_path, environment_id, assessment_id, f'Test script for {name}']
+                """INSERT INTO test_scripts (script_path, environment_id, assessment_id, description, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
+                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())""",
+                [script_path, environment_id, assessment_id, name]
             )
 
         return JsonResponse({'ok': True, 'path': script_path})

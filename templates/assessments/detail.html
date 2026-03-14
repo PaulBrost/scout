@@ -122,24 +122,22 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th>Script Path</th>
+          <th>Test Name</th>
           <th>Category</th>
           <th>Item</th>
-          <th>Description</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody id="scriptsTableBody">
         {% for s in scripts %}
         <tr>
-          <td class="font-monospace small">
-            <a href="/builder/?file={{ s.script_path|urlencode }}">{{ s.script_path }}</a>
+          <td class="small">
+            <a href="/builder/?file={{ s.script_path|urlencode }}">{{ s.description|default:s.script_path }}</a>
           </td>
           <td>{{ s.category|default:"—" }}</td>
           <td class="small">
             {% if s.item_id %}{{ s.item_id }}{% if s.item_title %} <span class="text-muted">— {{ s.item_title|truncatechars:30 }}</span>{% endif %}{% else %}—{% endif %}
           </td>
-          <td class="small text-muted">{{ s.description|default:"—"|truncatechars:60 }}</td>
           <td class="text-nowrap">
             <a href="/builder/?file={{ s.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i> Edit
@@ -147,7 +145,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr id="noScriptsRow"><td colspan="5" class="text-muted text-center py-4">
+        <tr id="noScriptsRow"><td colspan="4" class="text-muted text-center py-4">
           No test scripts for this assessment.
         </td></tr>
         {% endfor %}

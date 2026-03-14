@@ -85,8 +85,8 @@
       <tbody id="scriptsTableBody">
         {% for s in scripts %}
         <tr>
-          <td class="font-monospace small">
-            <a href="/builder/?file={{ s.script_path|urlencode }}">{{ s.script_path }}</a>
+          <td class="small">
+            <a href="/builder/?file={{ s.script_path|urlencode }}">{{ s.description|default:s.script_path }}</a>
           </td>
           <td>{{ s.category|default:"—" }}</td>
           <td class="text-nowrap">

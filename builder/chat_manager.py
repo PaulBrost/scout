@@ -68,8 +68,8 @@ Adapt these working examples for standard requests. Replace item names, form key
 ### Baseline Screenshots (CRA)
 ```javascript
 const { test, expect } = require('@playwright/test');
-const { loginAndStartTest } = require('../../src/helpers/auth');
-const { clickNext, extractItemText } = require('../../src/helpers/items');
+const { loginAndStartTest } = require('../src/helpers/auth');
+const { clickNext, extractItemText } = require('../src/helpers/items');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
@@ -83,7 +83,7 @@ test('Baseline screenshots — CRA Form 1', async ({ page }) => {
   const TOTAL_ITEMS = 25;
   for (let i = 1; i <= TOTAL_ITEMS; i++) {
     await page.waitForLoadState('networkidle');
-    await expect(page).toHaveScreenshot(`item-${i}.png`, { fullPage: true });
+    await expect.soft(page).toHaveScreenshot(`item-${i}.png`, { fullPage: true });
     if (i < TOTAL_ITEMS) await clickNext(page);
   }
 });
@@ -92,8 +92,8 @@ test('Baseline screenshots — CRA Form 1', async ({ page }) => {
 ### Baseline Screenshots (PIAAC)
 ```javascript
 const { test, expect } = require('@playwright/test');
-const { login } = require('../../src/helpers/auth');
-const { selectFilters, getItemLinks, openItem } = require('../../src/helpers/piaac');
+const { login } = require('../src/helpers/auth');
+const { selectFilters, getItemLinks, openItem, navigateItemScreens } = require('../src/helpers/piaac');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
@@ -108,8 +108,9 @@ test('Baseline screenshots — PIAAC items', async ({ page }) => {
 
   for (const item of items) {
     const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    await expect(itemPage).toHaveScreenshot(`${item.itemId}.png`, { fullPage: true });
+    await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
+      await expect.soft(pg).toHaveScreenshot(`${item.itemId}-screen-${idx}.png`, { fullPage: true });
+    });
     await itemPage.close();
   }
 });
@@ -118,9 +119,9 @@ test('Baseline screenshots — PIAAC items', async ({ page }) => {
 ### Spelling & Grammar Check (CRA)
 ```javascript
 const { test, expect } = require('@playwright/test');
-const { loginAndStartTest } = require('../../src/helpers/auth');
-const { clickNext, extractItemText } = require('../../src/helpers/items');
-const { analyzeItemText } = require('../../src/helpers/ai');
+const { loginAndStartTest } = require('../src/helpers/auth');
+const { clickNext, extractItemText } = require('../src/helpers/items');
+const { analyzeItemText } = require('../src/helpers/ai');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
@@ -153,9 +154,9 @@ test('Spelling & grammar check — CRA Form 1', async ({ page }) => {
 ### AI Visual Inspection (CRA)
 ```javascript
 const { test, expect } = require('@playwright/test');
-const { loginAndStartTest } = require('../../src/helpers/auth');
-const { clickNext } = require('../../src/helpers/items');
-const { analyzeItemScreenshot } = require('../../src/helpers/ai');
+const { loginAndStartTest } = require('../src/helpers/auth');
+const { clickNext } = require('../src/helpers/items');
+const { analyzeItemScreenshot } = require('../src/helpers/ai');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
@@ -188,8 +189,8 @@ test('AI visual inspection — CRA Form 1', async ({ page }) => {
 ### Visual Comparison (cross-locale with pixelmatch)
 ```javascript
 const { test, expect } = require('@playwright/test');
-const { login } = require('../../src/helpers/auth');
-const { selectFilters, getItemLinks, openItem } = require('../../src/helpers/piaac');
+const { login } = require('../src/helpers/auth');
+const { selectFilters, getItemLinks, openItem } = require('../src/helpers/piaac');
 const fs = require('fs');
 const { PNG } = require('pngjs');
 const pixelmatch = require('pixelmatch');
@@ -241,7 +242,7 @@ IMPORTANT: When adapting these reference scripts, adjust the formKey, filter val
 """
 
 
-def build_system_prompt(current_code, filename, script_context=None):
+def build_system_prompt(current_code, filename, script_context=None, current_summary=None):
     """Build system prompt with tool descriptions, current code, and assessment/item context."""
     try:
         with connection.cursor() as cursor:
@@ -264,7 +265,10 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '## Tool Calling Format\nWhen you need to use a tool, include ONE tool per code block:\n'
     prompt += '```tool\n{"tool": "tool_id", "args": {"param": "value"}}\n```\n'
     prompt += 'For multiple tools, use SEPARATE ```tool blocks for each.\n'
-    prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n\n'
+    prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n'
+    prompt += 'CRITICAL: The `summary` parameter of `update_code` must be a COMPLETE description of what the ENTIRE test does — not just the latest change. '
+    prompt += 'Review the full code you are submitting and write a summary that covers every major step and behavior of the test. '
+    prompt += 'This summary is displayed to users as the test description, so it must accurately reflect the whole script.\n\n'
     prompt += '## Fast Path for Test Generation\n'
     prompt += 'When asked to CREATE a new test script, ALWAYS call `get_test_template` FIRST with the appropriate type '
     prompt += '(baseline, ai_content, ai_visual, qc_checklist, functional, visual_comparison). '
@@ -273,7 +277,7 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += 'do NOT call list_helpers, read_file, search_tests, or get_items unless the template is insufficient.\n\n'
     prompt += '## Code Conventions\n'
     prompt += '- Use CommonJS `require()` syntax, NOT ES module `import` syntax.\n'
-    prompt += '- Scripts in `tests/` import helpers with `../src/helpers/` paths. Scripts in `tests/items/` or `tests/generated/` use `../../src/helpers/`.\n'
+    prompt += '- All scripts are saved to `tests/` and MUST use `../src/helpers/` for require paths. NEVER use `../../src/helpers/` — that is wrong.\n'
     prompt += '- IMPORTANT: There is NO `src/helpers/config` module. Do NOT require or import it.\n'
     prompt += '- Environment config is loaded inline via `process.env.SCOUT_ENV_CONFIG`:\n'
     prompt += '  ```\n'
@@ -283,11 +287,20 @@ def build_system_prompt(current_code, filename, script_context=None):
     prompt += '  ```\n'
     prompt += '- Then pass it to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
     prompt += '- Use Playwright built-in `toHaveScreenshot()` or `page.screenshot()` for captures.\n'
+    prompt += '- IMPORTANT: Always use `expect.soft(page).toHaveScreenshot()` (NOT `expect(page).toHaveScreenshot()`) for screenshot comparisons. Soft assertions let the test continue capturing all screenshots even when some do not match the baseline. Mismatches are tracked as issues, not test failures.\n'
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
     prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
+    prompt += '- For PIAAC in-item navigation (multi-screen items), use `navigateItemScreens(itemPage, envConfig, onScreen)` from `src/helpers/piaac.js`. It reads Next/Finish/Continue selectors from the environment\'s `launcher_config.item_selectors` (configured by admins). The `onScreen` callback receives `(itemPage, screenIndex)` and is called on each screen. Example:\n'
+    prompt += '  ```\n'
+    prompt += '  const { navigateItemScreens } = require("../../src/helpers/piaac");\n'
+    prompt += '  await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {\n'
+    prompt += '    await expect.soft(pg).toHaveScreenshot(`${itemId}-screen-${idx}.png`, { fullPage: true });\n'
+    prompt += '  });\n'
+    prompt += '  ```\n'
+    prompt += '- Do NOT hardcode Next/Finish/Continue button selectors in test scripts. Always use `navigateItemScreens()` which reads selectors from the environment config.\n'
     prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n\n'
 
     # QC Checklist instructions
@@ -340,6 +353,10 @@ def build_system_prompt(current_code, filename, script_context=None):
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''
         prompt += f'## Current Script{fname_part}\nThe user is currently working with this code:\n```javascript\n{current_code}\n```\n'
+
+    if current_summary and current_summary.strip():
+        prompt += f'\n## Current Test Summary\nThe existing summary for this test is:\n> {current_summary.strip()}\n\n'
+        prompt += 'When you call `update_code`, your `summary` must incorporate and expand upon this existing summary to cover the full test behavior, not just the latest change.\n'
 
     return prompt
 
@@ -506,8 +523,8 @@ def _build_test_template(args, context, project_root):
     if template_type == 'baseline':
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem, navigateItemScreens }} = require('../src/helpers/piaac');
 
 {env_config_block}
 
@@ -520,15 +537,16 @@ test('Baseline screenshots — {sc.get("assessmentName", "PIAAC")}', async ({{ p
 
   for (const item of items) {{
     const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    await expect(itemPage).toHaveScreenshot(`${{item.itemId}}.png`, {{ fullPage: true }});
+    await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
+      await expect.soft(pg).toHaveScreenshot(`${{item.itemId}}-screen-${{idx}}.png`, {{ fullPage: true }});
+    }});
     await itemPage.close();
   }}
 }});"""
         else:
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../../src/helpers/auth');
-const {{ clickNext }} = require('../../src/helpers/items');
+const {{ loginAndStartTest }} = require('../src/helpers/auth');
+const {{ clickNext }} = require('../src/helpers/items');
 
 {env_config_block}
 
@@ -548,9 +566,9 @@ test('Baseline screenshots — {sc.get("assessmentName", "Assessment")}', async 
     elif template_type == 'ai_content':
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
-const {{ analyzeItemText }} = require('../../src/helpers/ai');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
+const {{ analyzeItemText }} = require('../src/helpers/ai');
 
 {env_config_block}
 
@@ -577,9 +595,9 @@ test('AI content check — {sc.get("assessmentName", "PIAAC")}', async ({{ page 
 }});"""
         else:
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../../src/helpers/auth');
-const {{ clickNext, extractItemText }} = require('../../src/helpers/items');
-const {{ analyzeItemText }} = require('../../src/helpers/ai');
+const {{ loginAndStartTest }} = require('../src/helpers/auth');
+const {{ clickNext, extractItemText }} = require('../src/helpers/items');
+const {{ analyzeItemText }} = require('../src/helpers/ai');
 
 {env_config_block}
 
@@ -606,9 +624,9 @@ test('AI content check — {sc.get("assessmentName", "Assessment")}', async ({{ 
     elif template_type == 'ai_visual':
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
-const {{ analyzeItemScreenshot }} = require('../../src/helpers/ai');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
+const {{ analyzeItemScreenshot }} = require('../src/helpers/ai');
 
 {env_config_block}
 
@@ -635,9 +653,9 @@ test('AI visual inspection — {sc.get("assessmentName", "PIAAC")}', async ({{ p
 }});"""
         else:
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../../src/helpers/auth');
-const {{ clickNext }} = require('../../src/helpers/items');
-const {{ analyzeItemScreenshot }} = require('../../src/helpers/ai');
+const {{ loginAndStartTest }} = require('../src/helpers/auth');
+const {{ clickNext }} = require('../src/helpers/items');
+const {{ analyzeItemScreenshot }} = require('../src/helpers/ai');
 
 {env_config_block}
 
@@ -672,8 +690,8 @@ test('AI visual inspection — {sc.get("assessmentName", "Assessment")}', async 
 
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
 
 {env_config_block}
 
@@ -703,8 +721,8 @@ test.describe('QC Checklist — {sc.get("assessmentName", "PIAAC")}', () => {{
 }});"""
         else:
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../../src/helpers/auth');
-const {{ clickNext }} = require('../../src/helpers/items');
+const {{ loginAndStartTest }} = require('../src/helpers/auth');
+const {{ clickNext }} = require('../src/helpers/items');
 
 {env_config_block}
 
@@ -767,8 +785,8 @@ test.describe('QC Checklist — {sc.get("assessmentName", "Assessment")}', () =>
     elif template_type == 'functional':
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
 
 {env_config_block}
 
@@ -790,8 +808,8 @@ test('Functional test — {sc.get("assessmentName", "PIAAC")}', async ({{ page }
 }});"""
         else:
             code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../../src/helpers/auth');
-const {{ clickNext }} = require('../../src/helpers/items');
+const {{ loginAndStartTest }} = require('../src/helpers/auth');
+const {{ clickNext }} = require('../src/helpers/items');
 
 {env_config_block}
 
@@ -811,8 +829,8 @@ test('Functional test — {sc.get("assessmentName", "Assessment")}', async ({{ p
 
     elif template_type == 'visual_comparison':
         code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../../src/helpers/piaac');
+const {{ login }} = require('../src/helpers/auth');
+const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
 const fs = require('fs');
 const {{ PNG }} = require('pngjs');
 const pixelmatch = require('pixelmatch');
@@ -1083,7 +1101,7 @@ def _looks_like_planning(text):
     return bool(_PLANNING_PATTERNS.search(text))
 
 
-def chat(message, conversation_id, current_code, filename, script_context=None):
+def chat(message, conversation_id, current_code, filename, script_context=None, current_summary=None):
     """Process a chat message with an agentic tool loop.
 
     When the AI calls research tools (read_file, list_helpers, etc.) the
@@ -1116,7 +1134,7 @@ def chat(message, conversation_id, current_code, filename, script_context=None):
         messages = []
 
     # Build system prompt with assessment/item context
-    system_prompt = build_system_prompt(current_code, filename, script_context=script_context)
+    system_prompt = build_system_prompt(current_code, filename, script_context=script_context, current_summary=current_summary)
 
     # Add user message
     messages.append({'role': 'user', 'content': message})

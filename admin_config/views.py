@@ -1,4 +1,6 @@
 import json
+import shutil
+from pathlib import Path
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden
@@ -218,3 +220,239 @@ def test_provider(request):
             'error': str(e),
             'durationMs': duration_ms,
         })
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  General Settings
+# ═══════════════════════════════════════════════════════════════════
+
+def _load_json_val(val):
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            return val
+    return val
+
+
+@admin_required
+def general_settings(request):
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT key, value FROM ai_settings WHERE key IN ('archiving_enabled', 'archiving_retention_days')")
+        rows = {r[0]: r[1] for r in cursor.fetchall()}
+
+    return render(request, 'admin_config/general_settings.html', {
+        'archiving_enabled': _load_json_val(rows.get('archiving_enabled', False)),
+        'retention_days': _load_json_val(rows.get('archiving_retention_days', 30)),
+        'success': request.GET.get('success'),
+    })
+
+
+@admin_required
+def update_general_settings(request):
+    if request.method != 'POST':
+        return redirect('/admin-config/general/')
+    archiving_enabled = request.POST.get('archiving_enabled') == 'true'
+    retention_days = request.POST.get('archiving_retention_days', '30')
+    try:
+        retention_days = max(1, int(retention_days))
+    except (ValueError, TypeError):
+        retention_days = 30
+    with connection.cursor() as cursor:
+        _upsert_setting(cursor, 'archiving_enabled', archiving_enabled)
+        _upsert_setting(cursor, 'archiving_retention_days', retention_days)
+    return redirect('/admin-config/general/?success=1')
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Test Archives
+# ═══════════════════════════════════════════════════════════════════
+
+@admin_required
+def test_archives(request):
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT value FROM ai_settings WHERE key = 'archiving_enabled'")
+        row = cursor.fetchone()
+        archiving_enabled = _load_json_val(row[0]) if row else False
+
+        cursor.execute("""
+            SELECT a.id, a.script_path, a.description, a.test_type, a.browser, a.viewport,
+                   a.archived_at, a.expires_at, a.original_id,
+                   e.name AS environment_name, u.username AS archived_by_name
+            FROM test_script_archives a
+            LEFT JOIN environments e ON a.environment_id = e.id
+            LEFT JOIN auth_user u ON a.archived_by_id = u.id
+            ORDER BY a.archived_at DESC
+        """)
+        cols = [c[0] for c in cursor.description]
+        archives = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    return render(request, 'admin_config/test_archives.html', {
+        'archives': archives,
+        'archiving_enabled': archiving_enabled,
+        'success': request.GET.get('success'),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def restore_archive(request):
+    """Restore an archived test back to the active test_scripts table."""
+    try:
+        data = json.loads(request.body)
+        archive_id = data.get('id')
+        if not archive_id:
+            return JsonResponse({'error': 'id required'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT script_path, description, environment_id, item_id, assessment_id,
+                       test_type, ai_config, tags, category, test_summary, browser, viewport,
+                       file_content, original_created_at
+                FROM test_script_archives WHERE id = %s
+            """, [archive_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Archive not found'}, status=404)
+
+            (script_path, description, environment_id, item_id, assessment_id,
+             test_type, ai_config, tags, category, test_summary, browser, viewport,
+             file_content, original_created_at) = row
+
+            # Ensure ai_config / tags are JSON strings
+            if isinstance(ai_config, dict):
+                ai_config = json.dumps(ai_config)
+            elif not isinstance(ai_config, str):
+                ai_config = '{}'
+            if isinstance(tags, list):
+                tags = json.dumps(tags)
+            elif not isinstance(tags, str):
+                tags = '[]'
+
+            # Re-insert into test_scripts
+            cursor.execute("""
+                INSERT INTO test_scripts
+                    (script_path, description, environment_id, item_id, assessment_id,
+                     test_type, ai_config, tags, category, test_summary, browser, viewport,
+                     created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, COALESCE(%s, 'functional'),
+                        COALESCE(%s::jsonb, '{}'::jsonb), COALESCE(%s::jsonb, '[]'::jsonb),
+                        %s, %s, %s, %s, COALESCE(%s, now()), now())
+                ON CONFLICT (script_path) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    environment_id = EXCLUDED.environment_id,
+                    updated_at = now()
+            """, [script_path, description, str(environment_id) if environment_id else None,
+                  item_id, str(assessment_id) if assessment_id else None,
+                  test_type, ai_config, tags, category, test_summary,
+                  browser or 'chromium', viewport or '1920x1080', original_created_at])
+
+            # Restore file to disk
+            if file_content:
+                tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+                full_path = tests_dir / script_path
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                full_path.write_text(file_content, encoding='utf-8')
+
+            # Remove archive record
+            cursor.execute("DELETE FROM test_script_archives WHERE id = %s", [archive_id])
+
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def delete_archive(request):
+    """Permanently delete an archived test and its associated run history."""
+    try:
+        data = json.loads(request.body)
+        archive_id = data.get('id')
+        if not archive_id:
+            return JsonResponse({'error': 'id required'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT script_path FROM test_script_archives WHERE id = %s", [archive_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Archive not found'}, status=404)
+            script_path = row[0]
+
+            # Delete associated run data
+            _cascade_delete_run_data(cursor, script_path)
+
+            # Delete baselines
+            cursor.execute("DELETE FROM test_script_baselines WHERE script_path = %s", [script_path])
+
+            # Delete archive record
+            cursor.execute("DELETE FROM test_script_archives WHERE id = %s", [archive_id])
+
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def run_cleanup(request):
+    """Manually run cleanup of expired archives."""
+    try:
+        deleted = _cleanup_expired_archives()
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def _cascade_delete_run_data(cursor, script_path):
+    """Delete all run-related data for a given script_path."""
+    # Find all run_ids that have scripts matching this path
+    cursor.execute("""
+        SELECT DISTINCT run_id FROM test_run_scripts WHERE script_path = %s
+    """, [script_path])
+    run_ids = [r[0] for r in cursor.fetchall()]
+
+    if run_ids:
+        run_id_list = [str(rid) for rid in run_ids]
+        # Delete run_screenshots for these runs
+        cursor.execute("DELETE FROM run_screenshots WHERE run_id = ANY(%s::uuid[])", [run_id_list])
+        # Delete test_results + ai_analyses + reviews cascade via run
+        cursor.execute("""
+            DELETE FROM reviews WHERE analysis_id IN (
+                SELECT id FROM ai_analyses WHERE run_id = ANY(%s::uuid[])
+            )
+        """, [run_id_list])
+        cursor.execute("DELETE FROM ai_analyses WHERE run_id = ANY(%s::uuid[])", [run_id_list])
+        cursor.execute("DELETE FROM test_results WHERE run_id = ANY(%s::uuid[])", [run_id_list])
+
+    # Delete test_run_scripts for this script
+    cursor.execute("DELETE FROM test_run_scripts WHERE script_path = %s", [script_path])
+
+    if run_ids:
+        # Delete runs that no longer have any scripts
+        run_id_list = [str(rid) for rid in run_ids]
+        cursor.execute("""
+            DELETE FROM test_runs WHERE id = ANY(%s::uuid[])
+            AND NOT EXISTS (SELECT 1 FROM test_run_scripts WHERE run_id = test_runs.id)
+        """, [run_id_list])
+
+
+def _cleanup_expired_archives():
+    """Delete all archives past their expires_at date. Returns count deleted."""
+    deleted = 0
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, script_path FROM test_script_archives WHERE expires_at < now()
+        """)
+        expired = cursor.fetchall()
+
+        for archive_id, script_path in expired:
+            _cascade_delete_run_data(cursor, script_path)
+            cursor.execute("DELETE FROM test_script_baselines WHERE script_path = %s", [script_path])
+            cursor.execute("DELETE FROM test_script_archives WHERE id = %s", [archive_id])
+            deleted += 1
+
+    return deleted

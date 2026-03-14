@@ -48,6 +48,71 @@
               {% if environment.is_default %}checked{% endif %}>
             <label class="form-check-label" for="isDefault">Set as default environment</label>
           </div>
+
+          <hr>
+          <h6 class="fw-semibold mb-3">Launcher Configuration</h6>
+          <p class="text-muted small mb-3">Configure selectors used by Playwright helpers to start test sessions. Leave blank to use defaults.</p>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Form/Test Selector</label>
+              <input type="text" name="launcher_selector" class="form-control form-control-sm"
+                value="{{ launcher_config.launcher_selector|default:'' }}" placeholder="#TheTest">
+              <div class="form-text">CSS selector for the test form dropdown.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Submit Selector</label>
+              <input type="text" name="submit_selector" class="form-control form-control-sm"
+                value="{{ launcher_config.submit_selector|default:'' }}" placeholder="input[type=&quot;submit&quot;]">
+              <div class="form-text">CSS selector for the form submit button.</div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Intro Screens to Skip</label>
+            <input type="number" name="intro_screens" class="form-control form-control-sm" style="width:120px"
+              value="{{ launcher_config.intro_screens|default:'' }}" placeholder="5" min="0">
+            <div class="form-text">Number of intro/tutorial screens before assessment items.</div>
+          </div>
+
+          <hr>
+          <h6 class="fw-semibold mb-3">Item Navigation Selectors</h6>
+          <p class="text-muted small mb-3">CSS selectors for navigating within assessment items. Used by the <code>navigateItemScreens()</code> helper. Leave blank if the environment doesn't need in-item navigation.</p>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Next Button</label>
+              <input type="text" name="item_next_button" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.next_button|default:'' }}" placeholder="button:has-text(&quot;Next&quot;)">
+              <div class="form-text">Advances to the next screen within an item.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Finish Button</label>
+              <input type="text" name="item_finish_button" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.finish_button|default:'' }}" placeholder="button:has-text(&quot;Finish&quot;)">
+              <div class="form-text">Ends the item (last screen).</div>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Close/Exit Button</label>
+              <input type="text" name="item_close_button" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.close_button|default:'' }}" placeholder="button:has-text(&quot;Close&quot;)">
+              <div class="form-text">Closes or exits the item view.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Continue/Confirm Button</label>
+              <input type="text" name="item_continue_button" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.continue_button|default:'' }}" placeholder="button:has-text(&quot;Continue&quot;)">
+              <div class="form-text">Confirmation dialogs or proceed prompts.</div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Content Frame Selector</label>
+            <input type="text" name="item_content_frame" class="form-control form-control-sm"
+              value="{{ launcher_config.item_selectors.content_frame|default:'' }}" placeholder="iframe#content">
+            <div class="form-text">If item content renders inside an iframe, specify its selector here.</div>
+          </div>
+
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-save"></i> {% if environment %}Save Changes{% else %}Create Environment{% endif %}

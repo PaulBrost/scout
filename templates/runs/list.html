@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load core_filters %}
-{% block title %}Runs{% endblock %}
-{% block page_title %}Test Runs{% endblock %}
+{% block title %}Results{% endblock %}
+{% block page_title %}Test Results{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
@@ -68,7 +68,8 @@
             <span class="text-success">{{ run.summary.passed|default:0 }}p</span>
             <span class="text-muted">/</span>
             <span class="text-danger">{{ run.summary.failed|default:0 }}f</span>
-            {% if run.summary.errors %}<span class="text-muted">/ {{ run.summary.errors }}e</span>{% endif %}
+            {% if run.summary.errors %}<span class="text-muted">/</span> <span class="text-muted">{{ run.summary.errors }}e</span>{% endif %}
+            {% if run.summary.issues %}<span class="text-muted">/</span> <span class="text-warning">{{ run.summary.issues }}i</span>{% endif %}
             {% else %}—{% endif %}
           </td>
           <td class="text-end text-nowrap">

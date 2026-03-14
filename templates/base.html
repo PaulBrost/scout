@@ -158,7 +158,7 @@
 <body{% if request.COOKIES.sidebar_collapsed == '1' %} class="sidebar-collapsed"{% endif %}>
   <!-- Full-width brand bar -->
   <div id="brand-bar">
-    <div><img src="/static/img/scout-white.png" alt="Scout" style="height:22px;margin-right:.4rem;">SCOUT <span>v2</span></div>
+    <div><img src="/static/img/scout-white.png" alt="Scout" style="height:22px;margin-right:.4rem;">SCOUT <span>v0.3</span></div>
     <div class="brand-user">
       <span>{{ request.user.username }}</span>
       <a href="/settings/" title="Settings"><i class="bi bi-gear"></i></a>
@@ -203,10 +203,7 @@
           <i class="bi bi-collection"></i> <span class="nav-label">Suites</span>
         </a>
         <a href="/runs/" class="{% if 'runs' in request.path %}active{% endif %}">
-          <i class="bi bi-play-circle"></i> <span class="nav-label">Runs</span>
-        </a>
-        <a href="/baselines/" class="{% if 'baselines' in request.path %}active{% endif %}">
-          <i class="bi bi-images"></i> <span class="nav-label">Baselines</span>
+          <i class="bi bi-play-circle"></i> <span class="nav-label">Results</span>
         </a>
         <a href="/reviews/" class="{% if 'reviews' in request.path %}active{% endif %}">
           <i class="bi bi-flag"></i> <span class="nav-label">Reviews</span>
@@ -237,8 +234,14 @@
         <a href="/users/" class="{% if '/users/' in request.path %}active{% endif %}">
           <i class="bi bi-people"></i> <span class="nav-label">Users</span>
         </a>
-        <a href="/admin-config/ai/" class="{% if 'admin-config' in request.path %}active{% endif %}">
+        <a href="/admin-config/ai/" class="{% if request.path == '/admin-config/ai/' %}active{% endif %}">
           <i class="bi bi-gear"></i> <span class="nav-label">AI Settings</span>
+        </a>
+        <a href="/admin-config/general/" class="{% if request.path == '/admin-config/general/' %}active{% endif %}">
+          <i class="bi bi-sliders"></i> <span class="nav-label">General Settings</span>
+        </a>
+        <a href="/admin-config/archives/" class="{% if request.path == '/admin-config/archives/' %}active{% endif %}">
+          <i class="bi bi-archive"></i> <span class="nav-label">Test Archives</span>
         </a>
         <a href="/django-admin/">
           <i class="bi bi-shield-lock"></i> <span class="nav-label">Django Admin</span>

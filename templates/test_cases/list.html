@@ -53,11 +53,10 @@
       <thead class="table-light">
         <tr>
           <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
-          <th>Test Path</th>
+          <th>Test</th>
           <th>Environment</th>
           <th>Item</th>
           <th>Type</th>
-          <th>Description</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -65,8 +64,11 @@
         {% for sc in scripts %}
         <tr id="script-row-{{ sc.id }}">
           <td><input type="checkbox" class="form-check-input row-check" value="{{ sc.id }}" onchange="updateSelection()"></td>
-          <td class="font-monospace small">
-            <a href="/builder/?file={{ sc.script_path|urlencode }}">{{ sc.script_path }}</a>
+          <td>
+            <a href="/builder/?file={{ sc.script_path|urlencode }}" class="text-decoration-none">
+              <div class="small fw-semibold">{{ sc.description|default:sc.script_path }}</div>
+              {% if sc.description %}<div class="text-muted" style="font-size:.7rem">{{ sc.script_path }}</div>{% endif %}
+            </a>
           </td>
           <td class="small">
             {% if sc.environment_name %}
@@ -105,7 +107,6 @@
               {% endfor %}
             {% endif %}
           </td>
-          <td class="small text-muted">{{ sc.description|default:"—"|truncatechars:60 }}</td>
           <td class="text-nowrap">
             <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i> Edit
@@ -116,7 +117,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted text-center py-5">No test scripts found.
+        <tr><td colspan="6" class="text-muted text-center py-5">No test scripts found.
           {% if not search and not test_type_filter and not env_filter %}
           <a href="/builder/">Create one in the Test Editor</a>.
           {% endif %}

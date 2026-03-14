@@ -82,21 +82,42 @@ async function selectFilters(page, filters = {}) {
  * @returns {Promise<Array<{itemId: string, linkText: string, href: string}>>}
  */
 async function getItemLinks(page, timeout = 15000) {
-  // Wait for item links to appear after filter selection
+  // Wait for item links to appear after filter selection.
+  // The portal renders items as <li class="unitXLIFF" data-unit="U504-Crayons">
+  // or as <a> tags with unit IDs in the text.
   const start = Date.now();
   let links = [];
   while (Date.now() - start < timeout) {
-    links = await page.locator('a').evaluateAll(els =>
-      els
-        .filter(el => el.offsetParent !== null && el.textContent.trim().length > 1)
+    // Primary: look for li[data-unit] elements (PIAAC portal structure)
+    links = await page.$$eval(
+      'li[data-unit]',
+      els => els.map(el => ({
+        itemId: el.getAttribute('data-unit') || (el.textContent || '').trim(),
+        linkText: (el.textContent || '').trim(),
+        href: '',
+        dataPath: el.getAttribute('data-path') || '',
+      }))
+    );
+    if (links.length > 0) return links;
+
+    // Fallback: look for any visible element whose text starts with a unit ID
+    links = await page.$$eval(
+      'a, li, span, div, [onclick]',
+      els => els
         .filter(el => {
-          const text = el.textContent.trim();
-          // PIAAC item links contain unit identifiers like "U593-BirthdayParty"
-          return /^U\d+/i.test(text) || el.href?.includes('unit') || el.getAttribute('onclick');
+          const text = (el.textContent || '').trim();
+          if (!/^U\d+/i.test(text)) return false;
+          // Skip parent containers — only match leaf elements
+          if (el.children.length > 0) {
+            const childTexts = Array.from(el.children).map(c => (c.textContent || '').trim());
+            if (childTexts.some(t => /^U\d+/i.test(t))) return false;
+          }
+          const style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden';
         })
         .map(el => ({
-          itemId: el.textContent.trim().split(/\s+/)[0],
-          linkText: el.textContent.trim(),
+          itemId: (el.textContent || '').trim().split(/\s+/)[0],
+          linkText: (el.textContent || '').trim(),
           href: el.href || '',
         }))
     );
@@ -115,9 +136,24 @@ async function getItemLinks(page, timeout = 15000) {
  * @returns {Promise<import('@playwright/test').Page>} The new page (popup)
  */
 async function openItem(portalPage, itemId) {
+  // Items may be <li data-unit="...">, <a>, or other clickable elements.
+  // Try the most specific selector first, then fall back to text match.
+  const dataUnit = portalPage.locator(`li[data-unit="${itemId}"]`).first();
+  const anchorLink = portalPage.locator(`a:has-text("${itemId}")`).first();
+  const textMatch = portalPage.locator(`text="${itemId}"`).first();
+
+  let target;
+  if (await dataUnit.isVisible({ timeout: 2000 }).catch(() => false)) {
+    target = dataUnit;
+  } else if (await anchorLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+    target = anchorLink;
+  } else {
+    target = textMatch;
+  }
+
   const [newPage] = await Promise.all([
     portalPage.context().waitForEvent('page'),
-    portalPage.locator(`a:has-text("${itemId}")`).first().click(),
+    target.click(),
   ]);
   await newPage.waitForLoadState('domcontentloaded');
   return newPage;
@@ -148,12 +184,125 @@ async function extractItemContent(itemPage) {
   return text;
 }
 
+/**
+ * Get item navigation selectors from environment config.
+ * Falls back to sensible defaults if not configured.
+ * Admins configure these via the environment edit page in SCOUT.
+ *
+ * @param {object|null} envConfig - Environment config from SCOUT_ENV_CONFIG
+ * @returns {object} { next, finish, close, continue_btn, content_frame }
+ */
+function getItemSelectors(envConfig) {
+  const defaults = {
+    next: null,
+    finish: null,
+    close: null,
+    continue_btn: null,
+    content_frame: null,
+  };
+  if (!envConfig || !envConfig.launcher_config || !envConfig.launcher_config.item_selectors) {
+    return defaults;
+  }
+  const sel = envConfig.launcher_config.item_selectors;
+  return {
+    next: sel.next_button || defaults.next,
+    finish: sel.finish_button || defaults.finish,
+    close: sel.close_button || defaults.close,
+    continue_btn: sel.continue_button || defaults.continue_btn,
+    content_frame: sel.content_frame || defaults.content_frame,
+  };
+}
+
+/**
+ * Navigate through all screens of a PIAAC item, calling a callback on each screen.
+ * Uses configurable selectors from the environment's launcher_config.item_selectors.
+ *
+ * @param {import('@playwright/test').Page} itemPage - The item popup page
+ * @param {object|null} envConfig - Environment config from SCOUT_ENV_CONFIG
+ * @param {function} onScreen - async callback(itemPage, screenIndex) called on each screen
+ * @returns {Promise<number>} Total number of screens visited
+ */
+async function navigateItemScreens(itemPage, envConfig, onScreen) {
+  const sel = getItemSelectors(envConfig);
+  let screenIndex = 1;
+
+  // If content is inside an iframe, get the frame reference
+  let contentTarget = itemPage;
+  if (sel.content_frame) {
+    try {
+      const frame = itemPage.frameLocator(sel.content_frame).first();
+      // Verify the frame exists by checking for body
+      await frame.locator('body').waitFor({ state: 'attached', timeout: 10000 });
+      contentTarget = frame;
+    } catch {
+      // Frame not found, use the page directly
+      contentTarget = itemPage;
+    }
+  }
+
+  while (true) {
+    await itemPage.waitForLoadState('networkidle');
+    await onScreen(itemPage, screenIndex);
+
+    // Try to advance: next button first, then finish/continue as end-of-item indicators
+    let advanced = false;
+
+    if (sel.next) {
+      try {
+        const nextBtn = contentTarget.locator(sel.next);
+        const isVisible = await nextBtn.isVisible({ timeout: 3000 });
+        if (isVisible) {
+          const isDisabled = await nextBtn.isDisabled().catch(() => false);
+          if (!isDisabled) {
+            await nextBtn.click();
+            await itemPage.waitForTimeout(1000);
+            advanced = true;
+          }
+        }
+      } catch {
+        // Next button not found or not clickable
+      }
+    }
+
+    if (!advanced) {
+      // Check for finish/continue buttons — these indicate end of item
+      // but we may want to capture the screen after clicking them
+      for (const btnSel of [sel.finish, sel.continue_btn]) {
+        if (!btnSel) continue;
+        try {
+          const btn = contentTarget.locator(btnSel);
+          const isVisible = await btn.isVisible({ timeout: 2000 });
+          if (isVisible) {
+            const isDisabled = await btn.isDisabled().catch(() => false);
+            if (!isDisabled) {
+              await btn.click();
+              await itemPage.waitForTimeout(1000);
+              screenIndex++;
+              await itemPage.waitForLoadState('networkidle');
+              await onScreen(itemPage, screenIndex);
+            }
+          }
+        } catch {
+          // Button not found
+        }
+      }
+      break;
+    }
+
+    screenIndex++;
+  }
+
+  return screenIndex;
+}
+
 module.exports = {
   waitForSelectOptions,
   selectFilters,
   getItemLinks,
   openItem,
   extractItemContent,
+  getItemSelectors,
+  navigateItemScreens,
   DEFAULT_FILTERS,
   SELECTORS,
 };

@@ -19,9 +19,17 @@ def index(request):
         row = cursor.fetchone()
         latest_run = dict(zip(cols, row)) if row else None
 
-        # Recent runs (5)
+        # Recent runs (5) — include test/script names for display
         cursor.execute("""
-            SELECT r.id, r.started_at, r.status, r.trigger_type, r.summary, s.name AS suite_name
+            SELECT r.id, r.started_at, r.status, r.trigger_type, r.summary, s.name AS suite_name,
+                   (SELECT string_agg(
+                       COALESCE(ts.description, replace(replace(trs.script_path, 'tests/', ''), '.spec.js', '')),
+                       ', ' ORDER BY trs.script_path
+                    )
+                    FROM test_run_scripts trs
+                    LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+                    WHERE trs.run_id = r.id
+                   ) AS test_names
             FROM test_runs r
             LEFT JOIN test_suites s ON r.suite_id = s.id
             ORDER BY r.started_at DESC LIMIT 5

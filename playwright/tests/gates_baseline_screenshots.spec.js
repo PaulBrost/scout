@@ -15,7 +15,7 @@ test.describe('Gates_QC_Checks — Extended Text, Inline Choice, Matching', () =
     test.setTimeout(300000);
     const envConfig = loadEnvConfig();
 
-    await loginAndStartTest(page, { formKey: 'games-student-experience-form', env: envConfig });
+    await loginAndStartTest(page, { formKey: 'gates-student-experience-form', env: envConfig });
 
     // Click the Run/Run Test button if present to launch the assessment before proceeding
     const runButton = page.locator([

@@ -145,11 +145,13 @@ class TestSuite(models.Model):
 class TestSuiteScript(models.Model):
     suite = models.ForeignKey(TestSuite, on_delete=models.CASCADE, related_name='scripts')
     script_path = models.TextField()
+    browser = models.TextField(default='chromium')
+    viewport = models.TextField(default='1920x1080')
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'test_suite_scripts'
-        unique_together = ('suite', 'script_path')
+        unique_together = ('suite', 'script_path', 'browser', 'viewport')
 
 
 class TestRun(models.Model):
@@ -196,6 +198,8 @@ class TestRunScript(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     run = models.ForeignKey(TestRun, on_delete=models.CASCADE, related_name='script_results')
     script_path = models.TextField()
+    browser = models.TextField(default='chromium')
+    viewport = models.TextField(default='1920x1080')
     status = models.TextField(default='queued', choices=STATUS_CHOICES)
     duration_ms = models.IntegerField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
@@ -316,6 +320,21 @@ class TestScript(models.Model):
         db_column='chat_conversation_id', related_name='test_scripts'
     )
     test_summary = models.TextField(null=True, blank=True)
+    BROWSER_CHOICES = [
+        ('chromium', 'Chromium'),
+        ('firefox', 'Firefox'),
+        ('webkit', 'WebKit (Safari)'),
+    ]
+    VIEWPORT_CHOICES = [
+        ('1920x1080', '1920 x 1080 (Full HD)'),
+        ('1280x720', '1280 x 720 (HD)'),
+        ('1366x768', '1366 x 768 (Laptop)'),
+        ('1024x768', '1024 x 768 (Tablet Landscape)'),
+        ('768x1024', '768 x 1024 (Tablet Portrait)'),
+        ('375x812', '375 x 812 (Mobile)'),
+    ]
+    browser = models.TextField(default='chromium', choices=BROWSER_CHOICES)
+    viewport = models.TextField(default='1920x1080', choices=VIEWPORT_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -416,6 +435,71 @@ class RunScreenshot(models.Model):
 
     def __str__(self):
         return f"{self.name} ({'flagged' if self.flagged else 'ok'})"
+
+
+class TestScriptBaseline(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    script_path = models.TextField()
+    name = models.TextField()
+    browser = models.TextField(default='chromium')
+    viewport = models.TextField(default='1920x1080')
+    file_path = models.TextField()
+    source_run = models.ForeignKey(
+        TestRun, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='generated_baselines'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'test_script_baselines'
+        unique_together = [('script_path', 'name', 'browser', 'viewport')]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.script_path} — {self.name}"
+
+
+class TestScriptArchive(models.Model):
+    """Archived test script — preserves metadata + file content for potential restoration."""
+    id = models.AutoField(primary_key=True)
+    original_id = models.IntegerField()
+    script_path = models.TextField()
+    description = models.TextField(null=True, blank=True)
+    environment = models.ForeignKey(
+        Environment, on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='environment_id'
+    )
+    item = models.ForeignKey(
+        Item, on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='item_id', to_field='item_id'
+    )
+    assessment = models.ForeignKey(
+        Assessment, on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='assessment_id'
+    )
+    test_type = models.TextField(default='functional')
+    ai_config = models.JSONField(default=dict, blank=True)
+    tags = models.JSONField(default=list)
+    category = models.TextField(null=True, blank=True)
+    test_summary = models.TextField(null=True, blank=True)
+    browser = models.TextField(default='chromium')
+    viewport = models.TextField(default='1920x1080')
+    file_content = models.TextField(null=True, blank=True)
+    archived_at = models.DateTimeField(auto_now_add=True)
+    archived_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='archived_by_id'
+    )
+    expires_at = models.DateTimeField()
+    original_created_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'test_script_archives'
+        ordering = ['-archived_at']
+
+    def __str__(self):
+        return f"Archive: {self.script_path}"
 
 
 class AIConversation(models.Model):

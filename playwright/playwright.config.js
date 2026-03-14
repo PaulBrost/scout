@@ -3,6 +3,21 @@
 
 const { devices } = require('@playwright/test');
 
+// Parse viewport override from env: "WIDTHxHEIGHT" e.g. "1280x720"
+function parseViewport() {
+  const vp = process.env.SCOUT_VIEWPORT;
+  if (!vp) return undefined;
+  const parts = vp.split('x');
+  if (parts.length === 2) {
+    const w = parseInt(parts[0], 10);
+    const h = parseInt(parts[1], 10);
+    if (w > 0 && h > 0) return { width: w, height: h };
+  }
+  return undefined;
+}
+
+const viewportOverride = parseViewport();
+
 module.exports = {
   testDir: './tests',
   timeout: 300000, // 5 min — multi-item screenshot tests need time for intro screens + all items
@@ -22,36 +37,22 @@ module.exports = {
     screenshot: process.env.PW_SCREENSHOT || 'only-on-failure',
     trace: process.env.PW_TRACE || 'retain-on-failure',
     video: process.env.PW_VIDEO || 'retain-on-failure',
+    ...(viewportOverride ? { viewport: viewportOverride } : {}),
   },
 
   projects: [
-    // Primary browser — Chromium (Google Chrome engine)
     {
       name: 'chrome-desktop',
       use: { ...devices['Desktop Chrome'] },
     },
-
-    // Additional browsers — uncomment when needed
-    // {
-    //   name: 'firefox-desktop',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-    // {
-    //   name: 'chromebook',
-    //   use: {
-    //     browserName: 'chromium',
-    //     viewport: { width: 1366, height: 768 },
-    //     deviceScaleFactor: 1,
-    //   },
-    // },
-    // {
-    //   name: 'edge-desktop',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'webkit-desktop',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
+    {
+      name: 'firefox-desktop',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit-desktop',
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
 
   reporter: [

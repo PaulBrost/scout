@@ -86,7 +86,7 @@ router.post('/test-cases/save', (req, res) => {
     fs.writeFileSync(fullPath, content, 'utf-8');
     // Auto-register in test_scripts table
     db.query(
-      'INSERT INTO test_scripts (script_path) VALUES ($1) ON CONFLICT (script_path) DO UPDATE SET updated_at = now()',
+      "INSERT INTO test_scripts (script_path, browser, viewport, test_type, tags, ai_config, created_at, updated_at) VALUES ($1, 'chromium', '1920x1080', 'functional', '[]'::jsonb, '{}'::jsonb, now(), now()) ON CONFLICT (script_path) DO UPDATE SET updated_at = now()",
       [filePath]
     ).catch(function() {});
     res.json({ success: true, path: filePath });
@@ -191,8 +191,8 @@ router.post('/test-cases/associate', async (req, res) => {
 
     // Upsert into test_scripts
     await db.query(
-      `INSERT INTO test_scripts (script_path, item_id, assessment_id, category, description, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now())
+      `INSERT INTO test_scripts (script_path, item_id, assessment_id, category, description, browser, viewport, test_type, tags, ai_config, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'chromium', '1920x1080', 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())
        ON CONFLICT (script_path) DO UPDATE SET
          item_id = EXCLUDED.item_id,
          assessment_id = EXCLUDED.assessment_id,

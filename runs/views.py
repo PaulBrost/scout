@@ -154,19 +154,29 @@ def detail(request, run_id):
         except Exception:
             run['summary'] = {}
 
-    # Script results
+    # Script results with test name/summary from test_scripts
     with connection.cursor() as cursor:
-        cursor.execute(
-            'SELECT * FROM test_run_scripts WHERE run_id = %s ORDER BY completed_at DESC NULLS LAST, script_path',
-            [run_id]
-        )
+        cursor.execute("""
+            SELECT trs.*, ts.description AS test_name, ts.test_summary
+            FROM test_run_scripts trs
+            LEFT JOIN test_scripts ts ON trs.script_path = ts.script_path
+            WHERE trs.run_id = %s
+            ORDER BY trs.completed_at DESC NULLS LAST, trs.script_path
+        """, [run_id])
         cols = [c[0] for c in cursor.description]
         script_results = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    # For ad-hoc runs, derive a test name from the first script result
+    if not run.get('suite_id') and script_results:
+        run['test_name'] = script_results[0].get('test_name') or script_results[0].get('script_path', '')
 
     # Screenshots
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT * FROM run_screenshots WHERE run_id = %s ORDER BY name',
+            """SELECT * FROM run_screenshots WHERE run_id = %s
+               ORDER BY regexp_replace(name, '\\d+', '', 'g'),
+                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::int, 0),
+                        name""",
             [run_id]
         )
         cols = [c[0] for c in cursor.description]
@@ -220,6 +230,7 @@ def detail(request, run_id):
             'issues_found': a['issues_found'],
             'issues': a['issues'],
         } for a in analyses], default=str),
+        'summaries_json': json.dumps([sr.get('test_summary') or '' for sr in script_results], default=str),
         'ai_config_enabled': ai_config_enabled,
     })
 
@@ -262,7 +273,7 @@ def api_run_status(request, run_id):
         cursor.execute(
             """SELECT id, script_path, status, duration_ms, error_message,
                       execution_log IS NOT NULL AS has_log,
-                      started_at, completed_at
+                      started_at, completed_at, browser, viewport
                FROM test_run_scripts WHERE run_id = %s
                ORDER BY completed_at DESC NULLS LAST, script_path""",
             [run_id]
@@ -413,7 +424,10 @@ def api_run_screenshots(request, run_id):
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at
-               FROM run_screenshots WHERE run_id = %s ORDER BY name""",
+               FROM run_screenshots WHERE run_id = %s
+               ORDER BY regexp_replace(name, '\\d+', '', 'g'),
+                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::int, 0),
+                        name""",
             [run_id]
         )
         cols = [c[0] for c in cursor.description]

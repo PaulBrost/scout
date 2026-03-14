@@ -12,4 +12,6 @@ urlpatterns = [
     path('run-script/', views.run_script, name='run_script'),
     path('api/list/', views.api_list, name='api_suites_list'),
     path('api/scripts/', views.api_scripts_by_environment, name='api_scripts_by_environment'),
+    path('api/assessments/', views.api_assessments_by_environment, name='api_assessments_by_environment'),
+    path('api/items/', views.api_items_by_assessment, name='api_items_by_assessment'),
 ]

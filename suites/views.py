@@ -109,17 +109,26 @@ def index(request):
     })
 
 
-def _get_scripts_for_environment(env_id):
-    """Query DB for test scripts belonging to an environment."""
+def _get_scripts_for_environment(env_id, assessment_id=None, item_id=None):
+    """Query DB for test scripts belonging to an environment, optionally filtered by assessment/item."""
     if not env_id:
         return []
+    where = ['ts.environment_id = %s::uuid']
+    params = [str(env_id)]
+    if item_id:
+        where.append('ts.item_id = %s')
+        params.append(item_id)
+    elif assessment_id:
+        where.append('ts.assessment_id = %s')
+        params.append(assessment_id)
     with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT ts.script_path, ts.description, ts.category, ts.test_type
+        cursor.execute(f"""
+            SELECT ts.script_path, ts.description, ts.category, ts.test_type,
+                   ts.assessment_id, ts.item_id
             FROM test_scripts ts
-            WHERE ts.environment_id = %s::uuid
+            WHERE {' AND '.join(where)}
             ORDER BY ts.script_path
-        """, [str(env_id)])
+        """, params)
         cols = [c[0] for c in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
@@ -134,8 +143,7 @@ def suite_new(request):
         environments = list(Environment.objects.filter(id__in=env_ids).values('id', 'name').order_by('name'))
     return render(request, 'suites/detail.html', {
         'suite': None,
-        'suite_scripts': [],
-        'available_scripts': [],
+        'suite_scripts_json': '[]',
         'environments': environments,
     })
 
@@ -154,12 +162,18 @@ def suite_detail(request, suite_id):
 
     suite = dict(zip(cols, row))
 
+    # Load suite script entries with browser/viewport and description from test_scripts
     with connection.cursor() as cursor:
-        cursor.execute(
-            'SELECT script_path FROM test_suite_scripts WHERE suite_id = %s ORDER BY added_at',
-            [suite_id]
-        )
-        suite_scripts = [row[0] for row in cursor.fetchall()]
+        cursor.execute("""
+            SELECT ss.id, ss.script_path, ss.browser, ss.viewport,
+                   ts.description, ts.test_type
+            FROM test_suite_scripts ss
+            LEFT JOIN test_scripts ts ON ss.script_path = ts.script_path
+            WHERE ss.suite_id = %s
+            ORDER BY ss.added_at
+        """, [suite_id])
+        cols = [c[0] for c in cursor.description]
+        suite_scripts = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
     from core.models import Environment
     env_ids = get_user_env_ids(request.user)
@@ -168,13 +182,9 @@ def suite_detail(request, suite_id):
     else:
         environments = list(Environment.objects.filter(id__in=env_ids).values('id', 'name').order_by('name'))
 
-    # Load scripts for the suite's environment from DB
-    available_scripts = _get_scripts_for_environment(suite.get('environment_id'))
-
     return render(request, 'suites/detail.html', {
         'suite': suite,
-        'suite_scripts': suite_scripts,
-        'available_scripts': available_scripts,
+        'suite_scripts_json': json.dumps(suite_scripts, default=str),
         'environments': environments,
     })
 
@@ -190,23 +200,24 @@ def suite_create(request):
             return JsonResponse({'error': 'Name is required'}, status=400)
         description = data.get('description') or None
         scripts = data.get('scripts') or []
-        browser_profiles = data.get('browser_profiles') or ['chrome-desktop']
-        schedule = data.get('schedule') if data.get('schedule', {}).get('enabled') else None
         environment_id = data.get('environment_id') or None
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_suites (name, description, created_by, schedule, browser_profiles, environment_id)
-                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-                [name, description, request.user.username,
-                 json.dumps(schedule) if schedule else None,
-                 browser_profiles, environment_id]
+                """INSERT INTO test_suites (id, name, description, created_by, browser_profiles, environment_id, created_at, updated_at)
+                   VALUES (gen_random_uuid(), %s, %s, %s, '[]'::jsonb, %s, now(), now()) RETURNING id""",
+                [name, description, request.user.username, environment_id]
             )
             suite_id = cursor.fetchone()[0]
-            for sp in scripts:
+            for entry in scripts:
+                sp = entry.get('script_path') if isinstance(entry, dict) else entry
+                browser = entry.get('browser', 'chromium') if isinstance(entry, dict) else 'chromium'
+                viewport = entry.get('viewport', '1920x1080') if isinstance(entry, dict) else '1920x1080'
                 cursor.execute(
-                    'INSERT INTO test_suite_scripts (suite_id, script_path) VALUES (%s, %s) ON CONFLICT DO NOTHING',
-                    [str(suite_id), sp]
+                    """INSERT INTO test_suite_scripts (suite_id, script_path, browser, viewport, added_at)
+                       VALUES (%s, %s, %s, %s, now())
+                       ON CONFLICT (suite_id, script_path, browser, viewport) DO NOTHING""",
+                    [str(suite_id), sp, browser, viewport]
                 )
         return JsonResponse({'id': str(suite_id), 'redirect': f'/suites/{suite_id}/'})
     except Exception as e:
@@ -224,23 +235,24 @@ def suite_update(request, suite_id):
             return JsonResponse({'error': 'Name is required'}, status=400)
         description = data.get('description') or None
         scripts = data.get('scripts') or []
-        browser_profiles = data.get('browser_profiles') or ['chrome-desktop']
-        schedule = data.get('schedule') if data.get('schedule', {}).get('enabled') else None
         environment_id = data.get('environment_id') or None
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """UPDATE test_suites SET name=%s, description=%s, schedule=%s,
-                   browser_profiles=%s, environment_id=%s, updated_at=now()
+                """UPDATE test_suites SET name=%s, description=%s,
+                   environment_id=%s, updated_at=now()
                    WHERE id=%s""",
-                [name, description, json.dumps(schedule) if schedule else None,
-                 browser_profiles, environment_id, suite_id]
+                [name, description, environment_id, suite_id]
             )
             cursor.execute('DELETE FROM test_suite_scripts WHERE suite_id = %s', [suite_id])
-            for sp in scripts:
+            for entry in scripts:
+                sp = entry.get('script_path') if isinstance(entry, dict) else entry
+                browser = entry.get('browser', 'chromium') if isinstance(entry, dict) else 'chromium'
+                viewport = entry.get('viewport', '1920x1080') if isinstance(entry, dict) else '1920x1080'
                 cursor.execute(
-                    'INSERT INTO test_suite_scripts (suite_id, script_path) VALUES (%s, %s)',
-                    [suite_id, sp]
+                    """INSERT INTO test_suite_scripts (suite_id, script_path, browser, viewport, added_at)
+                       VALUES (%s, %s, %s, %s, now())""",
+                    [suite_id, sp, browser, viewport]
                 )
         return JsonResponse({'ok': True})
     except Exception as e:
@@ -274,28 +286,27 @@ def suite_run(request, suite_id):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                'SELECT script_path FROM test_suite_scripts WHERE suite_id = %s',
+                'SELECT script_path, browser, viewport FROM test_suite_scripts WHERE suite_id = %s ORDER BY added_at',
                 [suite_id]
             )
-            script_paths = [row[0] for row in cursor.fetchall()]
+            suite_entries = [{'script_path': r[0], 'browser': r[1] or 'chromium', 'viewport': r[2] or '1920x1080'} for r in cursor.fetchall()]
 
-        if not script_paths:
+        if not suite_entries:
             return JsonResponse({'error': 'Suite has no scripts'}, status=400)
 
         # Create run
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_runs (status, trigger_type, suite_id, environment_id, config, notes, queued_at)
-                   VALUES ('running', 'dashboard', %s, %s, %s, %s, now()) RETURNING id""",
-                [suite_id, suite.get('environment_id'),
-                 json.dumps({'browser_profiles': suite.get('browser_profiles', [])}),
-                 f"Suite: {suite['name']}"]
+                """INSERT INTO test_runs (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at)
+                   VALUES (gen_random_uuid(), 'running', 'dashboard', %s, %s, '{}'::jsonb, %s, now()) RETURNING id""",
+                [suite_id, suite.get('environment_id'), f"Suite: {suite['name']}"]
             )
             run_id = cursor.fetchone()[0]
-            for sp in script_paths:
+            for entry in suite_entries:
                 cursor.execute(
-                    "INSERT INTO test_run_scripts (run_id, script_path, status) VALUES (%s, %s, 'queued')",
-                    [str(run_id), sp]
+                    """INSERT INTO test_run_scripts (id, run_id, script_path, browser, viewport, status)
+                       VALUES (gen_random_uuid(), %s, %s, %s, %s, 'queued')""",
+                    [str(run_id), entry['script_path'], entry['browser'], entry['viewport']]
                 )
 
         # Run task in background thread
@@ -311,7 +322,7 @@ def suite_run(request, suite_id):
                     cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
         threading.Thread(target=_run_suite, daemon=True).start()
 
-        return JsonResponse({'runId': str(run_id), 'status': 'running', 'scripts': len(script_paths)})
+        return JsonResponse({'runId': str(run_id), 'status': 'running', 'scripts': len(suite_entries)})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -327,18 +338,22 @@ def run_script(request):
             return JsonResponse({'error': 'scriptPath required'}, status=400)
 
         with connection.cursor() as cursor:
-            # Look up environment_id from test_scripts, with POST body fallback
-            cursor.execute('SELECT environment_id FROM test_scripts WHERE script_path = %s', [script_path])
-            env_row = cursor.fetchone()
-            environment_id = env_row[0] if env_row else None
+            # Look up environment_id, browser, viewport from test_scripts
+            cursor.execute('SELECT environment_id, browser, viewport FROM test_scripts WHERE script_path = %s', [script_path])
+            ts_row = cursor.fetchone()
+            environment_id = ts_row[0] if ts_row else None
+            script_browser = (ts_row[1] if ts_row else None) or 'chromium'
+            script_viewport = (ts_row[2] if ts_row else None) or '1920x1080'
             if not environment_id and data.get('environment_id'):
                 environment_id = data['environment_id']
+            # Allow POST body to override browser/viewport for this run
+            if data.get('browser'):
+                script_browser = data['browser']
+            if data.get('viewport'):
+                script_viewport = data['viewport']
 
-            # Build config with optional headed and scheduled_at flags
-            config = {}
-            if data.get('headed'):
-                config['headed'] = True
             scheduled_at = data.get('scheduled_at')
+            config = {}
             if scheduled_at:
                 config['scheduled_at'] = scheduled_at
 
@@ -352,8 +367,9 @@ def run_script(request):
             )
             run_id = cursor.fetchone()[0]
             cursor.execute(
-                "INSERT INTO test_run_scripts (id, run_id, script_path, status) VALUES (gen_random_uuid(), %s, %s, 'queued')",
-                [str(run_id), script_path]
+                """INSERT INTO test_run_scripts (id, run_id, script_path, browser, viewport, status)
+                   VALUES (gen_random_uuid(), %s, %s, %s, %s, 'queued')""",
+                [str(run_id), script_path, script_browser, script_viewport]
             )
 
         # Only queue for immediate execution if not scheduled
@@ -414,12 +430,12 @@ def api_list(request):
         """, params + [page_size, offset])
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
-    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, default=str)
+    return JsonResponse({'rows': rows, 'total': total, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
 
 
 @login_required(login_url='/login/')
 def api_scripts_by_environment(request):
-    """Return test scripts for a given environment (with RBAC)."""
+    """Return test scripts for a given environment (with RBAC), optionally filtered by assessment/item."""
     env_id = request.GET.get('environment_id', '').strip()
     if not env_id:
         return JsonResponse({'scripts': []})
@@ -429,5 +445,49 @@ def api_scripts_by_environment(request):
     if env_ids is not None and env_id not in [str(e) for e in env_ids]:
         return JsonResponse({'scripts': []})
 
-    scripts = _get_scripts_for_environment(env_id)
-    return JsonResponse({'scripts': scripts}, default=str)
+    assessment_id = request.GET.get('assessment_id', '').strip() or None
+    item_id = request.GET.get('item_id', '').strip() or None
+    scripts = _get_scripts_for_environment(env_id, assessment_id=assessment_id, item_id=item_id)
+    return JsonResponse({'scripts': scripts}, json_dumps_params={'default': str})
+
+
+@login_required(login_url='/login/')
+def api_assessments_by_environment(request):
+    """Return assessments for a given environment."""
+    env_id = request.GET.get('environment_id', '').strip()
+    if not env_id:
+        return JsonResponse({'assessments': []})
+
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None and env_id not in [str(e) for e in env_ids]:
+        return JsonResponse({'assessments': []})
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, name, item_count
+            FROM assessments
+            WHERE environment_id = %s::uuid
+            ORDER BY name
+        """, [str(env_id)])
+        cols = [c[0] for c in cursor.description]
+        assessments = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    return JsonResponse({'assessments': assessments}, json_dumps_params={'default': str})
+
+
+@login_required(login_url='/login/')
+def api_items_by_assessment(request):
+    """Return items for a given assessment."""
+    assessment_id = request.GET.get('assessment_id', '').strip()
+    if not assessment_id:
+        return JsonResponse({'items': []})
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT item_id, title
+            FROM items
+            WHERE assessment_id = %s
+            ORDER BY position, item_id
+        """, [assessment_id])
+        cols = [c[0] for c in cursor.description]
+        items = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    return JsonResponse({'items': items}, json_dumps_params={'default': str})

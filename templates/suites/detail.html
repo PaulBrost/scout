@@ -12,146 +12,380 @@
 {% endblock %}
 
 {% block content %}
-<div class="row g-4">
-  <div class="col-lg-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">Suite Details</div>
-      <div class="card-body">
-        <div class="mb-3">
-          <label class="form-label">Name *</label>
-          <input type="text" id="suiteName" class="form-control" value="{{ suite.name|default:'' }}" placeholder="e.g. Smoke Tests">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Description</label>
-          <textarea id="suiteDesc" class="form-control" rows="2">{{ suite.description|default:'' }}</textarea>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Environment</label>
-          <select id="suiteEnv" class="form-select" onchange="loadScriptsForEnv(this.value)">
-            <option value="">— None —</option>
-            {% for env in environments %}
-            <option value="{{ env.id }}" {% if suite and suite.environment_id == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Browser Profiles</label>
-          <div class="d-flex flex-wrap gap-3">
-            {% for profile in "chrome-desktop,firefox-desktop,edge-desktop,webkit-desktop,chromebook"|split:"," %}
-            <div class="form-check">
-              <input class="form-check-input browser-profile" type="checkbox" value="{{ profile }}" id="bp_{{ forloop.counter }}"
-                {% if suite and profile in suite.browser_profiles %}checked{% elif not suite and profile == 'chrome-desktop' %}checked{% endif %}>
-              <label class="form-check-label small" for="bp_{{ forloop.counter }}">{{ profile }}</label>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-        <button class="btn btn-primary" onclick="saveSuite()">
-          <i class="bi bi-save"></i> {% if suite %}Save Changes{% else %}Create Suite{% endif %}
-        </button>
-        <span id="saveStatus" class="ms-2 small text-muted"></span>
+
+<!-- 1. Suite Details -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Suite Details</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Name *</label>
+        <input type="text" id="suiteName" class="form-control" value="{{ suite.name|default:'' }}" placeholder="e.g. Smoke Tests">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Description</label>
+        <input type="text" id="suiteDesc" class="form-control" value="{{ suite.description|default:'' }}" placeholder="Optional description">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Environment</label>
+        <select id="suiteEnv" class="form-select" onchange="onEnvChange(this.value)">
+          <option value="">-- Select --</option>
+          {% for env in environments %}
+          <option value="{{ env.id }}" {% if suite and suite.environment_id == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Assessment <span class="text-muted small">(for filtering scripts)</span></label>
+        <select id="suiteAssessment" class="form-select" onchange="onAssessmentChange(this.value)" disabled>
+          <option value="">-- All --</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Item <span class="text-muted small">(for filtering scripts)</span></label>
+        <select id="suiteItem" class="form-select" disabled>
+          <option value="">-- All --</option>
+        </select>
       </div>
     </div>
   </div>
-  <div class="col-lg-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-        Test Scripts
-        <span id="scriptCount" class="badge bg-secondary">0</span>
+</div>
+
+<!-- 2. Configured Suite Scripts -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+    Suite Scripts
+    <div class="d-flex align-items-center gap-2">
+      <span id="scriptCount" class="badge bg-secondary">0</span>
+      <button class="btn btn-sm btn-outline-primary" onclick="openAddModal()">
+        <i class="bi bi-plus-lg me-1"></i>Add Scripts
+      </button>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" id="suiteScriptsTable">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3" style="min-width:300px">Script</th>
+            <th style="width:140px">Browser</th>
+            <th style="width:160px">Viewport</th>
+            <th style="width:50px"></th>
+          </tr>
+        </thead>
+        <tbody id="suiteScriptsBody">
+          <!-- populated by JS -->
+        </tbody>
+      </table>
+    </div>
+    <div id="noScriptsMsg" class="text-muted text-center py-4 small" style="display:none">
+      No scripts added yet. Click "Add Scripts" to get started.
+    </div>
+  </div>
+</div>
+
+<!-- 3. Save / Create -->
+<div class="d-flex align-items-center gap-3 mb-4">
+  <button class="btn btn-primary btn-lg" onclick="saveSuite()">
+    <i class="bi bi-save me-1"></i> {% if suite %}Save Changes{% else %}Create Suite{% endif %}
+  </button>
+  <span id="saveStatus" class="small text-muted"></span>
+</div>
+
+<!-- Add Scripts Modal -->
+<div class="modal fade" id="addScriptsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Scripts to Suite</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="card-body p-0">
-        <div class="p-2 border-bottom">
-          <input type="text" id="scriptSearch" class="form-control form-control-sm" placeholder="Filter scripts…" oninput="filterScripts(this.value)">
-        </div>
-        <div id="scriptList" style="max-height:420px;overflow-y:auto">
-          {% for script in available_scripts %}
-          <label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom script-item hover-bg" style="cursor:pointer;margin:0">
-            <input type="checkbox" class="form-check-input script-check flex-shrink-0" value="{{ script.script_path }}"
-              {% if script.script_path in suite_scripts %}checked{% endif %}>
-            <div class="min-width-0" style="overflow:hidden">
-              <div class="small fw-semibold text-truncate">{{ script.script_path }}</div>
-              <div class="text-muted text-truncate" style="font-size:.7rem">{% if script.test_type %}<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">{{ script.test_type }}</span>{% endif %}{% if script.description %}{{ script.description|truncatechars:60 }}{% endif %}</div>
-            </div>
-          </label>
-          {% empty %}
-          <div class="text-muted text-center py-4 small" id="noScriptsMsg">
-            {% if suite and suite.environment_id %}No test scripts registered for this environment.{% else %}Select an environment to see available scripts.{% endif %}
+      <div class="modal-body">
+        <!-- Default browser/viewport for batch -->
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Default Browser</label>
+            <select id="modalBrowser" class="form-select form-select-sm">
+              <option value="chromium" selected>Chromium</option>
+              <option value="firefox">Firefox</option>
+              <option value="webkit">WebKit (Safari)</option>
+            </select>
           </div>
-          {% endfor %}
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Default Viewport</label>
+            <select id="modalViewport" class="form-select form-select-sm">
+              <option value="1920x1080" selected>1920 x 1080 (Full HD)</option>
+              <option value="1280x720">1280 x 720 (HD)</option>
+              <option value="1366x768">1366 x 768 (Laptop)</option>
+              <option value="1024x768">1024 x 768 (Tablet Landscape)</option>
+              <option value="768x1024">768 x 1024 (Tablet Portrait)</option>
+              <option value="375x812">375 x 812 (Mobile)</option>
+            </select>
+          </div>
         </div>
+        <!-- Search -->
+        <div class="mb-2">
+          <input type="text" id="modalSearch" class="form-control form-control-sm" placeholder="Filter scripts..." oninput="filterModalScripts(this.value)">
+        </div>
+        <!-- Select all -->
+        <div class="d-flex align-items-center gap-2 mb-2 px-1">
+          <input type="checkbox" class="form-check-input" id="modalSelectAll" onchange="toggleSelectAll(this.checked)">
+          <label class="form-check-label small text-muted" for="modalSelectAll">Select all visible</label>
+        </div>
+        <!-- Script list -->
+        <div id="modalScriptList" style="max-height:350px;overflow-y:auto;border:1px solid #dee2e6;border-radius:.375rem">
+          <div class="text-muted text-center py-4 small"><i class="bi bi-hourglass-split me-1"></i>Loading...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span id="modalSelectedCount" class="me-auto small text-muted">0 selected</span>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addSelectedScripts()">
+          <i class="bi bi-plus-lg me-1"></i>Add Selected
+        </button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-var suiteScripts = {{ suite_scripts|safe }};
+// --- State ---
+var suiteScripts = [];  // [{script_path, browser, viewport, description, test_type}, ...]
+var addModal = null;
 
-function updateCount() {
-  var n = document.querySelectorAll('.script-check:checked').length;
-  document.getElementById('scriptCount').textContent = n;
-}
-document.querySelectorAll('.script-check').forEach(c => c.addEventListener('change', updateCount));
-updateCount();
-
-function filterScripts(q) {
-  q = q.toLowerCase();
-  document.querySelectorAll('.script-item').forEach(el => {
-    el.style.display = (q === '' || el.textContent.toLowerCase().includes(q)) ? '' : 'none';
+// Initialize from server data
+(function() {
+  var raw = {{ suite_scripts_json|safe }};
+  raw.forEach(function(s) {
+    suiteScripts.push({
+      script_path: s.script_path || '',
+      browser: s.browser || 'chromium',
+      viewport: s.viewport || '1920x1080',
+      description: s.description || '',
+      test_type: s.test_type || '',
+    });
   });
-}
+  renderScriptsTable();
+})();
 
-function loadScriptsForEnv(envId) {
-  var container = document.getElementById('scriptList');
-  if (!envId) {
-    container.innerHTML = '<div class="text-muted text-center py-4 small">Select an environment to see available scripts.</div>';
-    updateCount();
+// --- Suite Scripts Table ---
+function renderScriptsTable() {
+  var tbody = document.getElementById('suiteScriptsBody');
+  var msg = document.getElementById('noScriptsMsg');
+  document.getElementById('scriptCount').textContent = suiteScripts.length;
+
+  if (suiteScripts.length === 0) {
+    tbody.innerHTML = '';
+    msg.style.display = '';
     return;
   }
-  container.innerHTML = '<div class="text-muted text-center py-4 small">Loading scripts…</div>';
-  fetch('/suites/api/scripts/?environment_id=' + encodeURIComponent(envId))
-    .then(r => r.json())
-    .then(d => {
+  msg.style.display = 'none';
+
+  var html = '';
+  suiteScripts.forEach(function(s, idx) {
+    var label = s.description || s.script_path;
+    var typeTag = s.test_type ? '<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">' + esc(s.test_type) + '</span>' : '';
+    html += '<tr data-idx="' + idx + '">' +
+      '<td class="ps-3 align-middle">' +
+        '<div class="small fw-semibold text-truncate" style="max-width:400px" title="' + escAttr(s.script_path) + '">' + esc(label) + '</div>' +
+        '<div class="text-muted" style="font-size:.7rem">' + typeTag + esc(s.script_path) + '</div>' +
+      '</td>' +
+      '<td class="align-middle">' +
+        '<select class="form-select form-select-sm" onchange="suiteScripts[' + idx + '].browser=this.value">' +
+          '<option value="chromium"' + (s.browser === 'chromium' ? ' selected' : '') + '>Chromium</option>' +
+          '<option value="firefox"' + (s.browser === 'firefox' ? ' selected' : '') + '>Firefox</option>' +
+          '<option value="webkit"' + (s.browser === 'webkit' ? ' selected' : '') + '>WebKit</option>' +
+        '</select>' +
+      '</td>' +
+      '<td class="align-middle">' +
+        '<select class="form-select form-select-sm" onchange="suiteScripts[' + idx + '].viewport=this.value">' +
+          vpOption('1920x1080', '1920x1080', s.viewport) +
+          vpOption('1280x720', '1280x720', s.viewport) +
+          vpOption('1366x768', '1366x768', s.viewport) +
+          vpOption('1024x768', '1024x768', s.viewport) +
+          vpOption('768x1024', '768x1024', s.viewport) +
+          vpOption('375x812', '375x812', s.viewport) +
+        '</select>' +
+      '</td>' +
+      '<td class="align-middle text-center">' +
+        '<button class="btn btn-sm btn-outline-danger border-0" onclick="removeScript(' + idx + ')" title="Remove">' +
+          '<i class="bi bi-x-lg"></i>' +
+        '</button>' +
+      '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function vpOption(val, label, current) {
+  return '<option value="' + val + '"' + (current === val ? ' selected' : '') + '>' + label + '</option>';
+}
+
+function removeScript(idx) {
+  suiteScripts.splice(idx, 1);
+  renderScriptsTable();
+}
+
+// --- Add Scripts Modal ---
+function openAddModal() {
+  var envId = document.getElementById('suiteEnv').value;
+  if (!envId) {
+    alert('Select an environment first.');
+    return;
+  }
+  if (!addModal) {
+    addModal = new bootstrap.Modal(document.getElementById('addScriptsModal'));
+  }
+  // Reset modal state
+  document.getElementById('modalSearch').value = '';
+  document.getElementById('modalSelectAll').checked = false;
+  updateModalCount();
+  addModal.show();
+  loadModalScripts();
+}
+
+function loadModalScripts() {
+  var envId = document.getElementById('suiteEnv').value;
+  var container = document.getElementById('modalScriptList');
+  if (!envId) {
+    container.innerHTML = '<div class="text-muted text-center py-4 small">Select an environment in Suite Details first.</div>';
+    return;
+  }
+  container.innerHTML = '<div class="text-muted text-center py-4 small"><i class="bi bi-hourglass-split me-1"></i>Loading...</div>';
+
+  var url = '/suites/api/scripts/?environment_id=' + encodeURIComponent(envId);
+  var assessmentId = document.getElementById('suiteAssessment').value;
+  var itemId = document.getElementById('suiteItem').value;
+  if (itemId) url += '&item_id=' + encodeURIComponent(itemId);
+  else if (assessmentId) url += '&assessment_id=' + encodeURIComponent(assessmentId);
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       if (!d.scripts || d.scripts.length === 0) {
-        container.innerHTML = '<div class="text-muted text-center py-4 small">No test scripts registered for this environment.</div>';
-        updateCount();
+        container.innerHTML = '<div class="text-muted text-center py-4 small">No scripts found for this selection.</div>';
         return;
       }
       var html = '';
       d.scripts.forEach(function(s) {
-        var checked = suiteScripts.indexOf(s.script_path) !== -1 ? 'checked' : '';
-        var desc = '';
-        if (s.test_type) desc += '<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">' + escapeHtml(s.test_type) + '</span>';
-        if (s.description) desc += escapeHtml(s.description.substring(0, 60));
-        html += '<label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom script-item hover-bg" style="cursor:pointer;margin:0">' +
-          '<input type="checkbox" class="form-check-input script-check flex-shrink-0" value="' + escapeAttr(s.script_path) + '" ' + checked + '>' +
+        var desc = s.description || s.script_path;
+        var typeTag = s.test_type ? '<span class="badge bg-light text-dark border me-1" style="font-size:.6rem">' + esc(s.test_type) + '</span>' : '';
+        html += '<label class="d-flex align-items-center gap-2 px-3 py-2 border-bottom modal-script-item" style="cursor:pointer;margin:0">' +
+          '<input type="checkbox" class="form-check-input modal-script-check flex-shrink-0"' +
+          ' data-path="' + escAttr(s.script_path) + '"' +
+          ' data-desc="' + escAttr(s.description || '') + '"' +
+          ' data-type="' + escAttr(s.test_type || '') + '"' +
+          ' onchange="updateModalCount()">' +
           '<div class="min-width-0" style="overflow:hidden">' +
-          '<div class="small fw-semibold text-truncate">' + escapeHtml(s.script_path) + '</div>' +
-          '<div class="text-muted text-truncate" style="font-size:.7rem">' + desc + '</div>' +
-          '</div></label>';
+            '<div class="small fw-semibold text-truncate">' + esc(desc) + '</div>' +
+            '<div class="text-muted text-truncate" style="font-size:.7rem">' + typeTag + esc(s.script_path) + '</div>' +
+          '</div>' +
+        '</label>';
       });
       container.innerHTML = html;
-      document.querySelectorAll('.script-check').forEach(c => c.addEventListener('change', updateCount));
-      updateCount();
+      document.getElementById('modalSelectAll').checked = false;
+      updateModalCount();
     })
     .catch(function() {
       container.innerHTML = '<div class="text-danger text-center py-4 small">Failed to load scripts.</div>';
     });
 }
 
-function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function escapeAttr(t) { return t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function filterModalScripts(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.modal-script-item').forEach(function(el) {
+    el.style.display = (q === '' || el.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
 
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.modal-script-item').forEach(function(el) {
+    if (el.style.display !== 'none') {
+      el.querySelector('.modal-script-check').checked = checked;
+    }
+  });
+  updateModalCount();
+}
+
+function updateModalCount() {
+  var n = document.querySelectorAll('.modal-script-check:checked').length;
+  document.getElementById('modalSelectedCount').textContent = n + ' selected';
+}
+
+function addSelectedScripts() {
+  var browser = document.getElementById('modalBrowser').value;
+  var viewport = document.getElementById('modalViewport').value;
+  var checks = document.querySelectorAll('.modal-script-check:checked');
+  if (checks.length === 0) return;
+
+  checks.forEach(function(cb) {
+    suiteScripts.push({
+      script_path: cb.dataset.path,
+      browser: browser,
+      viewport: viewport,
+      description: cb.dataset.desc || '',
+      test_type: cb.dataset.type || '',
+    });
+  });
+
+  renderScriptsTable();
+  if (addModal) addModal.hide();
+}
+
+// --- Cascading Dropdowns ---
+function onEnvChange(envId) {
+  var assessSel = document.getElementById('suiteAssessment');
+  var itemSel = document.getElementById('suiteItem');
+  assessSel.innerHTML = '<option value="">-- All --</option>';
+  assessSel.disabled = !envId;
+  itemSel.innerHTML = '<option value="">-- All --</option>';
+  itemSel.disabled = true;
+  if (envId) {
+    fetch('/suites/api/assessments/?environment_id=' + encodeURIComponent(envId))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        (d.assessments || []).forEach(function(a) {
+          var opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.name + (a.item_count ? ' (' + a.item_count + ' items)' : '');
+          assessSel.appendChild(opt);
+        });
+      });
+  }
+}
+
+function onAssessmentChange(assessmentId) {
+  var itemSel = document.getElementById('suiteItem');
+  itemSel.innerHTML = '<option value="">-- All --</option>';
+  itemSel.disabled = !assessmentId;
+  if (assessmentId) {
+    fetch('/suites/api/items/?assessment_id=' + encodeURIComponent(assessmentId))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        (d.items || []).forEach(function(it) {
+          var opt = document.createElement('option');
+          opt.value = it.item_id;
+          opt.textContent = it.item_id + (it.title ? ' -- ' + it.title : '');
+          itemSel.appendChild(opt);
+        });
+      });
+  }
+}
+
+// --- Save ---
 function saveSuite() {
   var name = document.getElementById('suiteName').value.trim();
   if (!name) { alert('Name is required'); return; }
+
   var data = {
     name: name,
     description: document.getElementById('suiteDesc').value.trim() || null,
-    scripts: [...document.querySelectorAll('.script-check:checked')].map(c => c.value),
-    browser_profiles: [...document.querySelectorAll('.browser-profile:checked')].map(c => c.value),
     environment_id: document.getElementById('suiteEnv').value || null,
+    scripts: suiteScripts.map(function(s) {
+      return {script_path: s.script_path, browser: s.browser, viewport: s.viewport};
+    }),
   };
+
   {% if suite %}
   var url = '/suites/api/update/{{ suite.id }}/';
   var method = 'PUT';
@@ -159,15 +393,19 @@ function saveSuite() {
   var url = '/suites/api/create/';
   var method = 'POST';
   {% endif %}
-  document.getElementById('saveStatus').textContent = 'Saving…';
+
+  document.getElementById('saveStatus').textContent = 'Saving...';
   fetch(url, {
     method: method,
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify(data)
-  }).then(r => r.json()).then(d => {
-    if (d.error) { document.getElementById('saveStatus').textContent = 'Error: ' + d.error; return; }
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) {
+      document.getElementById('saveStatus').textContent = 'Error: ' + d.error;
+      return;
+    }
     if (d.redirect) window.location = d.redirect;
-    else document.getElementById('saveStatus').textContent = 'Saved ✓';
+    else document.getElementById('saveStatus').textContent = 'Saved';
   });
 }
 
@@ -178,7 +416,7 @@ function runSuite() {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: '{}'
-  }).then(r => r.json()).then(d => {
+  }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.runId) window.location = '/runs/' + d.runId + '/';
     else alert('Error: ' + (d.error || 'Unknown'));
   });
@@ -189,13 +427,35 @@ function deleteSuite() {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: '{}'
-  }).then(() => { window.location = '/suites/'; });
+  }).then(function() { window.location = '/suites/'; });
 }
 {% endif %}
 
+// --- Utilities ---
+function esc(t) { return t ? t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function escAttr(t) { return t ? t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
 }
+
+// On page load: populate assessments if environment already selected
+(function() {
+  var envId = document.getElementById('suiteEnv').value;
+  if (envId) {
+    var assessSel = document.getElementById('suiteAssessment');
+    assessSel.disabled = false;
+    fetch('/suites/api/assessments/?environment_id=' + encodeURIComponent(envId))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        (d.assessments || []).forEach(function(a) {
+          var opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.name + (a.item_count ? ' (' + a.item_count + ' items)' : '');
+          assessSel.appendChild(opt);
+        });
+      });
+  }
+})();
 </script>
 {% endblock %}

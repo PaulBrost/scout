@@ -321,18 +321,8 @@ def api_create_script(request):
         if not environment_id:
             return JsonResponse({'error': 'Environment is required'}, status=400)
 
-        safe_name = name.replace(' ', '-').lower()
-        safe_name = ''.join(c for c in safe_name if c.isalnum() or c in '-_')
-        if not safe_name:
-            safe_name = 'new-script'
-        if not safe_name.endswith('.spec.js'):
-            safe_name += '.spec.js'
-
-        script_path = safe_name
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT 1 FROM test_scripts WHERE script_path = %s', [script_path])
-            if cursor.fetchone():
-                return JsonResponse({'error': f'Script "{script_path}" already exists'}, status=409)
+        import uuid as _uuid
+        script_path = f'{_uuid.uuid4()}.spec.js'
 
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
         full_path = tests_dir / script_path
@@ -349,9 +339,9 @@ def api_create_script(request):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, environment_id, item_id, description, test_type, tags, ai_config, created_at, updated_at)
-                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())""",
-                [script_path, environment_id, item_id, f'Test script for {name}']
+                """INSERT INTO test_scripts (script_path, environment_id, item_id, description, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
+                   VALUES (%s, %s::uuid, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())""",
+                [script_path, environment_id, item_id, name]
             )
 
         return JsonResponse({'ok': True, 'path': script_path})

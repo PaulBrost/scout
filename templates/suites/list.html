@@ -56,6 +56,9 @@
             <button class="btn btn-sm btn-success" onclick="runSuite('{{ suite.id }}', '{{ suite.name|escapejs }}')">
               <i class="bi bi-play-fill"></i> Run
             </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteSuite('{{ suite.id }}', '{{ suite.name|escapejs }}')">
+              <i class="bi bi-trash"></i>
+            </button>
           </td>
         </tr>
         {% empty %}
@@ -93,6 +96,17 @@ function runSuite(id, name) {
     body: '{}'
   }).then(r => r.json()).then(d => {
     if (d.runId) window.location = '/runs/' + d.runId + '/';
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  });
+}
+function deleteSuite(id, name) {
+  if (!confirm('Delete suite "' + name + '"? This cannot be undone.')) return;
+  fetch('/suites/api/delete/' + id + '/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) window.location.reload();
     else alert('Error: ' + (d.error || 'Unknown error'));
   });
 }

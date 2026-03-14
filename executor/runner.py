@@ -192,7 +192,52 @@ def extract_error_message(stdout, stderr, json_report):
     return 'Test failed (see execution log for details)'
 
 
-def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False):
+def classify_failures(json_report):
+    """Analyze Playwright JSON report to separate screenshot comparison failures from other failures.
+
+    Returns (screenshot_mismatches: list[str], other_failures: list[str]).
+    screenshot_mismatches contains the names of screenshots that didn't match.
+    other_failures contains descriptions of non-screenshot errors.
+    """
+    screenshot_mismatches = []
+    other_failures = []
+
+    if not json_report or not json_report.get('suites'):
+        return screenshot_mismatches, other_failures
+
+    def walk_suites(suites):
+        for suite in suites:
+            for spec in suite.get('specs', []):
+                for test_entry in spec.get('tests', []):
+                    for result in test_entry.get('results', []):
+                        if result.get('status') not in ('failed', 'timedOut'):
+                            continue
+                        for error in (result.get('errors') or [result.get('error')] if result.get('error') else []):
+                            if not error:
+                                continue
+                            msg = error.get('message', '') if isinstance(error, dict) else str(error)
+                            if 'toHaveScreenshot' in msg or 'Screenshot comparison' in msg:
+                                # Extract screenshot name from the call
+                                m = re.search(r'toHaveScreenshot\(["\']([^"\']+)', msg)
+                                screenshot_mismatches.append(m.group(1) if m else spec.get('title', 'unknown'))
+                            else:
+                                other_failures.append(msg.split('\n')[0][:200])
+                        if result.get('status') == 'timedOut' and not result.get('errors') and not result.get('error'):
+                            other_failures.append('Test timed out')
+            walk_suites(suite.get('suites', []))
+
+    walk_suites(json_report['suites'])
+    return screenshot_mismatches, other_failures
+
+
+BROWSER_TO_PROJECT = {
+    'chromium': 'chrome-desktop',
+    'firefox': 'firefox-desktop',
+    'webkit': 'webkit-desktop',
+}
+
+
+def execute_script(script_path, project='', timeout=None, env_vars=None, headed=False, viewport=None):
     """Execute a single Playwright test script."""
     if timeout is None:
         timeout = settings.SCOUT_SCRIPT_TIMEOUT / 1000  # convert ms to seconds
@@ -211,6 +256,16 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
             'trace_path': None,
             'video_path': None,
         }
+
+    # Clear cached session state so tests always start from login/form selection,
+    # not from a resumed page.  This is critical for environments like NAEP Gates
+    # (which resumes mid-assessment) and PIAAC (which needs filter selection).
+    session_file = project_root / 'auth' / 'session.json'
+    if session_file.exists():
+        try:
+            session_file.unlink()
+        except OSError:
+            pass
 
     results_dir = project_root / 'test-results'
 
@@ -237,6 +292,8 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
     env['PLAYWRIGHT_JSON_OUTPUT_NAME'] = str(json_file)
     env['FORCE_COLOR'] = '0'
     env['CI'] = '1'
+    if viewport:
+        env['SCOUT_VIEWPORT'] = viewport
     if env_vars:
         env.update(env_vars)
 
@@ -305,6 +362,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         pass
 
     # Determine status
+    screenshot_mismatches = []
     if timed_out:
         status = 'error'
         error_message = f'Timeout: Script exceeded {timeout}s limit'
@@ -312,8 +370,17 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         status = 'passed'
         error_message = None
     else:
-        status = 'failed'
-        error_message = extract_error_message(stdout, stderr, json_report)
+        # Check if the only failures are screenshot comparison mismatches.
+        # If so, the test execution itself succeeded — flag issues separately.
+        ss_mismatches, other_failures = classify_failures(json_report)
+        if ss_mismatches and not other_failures:
+            status = 'passed'
+            screenshot_mismatches = ss_mismatches
+            error_message = None
+        else:
+            status = 'failed'
+            error_message = extract_error_message(stdout, stderr, json_report)
+            screenshot_mismatches = ss_mismatches
 
     trace_path, video_path = find_artifacts(script_path)
     snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs)
@@ -328,6 +395,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         'trace_path': trace_path,
         'video_path': video_path,
         'snapshots': snapshots,
+        'screenshot_mismatches': screenshot_mismatches,
     }
 
 
@@ -376,25 +444,14 @@ def prepare_test_data(run_id, environment_id):
 def execute_run(run_id, script_paths, options=None):
     """Execute all scripts in a run sequentially, updating DB as each completes."""
     options = options or {}
-    passed = failed = errors = 0
+    passed = failed = errors = issues = 0
 
     # Prepare test data and environment config if environment is set on the run
     test_data_path = None
     env_config_json = None
-    headed = options.get('headed', False)
     with connection.cursor() as cursor:
-        cursor.execute('SELECT environment_id, config FROM test_runs WHERE id = %s', [run_id])
+        cursor.execute('SELECT environment_id FROM test_runs WHERE id = %s', [run_id])
         row = cursor.fetchone()
-        if row:
-            # Check run config for headed flag
-            run_config = row[1]
-            if isinstance(run_config, str):
-                try:
-                    run_config = json.loads(run_config)
-                except (json.JSONDecodeError, TypeError):
-                    run_config = {}
-            if isinstance(run_config, dict) and run_config.get('headed'):
-                headed = True
         if row and row[0]:
             environment_id = row[0]
             test_data_path = prepare_test_data(run_id, environment_id)
@@ -434,11 +491,23 @@ def execute_run(run_id, script_paths, options=None):
             [run_id]
         )
 
-    for script_path in script_paths:
+    # Fetch run_script entries (id, script_path, browser, viewport) in order
+    run_script_entries = []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT id, script_path, browser, viewport FROM test_run_scripts WHERE run_id = %s ORDER BY script_path',
+            [run_id]
+        )
+        run_script_entries = [{'id': r[0], 'script_path': r[1], 'browser': r[2] or 'chromium', 'viewport': r[3] or '1920x1080'} for r in cursor.fetchall()]
+
+    for entry in run_script_entries:
+        script_path = entry['script_path']
+        run_script_id = entry['id']
+
         with connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE test_run_scripts SET status = 'running', started_at = now() WHERE run_id = %s AND script_path = %s",
-                [run_id, script_path]
+                "UPDATE test_run_scripts SET status = 'running', started_at = now() WHERE id = %s",
+                [run_script_id]
             )
 
         try:
@@ -448,11 +517,14 @@ def execute_run(run_id, script_paths, options=None):
             if env_config_json:
                 env_vars['SCOUT_ENV_CONFIG'] = env_config_json
 
+            # Per-entry browser/viewport from test_run_scripts
+            script_project = options.get('project') or BROWSER_TO_PROJECT.get(entry['browser'], 'chrome-desktop')
+
             result = execute_script(
                 script_path,
-                project=options.get('project', ''),
+                project=script_project,
                 env_vars=env_vars if env_vars else None,
-                headed=headed,
+                viewport=entry['viewport'],
             )
 
             # Archive artifacts to persistent storage
@@ -468,24 +540,28 @@ def execute_run(run_id, script_paths, options=None):
                     """UPDATE test_run_scripts
                        SET status = %s, duration_ms = %s, error_message = %s,
                            execution_log = %s, trace_path = %s, video_path = %s, completed_at = now()
-                       WHERE run_id = %s AND script_path = %s
-                       RETURNING id""",
+                       WHERE id = %s""",
                     [result['status'], result['duration_ms'], result['error_message'],
                      result['execution_log'], archived_trace, archived_video,
-                     run_id, script_path]
+                     run_script_id]
                 )
-                script_id_row = cursor.fetchone()
-                run_script_id = script_id_row[0] if script_id_row else None
 
             # Save captured snapshots as RunScreenshot records (archived paths)
+            # Auto-flag comparison artifacts (diff/actual from screenshot mismatches)
+            ss_mismatches = result.get('screenshot_mismatches', [])
             for snap in archived_snaps:
+                is_comparison = snap.get('project_name') == 'comparison'
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, created_at)
-                           VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, false, now())
+                        """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at)
+                           VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, now())
                            ON CONFLICT DO NOTHING""",
-                        [run_id, run_script_id, snap['name'], snap['file_path'], snap['project_name']]
+                        [run_id, run_script_id, snap['name'], snap['file_path'], snap['project_name'],
+                         is_comparison, 'Screenshot comparison mismatch' if is_comparison else None]
                     )
+
+            script_issues = len(ss_mismatches)
+            issues += script_issues
 
             if result['status'] == 'passed':
                 passed += 1
@@ -498,13 +574,13 @@ def execute_run(run_id, script_paths, options=None):
                 cursor.execute(
                     """UPDATE test_run_scripts
                        SET status = 'error', error_message = %s, execution_log = %s, completed_at = now()
-                       WHERE run_id = %s AND script_path = %s""",
-                    [f'Execution engine error: {e}', f'Internal error: {e}', run_id, script_path]
+                       WHERE id = %s""",
+                    [f'Execution engine error: {e}', f'Internal error: {e}', run_script_id]
                 )
             errors += 1
 
     run_status = 'completed' if (failed + errors) == 0 else 'failed'
-    summary = json.dumps({'passed': passed, 'failed': failed, 'errors': errors, 'total': len(script_paths)})
+    summary = json.dumps({'passed': passed, 'failed': failed, 'errors': errors, 'issues': issues, 'total': len(run_script_entries)})
 
     with connection.cursor() as cursor:
         cursor.execute(

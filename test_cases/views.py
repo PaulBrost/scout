@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from django.shortcuts import render
 from django.http import JsonResponse
@@ -81,7 +82,7 @@ def index(request):
             LEFT JOIN items i ON ts.item_id = i.item_id
             LEFT JOIN environments e ON ts.environment_id = e.id
             {where_clause}
-            ORDER BY ts.script_path
+            ORDER BY ts.updated_at DESC NULLS LAST
             LIMIT %s OFFSET %s
         """, params + [page_size, offset])
         cols = [c[0] for c in cursor.description]
@@ -137,20 +138,28 @@ def api_save(request):
             return JsonResponse({'error': 'Access denied'}, status=403)
 
         full_path.parent.mkdir(parents=True, exist_ok=True)
+        # Auto-correct helper import paths based on file depth
+        depth = file_path.count('/')
+        correct_prefix = '../' * (depth + 1)
+        content = re.sub(
+            r"""require\(\s*['"](\.\./)*src/helpers/""",
+            f"require('{correct_prefix}src/helpers/",
+            content,
+        )
         full_path.write_text(content, encoding='utf-8')
 
         with connection.cursor() as cursor:
             if environment_id:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, created_at, updated_at)
-                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())
+                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
+                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [file_path, environment_id]
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, created_at, updated_at)
-                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, now(), now())
+                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
+                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                     [file_path]
                 )
@@ -201,13 +210,15 @@ def api_associate(request):
         test_type = data.get('testType') or None
         description = data.get('description') or None
         environment_id = data.get('environmentId') or None
+        browser = data.get('browser') or 'chromium'
+        viewport = data.get('viewport') or '1920x1080'
         ai_config = data.get('aiConfig')
         ai_config_json = json.dumps(ai_config) if ai_config is not None else None
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, ai_config, tags, created_at, updated_at)
-                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, COALESCE(%s::jsonb, '{}'::jsonb), '[]'::jsonb, now(), now())
+                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, browser, viewport, ai_config, tags, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s, %s::uuid, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), '[]'::jsonb, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET
                      item_id = COALESCE(EXCLUDED.item_id, test_scripts.item_id),
                      assessment_id = COALESCE(EXCLUDED.assessment_id, test_scripts.assessment_id),
@@ -215,9 +226,11 @@ def api_associate(request):
                      test_type = COALESCE(EXCLUDED.test_type, test_scripts.test_type),
                      description = COALESCE(EXCLUDED.description, test_scripts.description),
                      environment_id = COALESCE(EXCLUDED.environment_id, test_scripts.environment_id),
+                     browser = EXCLUDED.browser,
+                     viewport = EXCLUDED.viewport,
                      ai_config = CASE WHEN %s::jsonb IS NOT NULL THEN %s::jsonb ELSE test_scripts.ai_config END,
                      updated_at = now()""",
-                [script_path, item_id, assessment_id, category, test_type, description, environment_id, ai_config_json,
+                [script_path, item_id, assessment_id, category, test_type, description, environment_id, browser, viewport, ai_config_json,
                  ai_config_json, ai_config_json]
             )
         return JsonResponse({'ok': True})
@@ -229,14 +242,13 @@ def api_associate(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_script(request):
-    """Delete a single test script by its DB id."""
+    """Delete a single test script by its DB id (or archive if archiving enabled)."""
     try:
         data = json.loads(request.body)
         script_id = data.get('id')
         if not script_id:
             return JsonResponse({'error': 'id required'}, status=400)
 
-        # Look up script_path so we can also delete the file
         with connection.cursor() as cursor:
             cursor.execute('SELECT script_path FROM test_scripts WHERE id = %s', [script_id])
             row = cursor.fetchone()
@@ -244,16 +256,19 @@ def api_delete_script(request):
             return JsonResponse({'error': 'Script not found'}, status=404)
 
         script_path = row[0]
-
-        with connection.cursor() as cursor:
-            cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [script_path])
-            cursor.execute('DELETE FROM test_scripts WHERE id = %s', [script_id])
-
-        # Delete the file on disk
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
         full_path = (tests_dir / script_path).resolve()
-        if str(full_path).startswith(str(tests_dir.resolve())) and full_path.exists():
-            full_path.unlink()
+
+        if not str(full_path).startswith(str(tests_dir.resolve())):
+            return JsonResponse({'error': 'Invalid path'}, status=400)
+
+        from builder.views import _get_archiving_config, _archive_script, _hard_delete_script
+        with connection.cursor() as cursor:
+            enabled, _ = _get_archiving_config(cursor)
+            if enabled:
+                _archive_script(cursor, script_path, full_path, request.user)
+            else:
+                _hard_delete_script(cursor, script_path, full_path)
 
         return JsonResponse({'ok': True})
     except Exception as e:
@@ -264,29 +279,32 @@ def api_delete_script(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_scripts_bulk(request):
-    """Delete multiple test scripts by ID list."""
+    """Delete multiple test scripts by ID list (or archive if archiving enabled)."""
     try:
         data = json.loads(request.body)
         ids = data.get('ids', [])
         if not ids:
             return JsonResponse({'error': 'No IDs provided'}, status=400)
 
-        # Get script paths for file deletion
+        from builder.views import _get_archiving_config, _archive_script, _hard_delete_script
+        tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+
         with connection.cursor() as cursor:
+            enabled, _ = _get_archiving_config(cursor)
             cursor.execute('SELECT id, script_path FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
             scripts = cursor.fetchall()
 
-        tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
+        deleted = 0
         for script_id, script_path in scripts:
-            with connection.cursor() as cursor:
-                cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [script_path])
             full_path = (tests_dir / script_path).resolve()
-            if str(full_path).startswith(str(tests_dir.resolve())) and full_path.exists():
-                full_path.unlink()
-
-        with connection.cursor() as cursor:
-            cursor.execute('DELETE FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
-            deleted = cursor.rowcount
+            if not str(full_path).startswith(str(tests_dir.resolve())):
+                continue
+            with connection.cursor() as cursor:
+                if enabled:
+                    _archive_script(cursor, script_path, full_path, request.user)
+                else:
+                    _hard_delete_script(cursor, script_path, full_path)
+            deleted += 1
 
         return JsonResponse({'ok': True, 'deleted': deleted})
     except Exception as e:

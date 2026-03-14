@@ -10,4 +10,10 @@ urlpatterns = [
     path('ai/vision-analysis/', views.update_vision_analysis, name='admin_update_vision_analysis'),
     path('ai/test-provider/', views.test_provider, name='admin_test_provider'),
     path('ai/feature-provider/', views.save_feature_provider, name='admin_save_feature_provider'),
+    path('general/', views.general_settings, name='admin_general'),
+    path('general/update/', views.update_general_settings, name='admin_update_general'),
+    path('archives/', views.test_archives, name='admin_archives'),
+    path('archives/restore/', views.restore_archive, name='admin_restore_archive'),
+    path('archives/delete/', views.delete_archive, name='admin_delete_archive'),
+    path('archives/cleanup/', views.run_cleanup, name='admin_run_cleanup'),
 ]
