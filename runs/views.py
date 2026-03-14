@@ -424,6 +424,82 @@ def api_flag_screenshot(request, screenshot_id):
 
 
 @login_required(login_url='/login/')
+def api_runs_with_screenshots(request):
+    """Return recent runs that have screenshots, for comparison dropdown.
+
+    Scoped to runs that share the same script(s) as the given `for_run` param,
+    so only related runs appear (same test, same assessment).
+    """
+    search = request.GET.get('q', '').strip()
+    exclude_run = request.GET.get('exclude', '')
+    for_run = request.GET.get('for_run', '')
+    limit = min(20, max(1, int(request.GET.get('limit', 15))))
+
+    where = ["(SELECT COUNT(*) FROM run_screenshots rs WHERE rs.run_id = r.id) > 0"]
+    params = []
+
+    if exclude_run:
+        where.append("r.id != %s::uuid")
+        params.append(exclude_run)
+
+    # Scope to runs that share the same script_path(s) as the current run
+    if for_run:
+        where.append("""EXISTS (
+            SELECT 1 FROM test_run_scripts trs2
+            WHERE trs2.run_id = r.id
+              AND trs2.script_path IN (
+                  SELECT script_path FROM test_run_scripts WHERE run_id = %s::uuid
+              )
+        )""")
+        params.append(for_run)
+
+    if search:
+        where.append("""(r.id::text LIKE %s OR LOWER(COALESCE(r.notes, '')) LIKE %s
+                        OR LOWER(COALESCE(s.name, '')) LIKE %s
+                        OR LOWER(COALESCE(ts.description, '')) LIKE %s)""")
+        q = f'%{search.lower()}%'
+        params.extend([q, q, q, q])
+
+    # RBAC
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return JsonResponse({'runs': []})
+        where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
+        params.append(tuple(str(e) for e in env_ids))
+
+    where_sql = ' AND '.join(where)
+    params.append(limit)
+
+    with connection.cursor() as cursor:
+        cursor.execute(f"""
+            SELECT r.id, r.status, r.trigger_type, r.queued_at, r.completed_at,
+                   COALESCE(s.name, ts.description, trs.script_path) AS label,
+                   (SELECT COUNT(*) FROM run_screenshots rs WHERE rs.run_id = r.id) AS screenshot_count
+            FROM test_runs r
+            LEFT JOIN test_suites s ON r.suite_id = s.id
+            LEFT JOIN test_run_scripts trs ON trs.run_id = r.id
+            LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE {where_sql}
+            ORDER BY r.queued_at DESC
+            LIMIT %s
+        """, params)
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    # Deduplicate by run id (joins may produce multiple rows per run)
+    seen = set()
+    runs = []
+    for row in rows:
+        rid = str(row['id'])
+        if rid not in seen:
+            seen.add(rid)
+            runs.append(row)
+
+    return JsonResponse({'runs': runs}, json_dumps_params={'default': str})
+
+
+@login_required(login_url='/login/')
 def api_run_screenshots(request, run_id):
     """Return screenshots for a run as JSON."""
     with connection.cursor() as cursor:
@@ -431,7 +507,7 @@ def api_run_screenshots(request, run_id):
             """SELECT id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at
                FROM run_screenshots WHERE run_id = %s
                ORDER BY regexp_replace(name, '\\d+', '', 'g'),
-                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::int, 0),
+                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::numeric, 0),
                         name""",
             [run_id]
         )

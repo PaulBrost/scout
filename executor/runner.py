@@ -136,7 +136,8 @@ def find_snapshots(script_path, pre_existing_pngs=None):
                     if f in pre_existing_pngs and f.stat().st_mtime == pre_existing_pngs[f]:
                         continue
                     stem = f.stem
-                    # Classify by suffix pattern: *-diff, *-actual, or plain
+                    # Classify by suffix pattern: *-diff, *-actual are Playwright
+                    # comparison artifacts; plain PNGs are normal page.screenshot() captures
                     category = ''
                     name = stem
                     if stem.endswith('-diff'):
@@ -145,9 +146,16 @@ def find_snapshots(script_path, pre_existing_pngs=None):
                     elif stem.endswith('-actual'):
                         category = 'actual'
                         name = stem[:-7]
+                    elif stem.endswith('-expected'):
+                        category = 'expected'
+                        name = stem[:-9]
+                    # Only mark -diff/-actual/-expected as 'comparison';
+                    # plain screenshots are normal captures, not mismatches
+                    is_comparison_artifact = category != ''
                     display_name = f'{name} ({category})' if category else name
+                    project_name = 'comparison' if is_comparison_artifact else 'capture'
                     rel_path = str(f.relative_to(pw_root))
-                    results.append({'name': display_name, 'file_path': rel_path, 'project_name': 'comparison'})
+                    results.append({'name': display_name, 'file_path': rel_path, 'project_name': project_name})
         except Exception:
             pass
 
@@ -284,7 +292,8 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
 
     json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
 
-    args = ['npx', 'playwright', 'test', str(full_path), '--reporter=list,json', '--retries=0']
+    args = ['npx', 'playwright', 'test', str(full_path),
+            '--reporter=list,json,./src/reporters/live-reporter.js', '--retries=0']
     if update_snapshots:
         args.append('--update-snapshots')
     if headed:
@@ -317,7 +326,9 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         )
 
         if log_callback:
-            # Stream stdout line-by-line for live updates
+            # Stream stdout and stderr line-by-line for live updates.
+            # The live-reporter.js writes progress to stderr (unbuffered),
+            # and forwards test console.log output there too.
             stdout_lines = []
             stderr_lines = []
 
@@ -339,14 +350,17 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
                     break
                 now = time.time()
                 if now - last_cb >= 3:
-                    log_callback(''.join(stdout_lines))
+                    # Only show stderr for live view — it has real-time
+                    # progress from live-reporter.js.  Stdout is fully
+                    # buffered by Node and would duplicate the same lines.
+                    log_callback(''.join(stderr_lines))
                     last_cb = now
                 time.sleep(0.5)
 
             stdout_thread.join(5)
             stderr_thread.join(5)
-            # Final callback with complete output
-            log_callback(''.join(stdout_lines))
+            # Final live callback with stderr only (stdout saved in execution_log)
+            log_callback(''.join(stderr_lines))
             stdout = ''.join(stdout_lines)
             stderr = ''.join(stderr_lines)
             exit_code = proc.returncode if proc.returncode is not None else -1

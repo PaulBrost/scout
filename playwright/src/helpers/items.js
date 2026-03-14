@@ -449,6 +449,12 @@ async function navigateAllScreens(page, envConfig, onScreen) {
       } catch { /* end indicator not visible, continue */ }
     }
 
+    // Snapshot the page content before advancing so we can detect if Next actually moved
+    const contentBefore = await page.evaluate(() => {
+      const el = document.getElementById('item') || document.getElementById('theItem') || document.body;
+      return el.innerHTML.substring(0, 1000);
+    });
+
     // Try to advance — force-click handles disabled buttons (audio/video gates)
     try {
       const nextExists = await page.locator('#nextButton').count();
@@ -461,6 +467,19 @@ async function navigateAllScreens(page, envConfig, onScreen) {
       await forceClickNext(page);
     } catch {
       // Can't advance — end of assessment
+      break;
+    }
+
+    // Wait for any transition, then check if the page actually changed
+    await page.waitForTimeout(800);
+    const contentAfter = await page.evaluate(() => {
+      const el = document.getElementById('item') || document.getElementById('theItem') || document.body;
+      return el.innerHTML.substring(0, 1000);
+    });
+
+    if (contentBefore === contentAfter) {
+      // Page didn't change — we've reached the end of the assessment
+      process.stderr.write(`[SCOUT] Screen ${screenIndex} appears to be the last screen (content unchanged after Next)\n`);
       break;
     }
 

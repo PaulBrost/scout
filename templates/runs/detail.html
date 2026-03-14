@@ -169,8 +169,14 @@
     </div>
     <div class="d-flex align-items-center gap-2">
       <label class="small text-muted mb-0">Compare with:</label>
-      <input type="text" id="baselineRunInput" class="form-control form-control-sm" placeholder="Paste run ID..."
-             style="width:280px;font-size:.75rem" title="Enter a run ID to compare screenshots side-by-side">
+      <div class="position-relative" style="width:340px">
+        <input type="text" id="baselineRunInput" class="form-control form-control-sm" placeholder="Select a run or paste ID..."
+               style="font-size:.75rem" autocomplete="off"
+               onfocus="showRunDropdown()" oninput="filterRunDropdown(this.value)">
+        <div class="dropdown-menu w-100 shadow-sm" id="runDropdown" style="max-height:280px;overflow-y:auto;font-size:.75rem">
+          <div class="px-3 py-2 text-muted" id="runDropdownLoading">Loading runs...</div>
+        </div>
+      </div>
       <button class="btn btn-sm btn-outline-primary" id="loadBaselineBtn" onclick="loadBaselineRun()">
         <i class="bi bi-arrows-angle-expand"></i> Load
       </button>
@@ -180,7 +186,10 @@
     </div>
   </div>
   <div class="card-body">
-    <div id="baselineInfo" class="alert alert-info py-2 small mb-3" style="display:none"></div>
+    <div id="baselineInfo" class="alert alert-info py-2 small mb-3" style="display:none">
+      <div id="baselineInfoText"></div>
+      <div class="text-muted mt-1">Click any screenshot below to view a side-by-side comparison with the baseline.</div>
+    </div>
     <div class="row g-3">
       {% for ss in screenshots %}
       <div class="col-md-4 col-lg-3">
@@ -808,6 +817,101 @@ if ('{{ run.status }}' === 'running' || '{{ run.status }}' === 'scheduled') {
 
 // --- Baseline comparison ---
 var baselineScreenshots = null; // map: name -> {file_path, ...}
+var recentRuns = []; // cached list from API
+var runDropdownVisible = false;
+var searchTimeout = null;
+
+function showRunDropdown() {
+  var dd = document.getElementById('runDropdown');
+  if (!recentRuns.length) {
+    dd.classList.add('show');
+    fetchRecentRuns('');
+  } else {
+    renderRunDropdown(recentRuns);
+    dd.classList.add('show');
+  }
+  runDropdownVisible = true;
+}
+
+function hideRunDropdown() {
+  setTimeout(function() {
+    document.getElementById('runDropdown').classList.remove('show');
+    runDropdownVisible = false;
+  }, 200);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#baselineRunInput') && !e.target.closest('#runDropdown')) {
+    document.getElementById('runDropdown').classList.remove('show');
+    runDropdownVisible = false;
+  }
+});
+
+function filterRunDropdown(query) {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(function() {
+    if (query.length >= 2) {
+      fetchRecentRuns(query);
+    } else if (query.length === 0) {
+      renderRunDropdown(recentRuns);
+    }
+  }, 300);
+}
+
+function fetchRecentRuns(query) {
+  var url = '/runs/api/runs-with-screenshots/?exclude=' + runId + '&for_run=' + runId + '&limit=15';
+  if (query) url += '&q=' + encodeURIComponent(query);
+  document.getElementById('runDropdownLoading').style.display = '';
+  fetch(url)
+    .then(function(r) { return r.ok ? r.json() : { runs: [] }; })
+    .then(function(d) {
+      if (!query) recentRuns = d.runs; // cache the default list
+      renderRunDropdown(d.runs);
+    });
+}
+
+function renderRunDropdown(runs) {
+  var dd = document.getElementById('runDropdown');
+  dd.innerHTML = '';
+  if (!runs.length) {
+    dd.innerHTML = '<div class="px-3 py-2 text-muted">No runs with screenshots found</div>';
+    dd.classList.add('show');
+    return;
+  }
+  runs.forEach(function(r) {
+    var item = document.createElement('a');
+    item.href = '#';
+    item.className = 'dropdown-item py-1 d-flex justify-content-between align-items-center';
+    item.style.fontSize = '.75rem';
+    var statusClass = r.status === 'completed' ? 'success' : r.status === 'failed' ? 'danger' : 'secondary';
+    var dateStr = '';
+    try {
+      dateStr = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        .format(new Date(r.queued_at));
+    } catch(e) { dateStr = (r.queued_at || '').substring(0, 10); }
+    var label = r.label || r.id.substring(0, 8);
+    if (label.length > 40) label = label.substring(0, 40) + '\u2026';
+    var triggerBadge = r.trigger_type === 'baseline' ? '<span class="badge bg-info text-dark ms-1" style="font-size:.6rem">baseline</span>' : '';
+    item.innerHTML =
+      '<div class="text-truncate">' +
+        '<span class="badge bg-' + statusClass + '" style="font-size:.6rem">' + r.status + '</span>' +
+        triggerBadge + ' ' +
+        '<span class="fw-medium">' + escapeHtml(label) + '</span>' +
+        '<span class="text-muted ms-1">' + r.id.substring(0, 8) + '</span>' +
+      '</div>' +
+      '<div class="text-muted text-nowrap ms-2">' + r.screenshot_count + ' img &middot; ' + dateStr + '</div>';
+    item.onclick = function(e) {
+      e.preventDefault();
+      document.getElementById('baselineRunInput').value = r.id;
+      dd.classList.remove('show');
+      runDropdownVisible = false;
+      loadBaselineRun();
+    };
+    dd.appendChild(item);
+  });
+  dd.classList.add('show');
+}
 
 function loadBaselineRun() {
   var input = document.getElementById('baselineRunInput');
@@ -827,9 +931,16 @@ function loadBaselineRun() {
       d.screenshots.forEach(function(s) {
         baselineScreenshots[s.name] = s;
       });
-      document.getElementById('baselineInfo').style.display = '';
-      document.getElementById('baselineInfo').textContent =
-        'Baseline loaded: ' + d.screenshots.length + ' screenshots from run ' + rid.substring(0, 8) + '...';
+      var matchCount = 0;
+      document.querySelectorAll('.ss-thumb').forEach(function(el) {
+        if (baselineScreenshots[el.dataset.ssName]) matchCount++;
+      });
+      var info = document.getElementById('baselineInfo');
+      info.style.display = '';
+      document.getElementById('baselineInfoText').innerHTML =
+        '<strong>Baseline loaded:</strong> ' + d.screenshots.length + ' screenshots from run ' +
+        '<code>' + rid.substring(0, 8) + '\u2026</code>' +
+        ' (' + matchCount + ' matching by name)';
       document.getElementById('clearBaselineBtn').style.display = '';
     })
     .catch(function(err) { alert('Error: ' + err); })
