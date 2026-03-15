@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}{% if client %}Edit API Client{% else %}New API Client{% endif %}{% endblock %}
+{% block page_title %}{% if client %}Edit API Client{% else %}New API Client{% endif %}{% endblock %}
+{% block topbar_actions %}
+<a href="/admin-config/api/" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left"></i> Back to Clients
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- One-time key display -->
+{% if new_key %}
+<div class="alert alert-warning" id="keyAlert">
+  <h6 class="alert-heading mb-1">
+    <i class="bi bi-key-fill"></i>
+    {% if created %}Your new API key{% else %}Your regenerated API key{% endif %}
+  </h6>
+  <p class="mb-2" style="font-size:.85rem;">Copy this key now &mdash; it will <strong>not</strong> be shown again.</p>
+  <div class="input-group" style="max-width:600px;">
+    <input type="text" class="form-control font-monospace" id="apiKeyValue" value="{{ new_key }}" readonly style="font-size:.85rem;">
+    <button class="btn btn-outline-secondary" type="button" id="copyBtn" onclick="copyKey()">
+      <i class="bi bi-clipboard"></i> Copy
+    </button>
+  </div>
+</div>
+{% endif %}
+
+{% if form_error %}
+<div class="alert alert-danger">{{ form_error }}</div>
+{% endif %}
+
+{% if success == 'updated' %}
+<div class="alert alert-success alert-dismissible fade show">
+  Client updated.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row">
+  <!-- Main form -->
+  <div class="col-lg-{% if client %}8{% else %}8{% endif %}">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">
+        {% if client %}Client Details{% else %}Create API Client{% endif %}
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{% if client %}/admin-config/api/{{ client.id }}/update/{% else %}/admin-config/api/create/{% endif %}">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" class="form-control" id="name" name="name"
+                   value="{{ client.name|default:'' }}" required
+                   placeholder="e.g., CI Pipeline, External Dashboard">
+          </div>
+          <div class="mb-3">
+            <label for="description" class="form-label">Description <span class="text-muted">(optional)</span></label>
+            <textarea class="form-control" id="description" name="description" rows="2"
+                      placeholder="What this client is used for">{{ client.description|default:'' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label for="environment_id" class="form-label">Environment</label>
+            <select class="form-select" id="environment_id" name="environment_id" required>
+              <option value="">Select environment…</option>
+              {% for env in environments %}
+              <option value="{{ env.id }}"
+                {% if client and client.environment_id == env.id %}selected{% endif %}>
+                {{ env.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">This client can only access data within the selected environment.</div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="rate_limit" class="form-label">Rate Limit (requests / minute)</label>
+              <input type="number" class="form-control" id="rate_limit" name="rate_limit"
+                     value="{{ client.rate_limit|default:60 }}" min="1" max="1000">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="expires_at" class="form-label">Expires At <span class="text-muted">(optional)</span></label>
+              <input type="datetime-local" class="form-control" id="expires_at" name="expires_at"
+                     value="{{ client.expires_at_input|default:'' }}">
+            </div>
+          </div>
+          {% if client %}
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                     value="true" {% if client.is_active %}checked{% endif %}>
+              <label class="form-check-label" for="is_active">Active</label>
+            </div>
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              {% if client %}Update Client{% else %}Create Client{% endif %}
+            </button>
+            <a href="/admin-config/api/" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if client and recent_logs %}
+    <!-- Recent activity -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Recent Activity</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:.8rem;">
+          <thead class="table-light">
+            <tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>IP</th></tr>
+          </thead>
+          <tbody>
+            {% for log in recent_logs %}
+            <tr>
+              <td>{{ log.created_at|date:"M d H:i:s" }}</td>
+              <td><code>{{ log.method }}</code></td>
+              <td><code>{{ log.path }}</code></td>
+              <td>
+                {% if log.status_code < 400 %}
+                <span class="text-success">{{ log.status_code }}</span>
+                {% elif log.status_code < 500 %}
+                <span class="text-warning">{{ log.status_code }}</span>
+                {% else %}
+                <span class="text-danger">{{ log.status_code }}</span>
+                {% endif %}
+              </td>
+              <td>{{ log.ip_address|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if client %}
+  <!-- Sidebar: info, regenerate, delete -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">Info</div>
+      <div class="card-body" style="font-size:.85rem;">
+        <div class="mb-2"><strong>Key prefix:</strong> <code>{{ client.key_prefix }}…</code></div>
+        <div class="mb-2"><strong>Created by:</strong> {{ client.created_by_name|default:"—" }}</div>
+        <div class="mb-2"><strong>Created:</strong> {{ client.created_at|date:"M d, Y H:i" }}</div>
+        <div class="mb-2"><strong>Last used:</strong> {{ client.last_used_at|default:"Never" }}</div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">Regenerate Key</div>
+      <div class="card-body">
+        <p class="text-muted small mb-2">This replaces the current key immediately. Any system using the old key will lose access.</p>
+        <form method="POST" action="/admin-config/api/{{ client.id }}/regenerate/"
+              onsubmit="return confirm('Regenerate API key? The current key will stop working immediately.')">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-warning btn-sm w-100">
+            <i class="bi bi-arrow-repeat"></i> Regenerate Key
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold text-danger">Danger Zone</div>
+      <div class="card-body">
+        <form method="POST" action="/admin-config/api/{{ client.id }}/delete/"
+              onsubmit="return confirm('Delete this API client and all its logs? This cannot be undone.')">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+            <i class="bi bi-trash"></i> Delete Client
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if new_key %}
+<script>
+function copyKey() {
+  var input = document.getElementById('apiKeyValue');
+  input.select();
+  navigator.clipboard.writeText(input.value).then(function() {
+    var btn = document.getElementById('copyBtn');
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
+    setTimeout(function() { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 2000);
+  });
+}
+</script>
+{% endif %}
+{% endblock %}

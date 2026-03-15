@@ -158,12 +158,19 @@ def detail(request, run_id):
         except Exception:
             run['summary'] = {}
 
-    # Script results with test name/summary from test_scripts
+    # Script results with test name/summary and linked assessment/item from test_scripts
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT trs.*, ts.description AS test_name, ts.test_summary
+            SELECT trs.*, ts.description AS test_name, ts.test_summary,
+                   ts.item_id, ts.assessment_id, ts.environment_id AS script_env_id,
+                   i.title AS item_title, i.numeric_id AS item_numeric_id,
+                   a.name AS assessment_name, a.numeric_id AS assessment_numeric_id,
+                   e.name AS environment_name
             FROM test_run_scripts trs
             LEFT JOIN test_scripts ts ON trs.script_path = ts.script_path
+            LEFT JOIN items i ON ts.item_id = i.item_id
+            LEFT JOIN assessments a ON ts.assessment_id = a.id
+            LEFT JOIN environments e ON ts.environment_id = e.id
             WHERE trs.run_id = %s
             ORDER BY trs.completed_at DESC NULLS LAST, trs.script_path
         """, [run_id])
@@ -173,6 +180,28 @@ def detail(request, run_id):
     # For ad-hoc runs, derive a test name from the first script result
     if not run.get('suite_id') and script_results:
         run['test_name'] = script_results[0].get('test_name') or script_results[0].get('script_path', '')
+
+    # Collect unique assessment/item/environment links across all scripts in this run
+    run_assessment = None
+    run_item = None
+    run_environment = None
+    for sr in script_results:
+        if not run_assessment and sr.get('assessment_name'):
+            run_assessment = {
+                'name': sr['assessment_name'],
+                'numeric_id': sr['assessment_numeric_id'],
+            }
+        if not run_item and sr.get('item_id'):
+            run_item = {
+                'item_id': sr['item_id'],
+                'title': sr.get('item_title'),
+                'numeric_id': sr['item_numeric_id'],
+            }
+        if not run_environment and sr.get('environment_name'):
+            run_environment = {
+                'name': sr['environment_name'],
+                'id': sr['script_env_id'],
+            }
 
     # Screenshots
     with connection.cursor() as cursor:
@@ -236,6 +265,9 @@ def detail(request, run_id):
         } for a in analyses], default=str),
         'summaries_json': json.dumps([sr.get('test_summary') or '' for sr in script_results], default=str),
         'ai_config_enabled': ai_config_enabled,
+        'run_assessment': run_assessment,
+        'run_item': run_item,
+        'run_environment': run_environment,
     })
 
 

@@ -244,6 +244,9 @@
         <a href="/admin-config/archives/" class="{% if request.path == '/admin-config/archives/' %}active{% endif %}">
           <i class="bi bi-archive"></i> <span class="nav-label">Test Archives</span>
         </a>
+        <a href="/admin-config/api/" class="{% if '/admin-config/api' in request.path %}active{% endif %}">
+          <i class="bi bi-plug"></i> <span class="nav-label">API</span>
+        </a>
         <a href="/django-admin/">
           <i class="bi bi-shield-lock"></i> <span class="nav-label">Django Admin</span>
         </a>

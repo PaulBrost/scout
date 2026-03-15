@@ -129,6 +129,8 @@ def find_snapshots(script_path, pre_existing_pngs=None):
     # 2) Scan test-results/ for new or modified PNGs from this run
     if pre_existing_pngs is not None:
         results_dir = pw_root / 'test-results'
+        # Regex to detect Playwright trace resource files — pure hex hashes ≥20 chars
+        _trace_resource_re = re.compile(r'^[0-9a-f]{20,}$')
         try:
             if results_dir.exists():
                 for f in sorted(results_dir.rglob('*.png')):
@@ -136,6 +138,11 @@ def find_snapshots(script_path, pre_existing_pngs=None):
                     if f in pre_existing_pngs and f.stat().st_mtime == pre_existing_pngs[f]:
                         continue
                     stem = f.stem
+                    # Skip Playwright trace resource images (hex-hash filenames
+                    # like 03f054263002e7c4dfe9855abea7fbd98705d362.png — these
+                    # are cached page assets, not test screenshots)
+                    if _trace_resource_re.match(stem):
+                        continue
                     # Classify by suffix pattern: *-diff, *-actual are Playwright
                     # comparison artifacts; plain PNGs are normal page.screenshot() captures
                     category = ''

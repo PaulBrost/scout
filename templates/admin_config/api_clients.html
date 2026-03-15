@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}API Clients{% endblock %}
+{% block page_title %}API Clients{% endblock %}
+{% block topbar_actions %}
+<a href="/admin-config/api/create/" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg"></i> New Client
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Quick start -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Getting Started</div>
+  <div class="card-body" style="font-size:.875rem;">
+    <ol class="mb-2">
+      <li>Create an API client below and assign it to an environment.</li>
+      <li>Copy the API key when it appears &mdash; it is shown <strong>only once</strong>.</li>
+      <li>Authenticate every request with the header: <code>Authorization: Bearer scout_&hellip;</code></li>
+    </ol>
+    <p class="mb-0">
+      Base URL: <code>/api/v1/</code> &nbsp;|&nbsp;
+      <a href="/api/v1/health/">Health check</a> &nbsp;|&nbsp;
+      Full docs: <code>docs/api-guide.md</code> in the repository
+    </p>
+  </div>
+</div>
+
+{% if success == 'deleted' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  API client deleted.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Clients table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Environment</th>
+          <th>Key Prefix</th>
+          <th>Rate Limit</th>
+          <th>Status</th>
+          <th>Last Used</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clients %}
+        <tr>
+          <td><a href="/admin-config/api/{{ c.id }}/edit/">{{ c.name }}</a></td>
+          <td>{{ c.environment_name|default:"—" }}</td>
+          <td><code>{{ c.key_prefix }}…</code></td>
+          <td>{{ c.rate_limit }}/min</td>
+          <td>
+            {% if c.is_active %}
+            <span class="status-badge status-passed">Active</span>
+            {% else %}
+            <span class="status-badge status-pending">Inactive</span>
+            {% endif %}
+          </td>
+          <td>{{ c.last_used_at|default:"Never" }}</td>
+          <td>{{ c.created_at|date:"M d, Y" }}</td>
+          <td>
+            <a href="/admin-config/api/{{ c.id }}/edit/" class="btn btn-sm btn-outline-secondary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            No API clients yet. Click <strong>New Client</strong> to create one.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

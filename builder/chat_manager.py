@@ -235,7 +235,31 @@ test('Visual comparison — translated vs baseline', async ({ page }) => {
 });
 ```
 
-IMPORTANT: When adapting these reference scripts, adjust the formKey, filter values, item count, and language to match the Test Context. Do NOT call `list_helpers`, `read_file`, or `search_tests` for standard requests — use the reference scripts directly.
+### QC Checklist (CRA/NAEP)
+```javascript
+const { test } = require('@playwright/test');
+const { loginAndStartTest } = require('../src/helpers/auth');
+const { navigateAllScreens } = require('../src/helpers/items');
+const { runQcChecks } = require('../src/helpers/qc');
+
+function loadEnvConfig() {
+  return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
+}
+
+test('QC Checklist — Assessment Name', async ({ page }) => {
+  test.setTimeout(600000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig });
+
+  console.log('[SCOUT] Starting QC checklist — navigating all screens...');
+  await navigateAllScreens(page, envConfig, async (pg, idx) => {
+    console.log(`[SCOUT] QC checking screen ${idx}...`);
+    await runQcChecks(pg, idx);
+  });
+});
+```
+
+IMPORTANT: When adapting these reference scripts, adjust the formKey, filter values, and language to match the Test Context. Do NOT call `list_helpers`, `read_file`, or `search_tests` for standard requests — use the reference scripts directly. For QC tests, prefer the `get_test_template` approach which returns a ready-to-run script using `runQcChecks` from `src/helpers/qc.js`.
 
 """
 
@@ -300,30 +324,34 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '- Do NOT hardcode Next/Finish/Continue button selectors in test scripts. Always use `navigateItemScreens()` which reads selectors from the environment config.\n'
     prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n'
     prompt += '- For NAEP/CRA **baseline** tests, use `navigateAllScreens(page, envConfig, onScreen)` from `src/helpers/items.js` instead of a TOTAL_ITEMS loop. It walks through ALL screens (intro, items, end) automatically, handles video screens by seeking to end, and detects end-of-assessment via configurable selectors in `launcher_config`. Pass `skipIntro: false` to `loginAndStartTest` so intro screens are captured.\n'
-    prompt += '- For NAEP/CRA non-baseline tests that only need assessment items (not intros), use `loginAndStartTest` with default `skipIntro: true` and a TOTAL_ITEMS loop with `clickNext()`.\n\n'
+    prompt += '- For NAEP/CRA **QC checklist** tests, use `navigateAllScreens` + `runQcChecks` from `src/helpers/qc.js`. This auto-detects interaction types and runs checks on every screen. Use `get_test_template` with type `qc_checklist` for the ready-made script.\n'
+    prompt += '- For NAEP/CRA non-baseline tests that target specific items, use `loginAndStartTest` with default `skipIntro: true` and navigate to the target item.\n\n'
 
     # QC Checklist instructions
     prompt += '## QC Checklist Tests\n'
-    prompt += 'QC Checklist tests validate interactive item types against formal QA/QC checklists. '
-    prompt += 'Checklists define specific test steps and expected results for each interaction type.\n\n'
-    prompt += '### Default behavior: auto-detect interaction type\n'
-    prompt += 'When a user asks for "QC checks" or a "QC checklist test" WITHOUT specifying an interaction type, '
-    prompt += 'generate a test that **detects the interaction type at runtime** by inspecting the DOM on each item page. '
-    prompt += 'The detection logic should look for these DOM signatures:\n'
-    prompt += '- **Extended Text**: `textarea` elements or contenteditable response boxes (multi-line text input areas)\n'
-    prompt += '- **Inline Choice**: `select` dropdown elements inside the item content area\n'
-    prompt += '- **Matching**: draggable source elements with drop targets / drop zones (look for elements with `draggable` attribute, or source trays with moveable objects)\n'
-    prompt += 'Based on what is detected, run the corresponding checklist steps for that item. '
-    prompt += 'If an item has multiple interaction types, run checks for each detected type. '
-    prompt += 'If no known interaction type is detected, log the item as "unknown type — needs manual QC" and continue.\n\n'
-    prompt += '### How to generate a QC checklist test:\n'
-    prompt += '1. Use the `get_qc_checklists` tool to discover and read ALL available checklists. This returns the full content of every checklist — you do not need to know file paths in advance.\n'
-    prompt += '2. Generate a test that navigates to each item and detects the interaction type from the DOM (see signatures above). Then apply the matching checklist steps. If the user specifies a particular interaction type, use only that checklist.\n'
-    prompt += '3. Implement each automatable checklist step as a separate `test.step()` block.\n'
-    prompt += '4. Name each test/step to match the checklist number (e.g., "QC-1: Verify text entry", "QC-2: Verify max character limit").\n'
-    prompt += '5. Skip steps that require manual/visual verification (e.g., TTS, scratchwork) — add a comment noting they need manual QC.\n'
-    prompt += '6. Use Playwright assertions (`expect`) to validate expected results from the checklist.\n'
-    prompt += '7. **Assessment vs Item scope**: Check the Test Context below. If only an assessment is specified (no specific item), generate a test that iterates through all items in the assessment and runs the checklist against each one. If a specific item is specified, test only that item. Do NOT ask the user which items to test — use the context to determine scope automatically.\n\n'
+    prompt += 'QC Checklist tests validate interactive item types against formal QA/QC checklists.\n\n'
+    prompt += '### IMPORTANT: Use the `src/helpers/qc.js` helper module\n'
+    prompt += '`src/helpers/qc.js` provides `runQcChecks(page, screenIndex)` which **automatically detects** interaction types on the current screen and runs the appropriate QC checks. '
+    prompt += 'It handles: radio buttons, checkboxes, text inputs, textareas, contenteditable fields, dropdowns, click-to-select answer choices, and drag-and-drop matching. '
+    prompt += 'It also clears answers after checking to keep navigation clean.\n\n'
+    prompt += '### Default QC checklist pattern (preferred):\n'
+    prompt += 'For most QC requests, use `get_test_template` with type `qc_checklist` — it returns a ready-to-run script that uses `navigateAllScreens` + `runQcChecks`. '
+    prompt += 'The template handles login, navigation, auto-detection, and end-of-assessment detection automatically. Customize the template only if the user has specific requirements.\n\n'
+    prompt += '### Individual check functions (for customization):\n'
+    prompt += 'If the user requests checks for a specific interaction type only, import individual functions from `src/helpers/qc.js`:\n'
+    prompt += '- `qcRadioButtons(page, log)` — select each, verify mutual exclusivity\n'
+    prompt += '- `qcCheckboxes(page, log)` — check/uncheck each, verify toggle\n'
+    prompt += '- `qcTextInputs(page, log)` — enter values, test lengths, clear\n'
+    prompt += '- `qcExtendedText(page, log)` — multi-line entry, edit, clear for textarea/contenteditable\n'
+    prompt += '- `qcDropdowns(page, log)` — select each option, verify value changes\n'
+    prompt += '- `qcClickToSelect(page, log)` — click NAEP custom answer choice elements\n'
+    prompt += '- `qcMatching(page, log)` — drag-and-drop or click-click, verify placement\n'
+    prompt += '- `detectTypes(page)` — returns object with counts per interaction type\n'
+    prompt += '- `clearAnswer(page)` — clicks Clear Answer button if present\n'
+    prompt += 'The `log` parameter is a function like `(msg) => console.log(msg)`.\n\n'
+    prompt += '### Formal checklists (for reference):\n'
+    prompt += 'The `src/qc-checklists/` directory contains detailed markdown checklists (ExtendedText, InlineChoice, Matching) with numbered QC steps. '
+    prompt += 'Use `get_qc_checklists` tool to read them when the user asks about specific checklist steps or wants manual-verification notes.\n\n'
 
     prompt += _get_reference_scripts()
 
@@ -677,107 +705,59 @@ test('AI visual inspection — {sc.get("assessmentName", "Assessment")}', async 
 }});"""
 
     elif template_type == 'qc_checklist':
-        # Load all checklist content inline so the AI has everything in one call
-        checklists_dir = project_root / 'src' / 'qc-checklists'
-        checklist_info = ''
-        if checklists_dir.exists():
-            for f in sorted(checklists_dir.glob('*.md')):
-                content = f.read_text(encoding='utf-8')[:5000]
-                checklist_info += f'\n--- {f.stem} checklist ---\n{content}\n'
-
         if env_platform == 'piaac':
             code = f"""const {{ test, expect }} = require('@playwright/test');
 const {{ login }} = require('../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
+const {{ selectFilters, getItemLinks, openItem, navigateItemScreens }} = require('../src/helpers/piaac');
+const {{ runQcChecks }} = require('../src/helpers/qc');
 
 {env_config_block}
 
 // QC Checklist — auto-detect interaction type per item
 // Detected platform: PIAAC, Domain: {domain or 'LITNew'}
 test.describe('QC Checklist — {sc.get("assessmentName", "PIAAC")}', () => {{
-  let page;
+  let portalPage;
   let envConfig;
 
   test.beforeAll(async ({{ browser }}) => {{
-    page = await browser.newPage();
+    portalPage = await browser.newPage();
     envConfig = loadEnvConfig();
-    await login(page, {{ env: envConfig }});
-    await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
+    await login(portalPage, {{ env: envConfig }});
+    await selectFilters(portalPage, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
   }});
 
-  test.afterAll(async () => {{ await page.close(); }});
+  test.afterAll(async () => {{ await portalPage.close(); }});
 
-  // TODO: For each item, detect interaction type and run matching checklist steps.
-  // Detection signatures:
-  //   textarea / contenteditable → Extended Text
-  //   select dropdowns in item content → Inline Choice
-  //   draggable elements / drop zones → Matching
-  //
-  // Implement checklist steps as test.step() blocks named QC-1, QC-2, etc.
-  // Skip manual-only steps (TTS, scratchwork) with comments.
+  const items = await getItemLinks(portalPage);
+  for (const item of items) {{
+    test(`QC — ${{item.id}}`, async () => {{
+      const itemPage = await openItem(portalPage, item.id);
+      await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
+        await runQcChecks(pg, idx);
+      }});
+      await itemPage.close();
+    }});
+  }}
 }});"""
         else:
-            code = f"""const {{ test, expect }} = require('@playwright/test');
+            code = f"""const {{ test }} = require('@playwright/test');
 const {{ loginAndStartTest }} = require('../src/helpers/auth');
-const {{ clickNext }} = require('../src/helpers/items');
+const {{ navigateAllScreens }} = require('../src/helpers/items');
+const {{ runQcChecks }} = require('../src/helpers/qc');
 
 {env_config_block}
 
-// QC Checklist — auto-detect interaction type per item
-// Detected platform: NAEP, formKey: {form_key}, items: {total_items}
-test.describe('QC Checklist — {sc.get("assessmentName", "Assessment")}', () => {{
-  test('QC checks across all items', async ({{ page }}) => {{
-    test.setTimeout(300000);
-    const envConfig = loadEnvConfig();
-    await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
+test('QC Checklist — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+  test.setTimeout(600000);
+  const envConfig = loadEnvConfig();
+  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
 
-    const TOTAL_ITEMS = {total_items};
-    for (let i = 1; i <= TOTAL_ITEMS; i++) {{
-      await page.waitForLoadState('networkidle');
-
-      // Detect interaction type from DOM
-      const hasTextarea = await page.locator('textarea').count() > 0;
-      const hasContentEditable = await page.locator('[contenteditable="true"]').count() > 0;
-      const hasDropdowns = await page.locator('.item-content select, .response-area select').count() > 0;
-      const hasDraggables = await page.locator('[draggable="true"], .source-tray .source').count() > 0;
-
-      if (hasTextarea || hasContentEditable) {{
-        await test.step(`Item ${{i}} — QC Extended Text`, async () => {{
-          // TODO: Implement Extended Text checklist steps
-          // QC-1: Verify text entry
-          // QC-2: Verify max character limit
-          // QC-3: Verify text editing and clearing
-        }});
-      }}
-
-      if (hasDropdowns) {{
-        await test.step(`Item ${{i}} — QC Inline Choice`, async () => {{
-          // TODO: Implement Inline Choice checklist steps
-          // QC-1: Verify dropdown selection
-          // QC-2: Verify clearing answers
-          // QC-3: Verify answer retention
-        }});
-      }}
-
-      if (hasDraggables) {{
-        await test.step(`Item ${{i}} — QC Matching`, async () => {{
-          // TODO: Implement Matching checklist steps
-          // QC-1: Verify drag-and-drop source movement
-          // QC-2: Verify click-click source movement
-          // QC-3: Verify clearing answers
-        }});
-      }}
-
-      if (!hasTextarea && !hasContentEditable && !hasDropdowns && !hasDraggables) {{
-        console.log(`Item ${{i}}: No known interaction type detected — needs manual QC`);
-      }}
-
-      if (i < TOTAL_ITEMS) await clickNext(page);
-    }}
+  console.log('[SCOUT] Starting QC checklist — navigating all screens...');
+  await navigateAllScreens(page, envConfig, async (pg, idx) => {{
+    console.log(`[SCOUT] QC checking screen ${{idx}}...`);
+    await runQcChecks(pg, idx);
   }});
 }});"""
-
-        code += f'\n\n/*\nAvailable QC Checklists:\n{checklist_info}\n*/'
 
     elif template_type == 'functional':
         if env_platform == 'piaac':

@@ -458,3 +458,217 @@ def _cleanup_expired_archives():
             deleted += 1
 
     return deleted
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  API Client Management
+# ═══════════════════════════════════════════════════════════════════
+
+@admin_required
+def api_clients(request):
+    """List all API clients."""
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT c.id, c.name, c.description, c.key_prefix, c.is_active,
+                   c.rate_limit, c.last_used_at, c.created_at, c.expires_at,
+                   e.name AS environment_name
+            FROM api_clients c
+            LEFT JOIN environments e ON c.environment_id = e.id
+            ORDER BY c.name
+        """)
+        cols = [c[0] for c in cursor.description]
+        clients = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    return render(request, 'admin_config/api_clients.html', {
+        'clients': clients,
+        'success': request.GET.get('success'),
+    })
+
+
+@admin_required
+def api_client_create(request):
+    """GET: show create form. POST: create client and redirect with key in session."""
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT id, name FROM environments ORDER BY name')
+        environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+
+    if request.method == 'GET':
+        return render(request, 'admin_config/api_client_edit.html', {
+            'client': None,
+            'environments': environments,
+        })
+
+    # POST
+    name = (request.POST.get('name') or '').strip()
+    if not name:
+        return render(request, 'admin_config/api_client_edit.html', {
+            'client': None,
+            'environments': environments,
+            'form_error': 'Name is required.',
+        })
+
+    environment_id = request.POST.get('environment_id')
+    if not environment_id:
+        return render(request, 'admin_config/api_client_edit.html', {
+            'client': None,
+            'environments': environments,
+            'form_error': 'Environment is required.',
+        })
+
+    description = request.POST.get('description', '').strip() or None
+    rate_limit = 60
+    try:
+        rate_limit = max(1, min(1000, int(request.POST.get('rate_limit', 60))))
+    except (ValueError, TypeError):
+        pass
+    expires_at = request.POST.get('expires_at') or None
+
+    from api.auth import generate_api_key, hash_api_key
+    raw_key = generate_api_key()
+    key_hash = hash_api_key(raw_key)
+    key_prefix = raw_key[:12]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO api_clients
+                   (id, name, description, key_prefix, key_hash, environment_id,
+                    is_active, rate_limit, created_by_id, expires_at, created_at)
+               VALUES (gen_random_uuid(), %s, %s, %s, %s, %s::uuid,
+                       true, %s, %s, %s, now())
+               RETURNING id""",
+            [name, description, key_prefix, key_hash, environment_id,
+             rate_limit, request.user.id, expires_at or None],
+        )
+        client_id = cursor.fetchone()[0]
+
+    # Store raw key in session (shown once on the edit page)
+    request.session['new_api_key'] = raw_key
+    request.session['new_api_key_client_id'] = str(client_id)
+
+    return redirect(f'/admin-config/api/{client_id}/edit/?created=1')
+
+
+@admin_required
+def api_client_edit(request, client_id):
+    """Display edit form for an API client."""
+    # Check for one-time key display (create or regenerate)
+    new_key = None
+    session_key_client = request.session.get('new_api_key_client_id')
+    if session_key_client == str(client_id):
+        if request.GET.get('created') or request.GET.get('regenerated'):
+            new_key = request.session.pop('new_api_key', None)
+            request.session.pop('new_api_key_client_id', None)
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT c.id, c.name, c.description, c.key_prefix, c.is_active,
+                   c.rate_limit, c.environment_id, c.created_at, c.last_used_at,
+                   c.expires_at, u.username AS created_by_name
+            FROM api_clients c
+            LEFT JOIN auth_user u ON c.created_by_id = u.id
+            WHERE c.id = %s
+        """, [str(client_id)])
+        cols = [col[0] for col in cursor.description]
+        row = cursor.fetchone()
+
+    if not row:
+        return redirect('/admin-config/api/')
+
+    client = dict(zip(cols, row))
+    # Format expires_at for datetime-local input
+    client['expires_at_input'] = ''
+    if client['expires_at']:
+        client['expires_at_input'] = client['expires_at'].strftime('%Y-%m-%dT%H:%M')
+    # Convert environment_id to string for template comparison
+    client['environment_id'] = str(client['environment_id']) if client['environment_id'] else ''
+
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT id, name FROM environments ORDER BY name')
+        environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+
+    # Recent API activity
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT method, path, status_code, ip_address, created_at
+            FROM api_client_logs
+            WHERE client_id = %s
+            ORDER BY created_at DESC
+            LIMIT 15
+        """, [str(client_id)])
+        cols = [c[0] for c in cursor.description]
+        recent_logs = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    return render(request, 'admin_config/api_client_edit.html', {
+        'client': client,
+        'new_key': new_key,
+        'environments': environments,
+        'recent_logs': recent_logs,
+        'success': request.GET.get('success'),
+        'created': request.GET.get('created'),
+    })
+
+
+@admin_required
+def api_client_update(request, client_id):
+    """POST: update client settings."""
+    if request.method != 'POST':
+        return redirect(f'/admin-config/api/{client_id}/edit/')
+
+    name = (request.POST.get('name') or '').strip()
+    description = request.POST.get('description', '').strip() or None
+    environment_id = request.POST.get('environment_id')
+    is_active = request.POST.get('is_active') == 'true'
+    rate_limit = 60
+    try:
+        rate_limit = max(1, min(1000, int(request.POST.get('rate_limit', 60))))
+    except (ValueError, TypeError):
+        pass
+    expires_at = request.POST.get('expires_at') or None
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """UPDATE api_clients
+               SET name = %s, description = %s, environment_id = %s::uuid,
+                   is_active = %s, rate_limit = %s, expires_at = %s
+               WHERE id = %s""",
+            [name, description, environment_id, is_active, rate_limit,
+             expires_at or None, str(client_id)],
+        )
+
+    return redirect(f'/admin-config/api/{client_id}/edit/?success=updated')
+
+
+@admin_required
+def api_client_regenerate(request, client_id):
+    """POST: generate a new key for this client (invalidates the old one)."""
+    if request.method != 'POST':
+        return redirect(f'/admin-config/api/{client_id}/edit/')
+
+    from api.auth import generate_api_key, hash_api_key
+    raw_key = generate_api_key()
+    key_hash = hash_api_key(raw_key)
+    key_prefix = raw_key[:12]
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE api_clients SET key_prefix = %s, key_hash = %s WHERE id = %s",
+            [key_prefix, key_hash, str(client_id)],
+        )
+
+    request.session['new_api_key'] = raw_key
+    request.session['new_api_key_client_id'] = str(client_id)
+
+    return redirect(f'/admin-config/api/{client_id}/edit/?regenerated=1')
+
+
+@admin_required
+def api_client_delete(request, client_id):
+    """POST: permanently delete a client and its logs."""
+    if request.method != 'POST':
+        return redirect('/admin-config/api/')
+
+    with connection.cursor() as cursor:
+        cursor.execute('DELETE FROM api_client_logs WHERE client_id = %s', [str(client_id)])
+        cursor.execute('DELETE FROM api_clients WHERE id = %s', [str(client_id)])
+
+    return redirect('/admin-config/api/?success=deleted')

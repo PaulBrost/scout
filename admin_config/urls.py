@@ -16,4 +16,11 @@ urlpatterns = [
     path('archives/restore/', views.restore_archive, name='admin_restore_archive'),
     path('archives/delete/', views.delete_archive, name='admin_delete_archive'),
     path('archives/cleanup/', views.run_cleanup, name='admin_run_cleanup'),
+    # API client management
+    path('api/', views.api_clients, name='admin_api_clients'),
+    path('api/create/', views.api_client_create, name='admin_api_client_create'),
+    path('api/<uuid:client_id>/edit/', views.api_client_edit, name='admin_api_client_edit'),
+    path('api/<uuid:client_id>/update/', views.api_client_update, name='admin_api_client_update'),
+    path('api/<uuid:client_id>/regenerate/', views.api_client_regenerate, name='admin_api_client_regenerate'),
+    path('api/<uuid:client_id>/delete/', views.api_client_delete, name='admin_api_client_delete'),
 ]

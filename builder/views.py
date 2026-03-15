@@ -54,7 +54,8 @@ def builder_view(request):
             with connection.cursor() as cursor:
                 cursor.execute(
                     """SELECT ts.*, i.title AS item_title, i.numeric_id AS item_numeric_id,
-                              a.name AS assessment_name, e.name AS environment_name
+                              a.name AS assessment_name, a.numeric_id AS assessment_numeric_id,
+                              e.name AS environment_name
                        FROM test_scripts ts
                        LEFT JOIN items i ON ts.item_id = i.item_id
                        LEFT JOIN assessments a ON ts.assessment_id = a.id

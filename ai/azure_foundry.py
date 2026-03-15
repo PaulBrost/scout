@@ -110,7 +110,7 @@ class AzureFoundryProvider(BaseProvider):
                 resp = requests.post(
                     url, json=body,
                     headers={'Content-Type': 'application/json', 'api-key': self.api_key},
-                    timeout=60
+                    timeout=120
                 )
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get('retry-after', '2'))

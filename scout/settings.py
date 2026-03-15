@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'baselines',
     'test_data',
     'users',
+    'api',
 ]
 
 MIDDLEWARE = [

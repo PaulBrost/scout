@@ -428,7 +428,11 @@
             <div>{{ script_meta.environment_name|default:"—" }}</div>
           </div>
           <div class="col-md-6">
-            <label class="form-label small fw-semibold mb-1">Item ID</label>
+            <label class="form-label small fw-semibold mb-1">Item ID
+              {% if script_meta.item_id and script_meta.item_numeric_id %}
+              <a href="/items/{{ script_meta.item_numeric_id }}/" class="ms-1" style="font-size:.7rem" title="View item"><i class="bi bi-box-arrow-up-right"></i></a>
+              {% endif %}
+            </label>
             <select id="metaItemId" class="form-select form-select-sm">
               <option value="">— None —</option>
               {% for item in items %}
@@ -440,7 +444,11 @@
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label small fw-semibold mb-1">Assessment</label>
+            <label class="form-label small fw-semibold mb-1">Assessment
+              {% if script_meta.assessment_id and script_meta.assessment_numeric_id %}
+              <a href="/assessments/{{ script_meta.assessment_numeric_id }}/" class="ms-1" style="font-size:.7rem" title="View assessment"><i class="bi bi-box-arrow-up-right"></i></a>
+              {% endif %}
+            </label>
             <select id="metaAssessmentId" class="form-select form-select-sm">
               <option value="">— None —</option>
               {% for a in assessments %}

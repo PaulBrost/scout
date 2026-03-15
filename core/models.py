@@ -503,6 +503,50 @@ class TestScriptArchive(models.Model):
         return f"Archive: {self.script_path}"
 
 
+class APIClient(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.TextField()
+    description = models.TextField(null=True, blank=True)
+    key_prefix = models.CharField(max_length=12)
+    key_hash = models.CharField(max_length=64)
+    environment = models.ForeignKey(
+        Environment, on_delete=models.CASCADE, related_name='api_clients'
+    )
+    is_active = models.BooleanField(default=True)
+    rate_limit = models.IntegerField(default=60)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='api_clients_created'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'api_clients'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class APIClientLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    client = models.ForeignKey(APIClient, on_delete=models.CASCADE, related_name='logs')
+    method = models.CharField(max_length=10)
+    path = models.TextField()
+    status_code = models.IntegerField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'api_client_logs'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.client.name} {self.method} {self.path}"
+
+
 class AIConversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     messages = models.JSONField(default=list)

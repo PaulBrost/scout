@@ -46,6 +46,25 @@
       <div class="col-md-4">
         <span class="text-muted">Trigger:</span> {{ run.trigger_type }}
       </div>
+      {% if run_assessment %}
+      <div class="col-md-4">
+        <span class="text-muted">Assessment:</span>
+        {% if run_assessment.numeric_id %}<a href="/assessments/{{ run_assessment.numeric_id }}/">{{ run_assessment.name }}</a>{% else %}{{ run_assessment.name }}{% endif %}
+      </div>
+      {% endif %}
+      {% if run_item %}
+      <div class="col-md-4">
+        <span class="text-muted">Item:</span>
+        {% if run_item.numeric_id %}<a href="/items/{{ run_item.numeric_id }}/">{{ run_item.item_id }}</a>{% else %}{{ run_item.item_id }}{% endif %}
+        {% if run_item.title %}<span class="text-muted">— {{ run_item.title|truncatechars:30 }}</span>{% endif %}
+      </div>
+      {% endif %}
+      {% if run_environment %}
+      <div class="col-md-4">
+        <span class="text-muted">Environment:</span>
+        {% if run_environment.id %}<a href="/environments/{{ run_environment.id }}/edit/">{{ run_environment.name }}</a>{% else %}{{ run_environment.name }}{% endif %}
+      </div>
+      {% endif %}
       <div class="col-md-4" id="runSummary" {% if not run.summary %}style="display:none"{% endif %}>
         <span class="text-muted">Results:</span>
         <span class="summary-values">
