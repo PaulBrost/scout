@@ -270,22 +270,44 @@ class AIAnalysis(models.Model):
 class Review(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('approved', 'Approved'),
-        ('dismissed', 'Dismissed'),
-        ('bug_filed', 'Bug Filed'),
+        ('issue', 'Issue'),
+        ('suppressed', 'Suppressed'),
+    ]
+    SOURCE_TYPE_CHOICES = [
+        ('ai_analysis', 'AI Analysis'),
+        ('screenshot', 'Screenshot Flag'),
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    analysis = models.ForeignKey(AIAnalysis, on_delete=models.CASCADE, related_name='reviews')
+    analysis = models.ForeignKey(AIAnalysis, on_delete=models.CASCADE, null=True, blank=True, related_name='reviews')
+    screenshot = models.ForeignKey('RunScreenshot', on_delete=models.CASCADE, null=True, blank=True, related_name='reviews')
+    source_type = models.TextField(default='ai_analysis', choices=SOURCE_TYPE_CHOICES)
     reviewer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     status = models.TextField(default='pending', choices=STATUS_CHOICES)
     notes = models.TextField(null=True, blank=True)
-    bug_url = models.TextField(null=True, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'reviews'
         ordering = ['-created_at']
+
+
+class ReviewSuppression(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    screenshot_name = models.TextField()
+    script_path = models.TextField()
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name='suppressions')
+    suppressed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'review_suppressions'
+        unique_together = ('screenshot_name', 'script_path', 'environment')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.screenshot_name} — {self.script_path}"
 
 
 class TestScript(models.Model):

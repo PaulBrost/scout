@@ -1,24 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Reviews{% endblock %}
-{% block page_title %}AI Review Queue{% endblock %}
+{% block page_title %}Review Queue{% endblock %}
+
+{% block topbar_actions %}
+<a href="/reviews/suppressions/" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-shield-x"></i> Suppressions
+</a>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex gap-2">
-    <a href="?status=pending&page_size={{ page_size }}" class="btn btn-sm {% if not status_filter or status_filter == 'pending' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if not status_filter or status_filter == 'pending' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
       Pending
     </a>
-    <a href="?status=approved&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'approved' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-      Approved
+    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'issue' %}btn-danger{% else %}btn-outline-secondary{% endif %}">
+      Issues
     </a>
-    <a href="?status=dismissed&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'dismissed' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-      Dismissed
+    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'suppressed' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+      Suppressed
     </a>
-    <a href="?status=bug_filed&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'bug_filed' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-      Bug Filed
-    </a>
-    <a href="?status=&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == '' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == '' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
       All
+    </a>
+    <span class="border-start mx-1"></span>
+    <a href="?status={{ status_filter }}&source=&page_size={{ page_size }}" class="btn btn-sm {% if not source_filter %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}" title="All sources">
+      All Types
+    </a>
+    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}" class="btn btn-sm {% if source_filter == 'ai_analysis' %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">
+      <i class="bi bi-cpu"></i> AI
+    </a>
+    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}" class="btn btn-sm {% if source_filter == 'screenshot' %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">
+      <i class="bi bi-camera"></i> Screenshots
     </a>
   </div>
   <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
@@ -29,8 +42,9 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th>Analysis Type</th>
-          <th>Item</th>
+          <th>Type</th>
+          <th>Details</th>
+          <th>Run</th>
           <th>Issues</th>
           <th>Status</th>
           <th>Created</th>
@@ -40,11 +54,35 @@
       <tbody>
         {% for rv in reviews %}
         <tr id="review-{{ rv.id }}">
-          <td><span class="badge bg-light text-dark">{{ rv.analysis_type }}</span></td>
-          <td class="font-monospace small">{{ rv.item_id|default:"—" }}</td>
           <td>
-            {% if rv.issues %}
+            {% if rv.source_type == 'screenshot' %}
+            <span class="badge bg-light text-dark"><i class="bi bi-camera me-1"></i>Screenshot</span>
+            {% else %}
+            <span class="badge bg-light text-dark"><i class="bi bi-cpu me-1"></i>{{ rv.analysis_type|default:"AI" }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if rv.source_type == 'screenshot' %}
+            <span class="font-monospace small">{{ rv.screenshot_name|default:"—" }}</span>
+            {% if rv.flag_notes %}
+            <br><span class="text-muted" style="font-size:.72rem">{{ rv.flag_notes }}</span>
+            {% endif %}
+            {% else %}
+            <span class="font-monospace small">{{ rv.item_id|default:"—" }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if rv.run_id %}
+            <a href="/runs/{{ rv.run_id }}/" class="font-monospace small text-decoration-none">{{ rv.run_id|truncatechars:12 }}</a>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if rv.source_type == 'ai_analysis' and rv.issues %}
             <span class="badge bg-danger">{{ rv.issues|length }} issue{{ rv.issues|length|pluralize }}</span>
+            {% elif rv.source_type == 'screenshot' and rv.flagged %}
+            <span class="badge bg-warning text-dark">Flagged</span>
             {% else %}
             <span class="text-muted">—</span>
             {% endif %}
@@ -53,20 +91,17 @@
           <td class="text-muted small">{{ rv.created_at|default:"—" }}</td>
           <td class="text-nowrap">
             {% if rv.status == 'pending' %}
-            <button class="btn btn-sm btn-success" onclick="reviewAction('{{ rv.id }}', 'approve')" title="Approve">
-              <i class="bi bi-check"></i> Approve
+            <button class="btn btn-sm btn-danger" onclick="reviewAction('{{ rv.id }}', 'issue')" title="Confirm as issue">
+              <i class="bi bi-exclamation-triangle"></i> Issue
             </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="reviewAction('{{ rv.id }}', 'dismiss')" title="Dismiss">
-              <i class="bi bi-x"></i> Dismiss
-            </button>
-            <button class="btn btn-sm btn-danger" onclick="reviewAction('{{ rv.id }}', 'bug_filed')" title="File bug">
-              <i class="bi bi-bug"></i>
+            <button class="btn btn-sm btn-outline-secondary" onclick="reviewAction('{{ rv.id }}', 'suppress')" title="Suppress">
+              <i class="bi bi-shield-x"></i> Suppress
             </button>
             {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
+        <tr><td colspan="7" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -77,19 +112,22 @@
   <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&status={{ status_filter }}">«</a></li>
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">«</a></li>
     {% for pg in page_range %}
     {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&status={{ status_filter }}">{{ pg }}</a></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">{{ pg }}</a></li>
     {% endif %}
     {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&status={{ status_filter }}">»</a></li>
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">»</a></li>
   </ul></nav>
   {% endif %}
 </div>
 
 <script>
 function reviewAction(id, action) {
+  var label = action === 'issue' ? 'Confirm as Issue' : 'Suppress';
+  if (action === 'suppress' && !confirm('Suppress this item? Future runs with the same screenshot, script, and environment will be auto-suppressed.')) return;
+
   fetch('/reviews/action/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},

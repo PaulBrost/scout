@@ -73,6 +73,17 @@
           {% if run.summary.issues %}/ <span class="text-warning fw-bold">{{ run.summary.issues }} issue{{ run.summary.issues|pluralize }}</span>{% endif %}
         </span>
       </div>
+      {% if run.summary.qc_checks %}
+      <div class="col-md-4" id="runQcSummary">
+        <span class="text-muted">QC Checks:</span>
+        <span class="fw-bold">{{ run.summary.qc_checks }} run</span>
+        {% if run.summary.qc_issues %}
+        / <span class="text-warning fw-bold">{{ run.summary.qc_issues }} potential issue{{ run.summary.qc_issues|pluralize }}</span>
+        {% else %}
+        / <span class="text-success fw-bold">all passed</span>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="col-md-4">
         <span class="text-muted">Run ID:</span>
         <span class="font-monospace" style="font-size:.72rem">{{ run.id }}</span>
@@ -223,10 +234,15 @@
           <div class="card-body p-2">
             <div class="d-flex align-items-center justify-content-between">
               <span class="small font-monospace text-truncate" title="{{ ss.name }}">{{ ss.name }}</span>
-              <button class="btn btn-sm p-0 ms-1 flag-btn" title="Toggle flag"
-                      onclick="toggleFlag('{{ ss.id }}')">
-                <i class="bi {% if ss.flagged %}bi-flag-fill text-warning{% else %}bi-flag text-muted{% endif %}" id="flag-icon-{{ ss.id }}"></i>
-              </button>
+              <div class="d-flex align-items-center gap-1">
+                {% if ss.review_status %}
+                <span class="status-badge status-{{ ss.review_status }}" style="font-size:.6rem">{{ ss.review_status }}</span>
+                {% endif %}
+                <button class="btn btn-sm p-0 ms-1 flag-btn" title="Toggle flag"
+                        onclick="toggleFlag('{{ ss.id }}')">
+                  <i class="bi {% if ss.flagged %}bi-flag-fill text-warning{% else %}bi-flag text-muted{% endif %}" id="flag-icon-{{ ss.id }}"></i>
+                </button>
+              </div>
             </div>
             <div class="text-muted" style="font-size:.68rem">{{ ss.project_name }}</div>
             {% if ss.flagged and ss.flag_notes %}
@@ -466,6 +482,30 @@ function pollRunStatus() {
           html += ' / <span class="text-warning fw-bold">' + d.summary.issues + ' issue' + (d.summary.issues === 1 ? '' : 's') + '</span>';
         }
         summaryEl.querySelector('.summary-values').innerHTML = html;
+      }
+
+      // Update QC summary
+      var qcEl = document.getElementById('runQcSummary');
+      if (d.summary && d.summary.qc_checks) {
+        if (!qcEl) {
+          // Create the QC summary element if it doesn't exist yet
+          var row = summaryEl ? summaryEl.parentNode : null;
+          if (row) {
+            qcEl = document.createElement('div');
+            qcEl.className = 'col-md-4';
+            qcEl.id = 'runQcSummary';
+            row.appendChild(qcEl);
+          }
+        }
+        if (qcEl) {
+          var qcHtml = '<span class="text-muted">QC Checks:</span> <span class="fw-bold">' + d.summary.qc_checks + ' run</span>';
+          if (d.summary.qc_issues) {
+            qcHtml += ' / <span class="text-warning fw-bold">' + d.summary.qc_issues + ' potential issue' + (d.summary.qc_issues === 1 ? '' : 's') + '</span>';
+          } else {
+            qcHtml += ' / <span class="text-success fw-bold">all passed</span>';
+          }
+          qcEl.innerHTML = qcHtml;
+        }
       }
 
       // Update script rows and compute progress

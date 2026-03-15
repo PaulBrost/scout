@@ -246,6 +246,41 @@ def classify_failures(json_report):
     return screenshot_mismatches, other_failures
 
 
+def parse_qc_results(execution_log):
+    """Parse [SCOUT_QC] structured lines from execution log.
+
+    Returns aggregated dict or None if no QC lines found:
+    {'screens': int, 'checks': int, 'failures': int, 'failed_checks': [str]}
+    """
+    screens = 0
+    checks = 0
+    failures = 0
+    failed_checks = []
+
+    for line in execution_log.split('\n'):
+        idx = line.find('[SCOUT_QC]')
+        if idx == -1:
+            continue
+        try:
+            data = json.loads(line[idx + len('[SCOUT_QC]'):].strip())
+            screens += 1
+            checks += data.get('checksRun', 0)
+            failures += data.get('failures', 0)
+            failed_checks.extend(data.get('failedChecks', []))
+        except (json.JSONDecodeError, IndexError):
+            continue
+
+    if screens == 0:
+        return None
+
+    return {
+        'screens': screens,
+        'checks': checks,
+        'failures': failures,
+        'failed_checks': failed_checks,
+    }
+
+
 BROWSER_TO_PROJECT = {
     'chromium': 'chrome-desktop',
     'firefox': 'firefox-desktop',
@@ -451,6 +486,9 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
     trace_path, video_path = find_artifacts(script_path)
     snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs)
 
+    # Parse QC checklist results from structured log output
+    qc_results = parse_qc_results(execution_log)
+
     return {
         'status': status,
         'duration_ms': duration_ms,
@@ -462,6 +500,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         'video_path': video_path,
         'snapshots': snapshots,
         'screenshot_mismatches': screenshot_mismatches,
+        'qc_results': qc_results,
     }
 
 
@@ -511,11 +550,14 @@ def execute_run(run_id, script_paths, options=None):
     """Execute all scripts in a run sequentially, updating DB as each completes."""
     options = options or {}
     passed = failed = errors = issues = 0
+    total_qc_checks = 0
+    total_qc_failures = 0
 
     # Prepare test data and environment config if environment is set on the run
     test_data_path = None
     env_config_json = None
     is_baseline_run = False
+    environment_id = None
     with connection.cursor() as cursor:
         cursor.execute('SELECT environment_id, trigger_type FROM test_runs WHERE id = %s', [run_id])
         row = cursor.fetchone()
@@ -655,21 +697,76 @@ def execute_run(run_id, script_paths, options=None):
 
             # Save captured snapshots as RunScreenshot records (archived paths)
             # Auto-flag comparison artifacts (diff/actual from screenshot mismatches)
+            # Auto-flag qc-fail-* screenshots (QC check failures)
             # Skip auto-flagging for baseline runs — comparison diffs are expected
+            #
+            # Check suppressions: if a screenshot+script+environment combo is
+            # suppressed, don't flag it again.
             ss_mismatches = result.get('screenshot_mismatches', [])
+
+            # Fetch active suppressions for this script+environment
+            suppressions = set()
+            if environment_id:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """SELECT screenshot_name FROM review_suppressions
+                           WHERE script_path = %s AND environment_id = %s""",
+                        [script_path, str(environment_id)]
+                    )
+                    suppressions = {r[0] for r in cursor.fetchall()}
+
             for snap in archived_snaps:
                 is_comparison = snap.get('project_name') == 'comparison' and not is_baseline_run
+                is_qc_fail = snap.get('name', '').startswith('qc-fail')
+                would_flag = is_comparison or is_qc_fail
+
+                # Check if this screenshot is suppressed
+                is_suppressed = snap.get('name', '') in suppressions
+                should_flag = would_flag and not is_suppressed
+
+                if is_comparison:
+                    flag_note = 'Screenshot comparison mismatch'
+                elif is_qc_fail:
+                    flag_note = 'QC check failure'
+                else:
+                    flag_note = None
+
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """INSERT INTO run_screenshots (id, run_id, run_script_id, name, file_path, project_name, flagged, flag_notes, created_at)
                            VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, now())
-                           ON CONFLICT DO NOTHING""",
+                           RETURNING id""",
                         [run_id, run_script_id, snap['name'], snap['file_path'], snap['project_name'],
-                         is_comparison, 'Screenshot comparison mismatch' if is_comparison else None]
+                         should_flag, flag_note if should_flag else None]
                     )
+                    ss_row = cursor.fetchone()
+                    screenshot_id = ss_row[0] if ss_row else None
 
-            script_issues = len(ss_mismatches)
+                # Auto-create Review record for flagged screenshots
+                if should_flag and screenshot_id:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """INSERT INTO reviews (id, screenshot_id, source_type, status, notes, created_at)
+                               VALUES (gen_random_uuid(), %s, 'screenshot', 'pending', %s, now())""",
+                            [screenshot_id, flag_note]
+                        )
+                elif is_suppressed and would_flag and screenshot_id:
+                    # Record exists but auto-suppressed
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """INSERT INTO reviews (id, screenshot_id, source_type, status, notes, created_at)
+                               VALUES (gen_random_uuid(), %s, 'screenshot', 'suppressed', %s, now())""",
+                            [screenshot_id, 'Auto-suppressed by existing suppression rule']
+                        )
+
+            # Count issues: screenshot mismatches + QC failures
+            qc_results = result.get('qc_results')
+            qc_failure_count = qc_results['failures'] if qc_results else 0
+            script_issues = len(ss_mismatches) + qc_failure_count
             issues += script_issues
+            if qc_results:
+                total_qc_checks += qc_results['checks']
+                total_qc_failures += qc_results['failures']
 
             if result['status'] == 'passed':
                 passed += 1
@@ -688,7 +785,14 @@ def execute_run(run_id, script_paths, options=None):
             errors += 1
 
     run_status = 'completed' if (failed + errors) == 0 else 'failed'
-    summary = json.dumps({'passed': passed, 'failed': failed, 'errors': errors, 'issues': issues, 'total': len(run_script_entries)})
+    summary_data = {
+        'passed': passed, 'failed': failed, 'errors': errors,
+        'issues': issues, 'total': len(run_script_entries),
+    }
+    if total_qc_checks > 0:
+        summary_data['qc_checks'] = total_qc_checks
+        summary_data['qc_issues'] = total_qc_failures
+    summary = json.dumps(summary_data)
 
     with connection.cursor() as cursor:
         cursor.execute(

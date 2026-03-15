@@ -203,13 +203,17 @@ def detail(request, run_id):
                 'id': sr['script_env_id'],
             }
 
-    # Screenshots
+    # Screenshots with review status
     with connection.cursor() as cursor:
         cursor.execute(
-            """SELECT * FROM run_screenshots WHERE run_id = %s
-               ORDER BY regexp_replace(name, '\\d+', '', 'g'),
-                        COALESCE(NULLIF(regexp_replace(name, '\\D+', '', 'g'), '')::numeric, 0),
-                        name""",
+            """SELECT rs.*, rv.status AS review_status, rv.id AS review_id
+               FROM run_screenshots rs
+               LEFT JOIN reviews rv ON rv.screenshot_id = rs.id
+                   AND rv.source_type = 'screenshot'
+               WHERE rs.run_id = %s
+               ORDER BY regexp_replace(rs.name, '\\d+', '', 'g'),
+                        COALESCE(NULLIF(regexp_replace(rs.name, '\\D+', '', 'g'), '')::numeric, 0),
+                        rs.name""",
             [run_id]
         )
         cols = [c[0] for c in cursor.description]
@@ -687,6 +691,7 @@ def api_delete_run(request, run_id):
             # Delete in FK order to avoid constraint violations
             cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = %s)', [str(run_id)])
+            cursor.execute('DELETE FROM reviews WHERE screenshot_id IN (SELECT id FROM run_screenshots WHERE run_id = %s)', [str(run_id)])
             cursor.execute('DELETE FROM ai_analyses WHERE run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM run_screenshots WHERE run_id = %s', [str(run_id)])
             cursor.execute('DELETE FROM test_results WHERE run_id = %s', [str(run_id)])
@@ -717,6 +722,7 @@ def api_delete_runs_bulk(request):
             # Delete in FK order to avoid constraint violations
             cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = ANY(%s::uuid[]))', [ids])
+            cursor.execute('DELETE FROM reviews WHERE screenshot_id IN (SELECT id FROM run_screenshots WHERE run_id = ANY(%s::uuid[]))', [ids])
             cursor.execute('DELETE FROM ai_analyses WHERE run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM run_screenshots WHERE run_id = ANY(%s::uuid[])', [ids])
             cursor.execute('DELETE FROM test_results WHERE run_id = ANY(%s::uuid[])', [ids])

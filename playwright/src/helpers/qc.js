@@ -493,6 +493,14 @@ async function runQcChecks(page, screenIndex) {
     log(`Completed ${checksRun} check(s), all passed`);
   }
 
+  // Structured output for SCOUT runner to parse
+  console.log(`[SCOUT_QC] ${JSON.stringify({
+    screen: screenIndex,
+    checksRun,
+    failures: failures.length,
+    failedChecks: failures.map(f => f.checkName),
+  })}`);
+
   return { types, checksRun, failures, known: hasKnownType(types) };
 }
 

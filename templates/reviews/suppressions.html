@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Suppressions{% endblock %}
+{% block page_title %}Review Suppressions{% endblock %}
+
+{% block topbar_actions %}
+<a href="/reviews/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Reviews</a>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+    <span>Active Suppressions</span>
+    <span class="badge bg-secondary">{{ total }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Screenshot</th>
+          <th>Script</th>
+          <th>Environment</th>
+          <th>Suppressed By</th>
+          <th>Notes</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suppressions %}
+        <tr id="suppression-{{ s.id }}">
+          <td class="font-monospace small">{{ s.screenshot_name }}</td>
+          <td class="font-monospace small text-truncate" style="max-width:250px" title="{{ s.script_path }}">{{ s.script_path }}</td>
+          <td class="small">{{ s.environment_name }}</td>
+          <td class="small text-muted">{{ s.suppressed_by_name|default:"—" }}</td>
+          <td class="small text-muted">{{ s.notes|default:"—" }}</td>
+          <td class="small text-muted">{{ s.created_at }}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteSuppression('{{ s.id }}')" title="Remove suppression">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted text-center py-5">No active suppressions.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="text-muted small mt-3">
+  Suppressions prevent flagged screenshots from generating new pending reviews on future runs.
+  Removing a suppression means the screenshot will be flagged again on the next run.
+</p>
+
+<script>
+function deleteSuppression(id) {
+  if (!confirm('Remove this suppression? The screenshot will be flagged again on future runs.')) return;
+  fetch('/reviews/suppressions/' + id + '/delete/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      var row = document.getElementById('suppression-' + id);
+      if (row) row.remove();
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+    }
+  });
+}
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+</script>
+{% endblock %}
