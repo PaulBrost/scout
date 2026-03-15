@@ -103,6 +103,8 @@ SCOUT_ARCHIVE_DIR = config('SCOUT_ARCHIVE_DIR', default=str(BASE_DIR / 'media' /
 SCOUT_MOCK = config('SCOUT_MOCK', default='0')
 DASHBOARD_AUTH = config('DASHBOARD_AUTH', default=True, cast=bool)
 
+# AI provider env vars — used by data migration (0020) to seed ai_providers table.
+# After initial migration, providers are managed via Admin > AI Settings > AI Providers.
 AI_PROVIDER = config('AI_PROVIDER', default='mock')
 MOCK_AI_MODE = config('MOCK_AI_MODE', default='clean')
 

@@ -34,6 +34,8 @@ def index(request):
     search = request.GET.get('search', '').strip()
     test_type_filter = request.GET.get('test_type', '')
     env_filter = request.GET.get('environment', '')
+    assessment_filter = request.GET.get('assessment', '')
+    item_filter = request.GET.get('item', '')
 
     where = []
     params = []
@@ -46,6 +48,7 @@ def index(request):
                 'scripts': [], 'total': 0, 'page': 1, 'page_size': page_size,
                 'page_size_options': [10, 25, 50, 100], 'search': search,
                 'test_type_filter': test_type_filter, 'env_filter': env_filter,
+                'assessment_filter': assessment_filter, 'item_filter': item_filter,
                 'environments': [], 'test_types': [],
                 'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
@@ -62,6 +65,12 @@ def index(request):
     if env_filter:
         params.append(env_filter)
         where.append('ts.environment_id = %s::uuid')
+    if assessment_filter:
+        params.append(assessment_filter)
+        where.append('ts.assessment_id = %s')
+    if item_filter:
+        params.append(item_filter)
+        where.append('ts.item_id = %s')
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -77,10 +86,13 @@ def index(request):
             SELECT ts.id, ts.script_path, ts.description, ts.item_id, ts.assessment_id,
                    ts.test_type, ts.tags, ts.category, ts.updated_at, ts.environment_id,
                    i.title AS item_title, i.numeric_id AS item_numeric_id,
-                   e.name AS environment_name
+                   e.name AS environment_name,
+                   a.name AS assessment_name,
+                   a.numeric_id AS assessment_numeric_id
             FROM test_scripts ts
             LEFT JOIN items i ON ts.item_id = i.item_id
             LEFT JOIN environments e ON ts.environment_id = e.id
+            LEFT JOIN assessments a ON ts.assessment_id = a.id
             {where_clause}
             ORDER BY ts.updated_at DESC NULLS LAST
             LIMIT %s OFFSET %s
@@ -107,6 +119,7 @@ def index(request):
         ('visual_regression', 'Visual Regression'),
         ('ai_content', 'AI Content'),
         ('ai_visual', 'AI Visual'),
+        ('qc_checklist', 'QC Checklist'),
     ]
 
     return render(request, 'test_cases/list.html', {
@@ -114,6 +127,7 @@ def index(request):
         'page_size_options': [10, 25, 50, 100], 'search': search,
         'test_type_filter': test_type_filter,
         'env_filter': env_filter, 'environments': environments,
+        'assessment_filter': assessment_filter, 'item_filter': item_filter,
         'test_types': test_types,
         'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
         'page_range': build_page_range(page, total_pages),

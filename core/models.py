@@ -257,6 +257,7 @@ class AIAnalysis(models.Model):
     status = models.TextField(default='pending')
     issues_found = models.BooleanField(default=False)
     issues = models.JSONField(default=list)
+    summary = models.TextField(null=True, blank=True)
     raw_response = models.TextField(null=True, blank=True)
     model_used = models.TextField(null=True, blank=True)
     duration_ms = models.IntegerField(null=True, blank=True)
@@ -271,6 +272,7 @@ class Review(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('issue', 'Issue'),
+        ('resolved', 'Resolved'),
         ('suppressed', 'Suppressed'),
     ]
     SOURCE_TYPE_CHOICES = [
@@ -380,6 +382,32 @@ class AISetting(models.Model):
         return self.key
 
 
+class AIProvider(models.Model):
+    PROVIDER_TYPE_CHOICES = [
+        ('anthropic', 'Anthropic / Azure AI Foundry'),
+        ('azure_openai', 'Azure OpenAI'),
+        ('openai_compat', 'OpenAI / OpenRouter / Ollama'),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.TextField()
+    provider_type = models.TextField(choices=PROVIDER_TYPE_CHOICES)
+    api_key = models.TextField(blank=True, default='')
+    model = models.TextField(blank=True, default='')
+    base_url = models.TextField(blank=True, default='')
+    deployment_id = models.TextField(blank=True, default='')
+    api_version = models.TextField(blank=True, default='')
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_providers'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_provider_type_display()})"
+
+
 class AITool(models.Model):
     id = models.TextField(primary_key=True)
     name = models.TextField()
@@ -413,6 +441,11 @@ class TestDataSet(models.Model):
         Assessment, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='test_data_sets'
     )
+    item = models.ForeignKey(
+        Item, on_delete=models.SET_NULL, null=True, blank=True,
+        db_column='item_id', to_field='item_id',
+        related_name='test_data_sets'
+    )
     data_type = models.TextField(choices=DATA_TYPE_CHOICES)
     data = models.JSONField(default=list)
     description = models.TextField(null=True, blank=True)
@@ -425,6 +458,21 @@ class TestDataSet(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.data_type})"
+
+
+class TestScriptDataSet(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    script = models.ForeignKey(
+        TestScript, on_delete=models.CASCADE, related_name='data_set_links'
+    )
+    data_set = models.ForeignKey(
+        TestDataSet, on_delete=models.CASCADE, related_name='script_links'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'test_script_data_sets'
+        unique_together = ('script', 'data_set')
 
 
 class UserSettings(models.Model):

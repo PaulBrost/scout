@@ -222,7 +222,7 @@ def detail(request, run_id):
     # AI Analyses
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT id, analysis_type, status, issues_found, issues,
+            SELECT id, analysis_type, status, issues_found, issues, summary,
                    model_used, duration_ms, screenshot_name, created_at
             FROM ai_analyses WHERE run_id = %s
             ORDER BY created_at DESC
@@ -256,6 +256,31 @@ def detail(request, run_id):
                     cfg = {}
             ai_config_enabled = bool(cfg.get('text_analysis') or cfg.get('visual_analysis'))
 
+    # Load AI analysis enabled flags from ai_settings
+    text_analysis_enabled = True
+    vision_analysis_enabled = True
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT key, value FROM ai_settings WHERE key IN ('text_analysis_enabled', 'vision_analysis_enabled')"
+        )
+        for key, val in cursor.fetchall():
+            if isinstance(val, str):
+                val = val.strip().strip('"').lower()
+            if key == 'text_analysis_enabled':
+                text_analysis_enabled = val not in (False, 'false', '0', '')
+            elif key == 'vision_analysis_enabled':
+                vision_analysis_enabled = val not in (False, 'false', '0', '')
+
+    # Check if any script in this run has extracted page text ([SCOUT_TEXT] markers)
+    has_extracted_text = False
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT 1 FROM test_run_scripts
+            WHERE run_id = %s AND execution_log LIKE '%%[SCOUT_TEXT]%%'
+            LIMIT 1
+        """, [run_id])
+        has_extracted_text = cursor.fetchone() is not None
+
     return render(request, 'runs/detail.html', {
         'run': run,
         'script_results': script_results,
@@ -266,9 +291,13 @@ def detail(request, run_id):
             'status': a['status'],
             'issues_found': a['issues_found'],
             'issues': a['issues'],
+            'summary': a.get('summary') or '',
         } for a in analyses], default=str),
         'summaries_json': json.dumps([sr.get('test_summary') or '' for sr in script_results], default=str),
         'ai_config_enabled': ai_config_enabled,
+        'text_analysis_enabled': text_analysis_enabled,
+        'vision_analysis_enabled': vision_analysis_enabled,
+        'has_extracted_text': has_extracted_text,
         'run_assessment': run_assessment,
         'run_item': run_item,
         'run_environment': run_environment,
@@ -449,6 +478,7 @@ def api_flag_screenshot(request, screenshot_id):
 
     new_flagged = data.get('flagged', not row[0])
     flag_notes = data.get('notes', None)
+    review_status = data.get('review_status', 'pending')
 
     with connection.cursor() as cursor:
         cursor.execute(
@@ -456,7 +486,32 @@ def api_flag_screenshot(request, screenshot_id):
             [new_flagged, flag_notes, screenshot_id]
         )
 
-    return JsonResponse({'id': str(screenshot_id), 'flagged': new_flagged, 'flag_notes': flag_notes})
+        if new_flagged:
+            # Upsert a review for this screenshot
+            cursor.execute(
+                "SELECT id FROM reviews WHERE screenshot_id = %s AND source_type = 'screenshot'",
+                [str(screenshot_id)]
+            )
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute(
+                    "UPDATE reviews SET status = %s, notes = %s WHERE id = %s",
+                    [review_status, flag_notes, existing[0]]
+                )
+            else:
+                cursor.execute(
+                    """INSERT INTO reviews (id, screenshot_id, source_type, status, notes, created_at)
+                       VALUES (gen_random_uuid(), %s, 'screenshot', %s, %s, now())""",
+                    [str(screenshot_id), review_status, flag_notes]
+                )
+        else:
+            # Remove any pending review when unflagging
+            cursor.execute(
+                "DELETE FROM reviews WHERE screenshot_id = %s AND source_type = 'screenshot' AND status = 'pending'",
+                [str(screenshot_id)]
+            )
+
+    return JsonResponse({'id': str(screenshot_id), 'flagged': new_flagged, 'flag_notes': flag_notes, 'review_status': review_status})
 
 
 @login_required(login_url='/login/')
@@ -550,6 +605,21 @@ def api_run_screenshots(request, run_id):
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
     return JsonResponse({'screenshots': rows}, json_dumps_params={'default': str})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_clear_analyses(request, run_id):
+    """Delete all AI analyses (and related reviews) for a run."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = %s)', [str(run_id)])
+            cursor.execute('DELETE FROM ai_analyses WHERE run_id = %s', [str(run_id)])
+            deleted = cursor.rowcount
+        return JsonResponse({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @login_required(login_url='/login/')
@@ -745,7 +815,7 @@ def api_run_analyses(request, run_id):
     """Return AI analysis results for a run, plus progress info."""
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT id, analysis_type, status, issues_found, issues,
+            SELECT id, analysis_type, status, issues_found, issues, summary,
                    model_used, duration_ms, screenshot_name, created_at
             FROM ai_analyses WHERE run_id = %s
             ORDER BY created_at DESC
@@ -779,3 +849,78 @@ def api_run_analyses(request, run_id):
             progress = p
 
     return JsonResponse({'analyses': rows, 'progress': progress}, json_dumps_params={'default': str})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_rerun(request, run_id):
+    """Create a duplicate run with the same config/scripts and trigger execution."""
+    try:
+        import uuid as _uuid
+
+        with connection.cursor() as cursor:
+            # Get original run details
+            cursor.execute(
+                "SELECT suite_id, environment_id, config, trigger_type, notes FROM test_runs WHERE id = %s",
+                [str(run_id)]
+            )
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Run not found'}, status=404)
+
+        suite_id, environment_id, config, trigger_type, notes = row
+        new_run_id = str(_uuid.uuid4())
+
+        with connection.cursor() as cursor:
+            # Create new run
+            cursor.execute("""
+                INSERT INTO test_runs (id, suite_id, environment_id, config, status, trigger_type, notes, queued_at)
+                VALUES (%s, %s, %s, %s, 'scheduled', 'manual', %s, now())
+            """, [new_run_id, suite_id, environment_id, config, notes])
+
+            # Copy script entries from original run
+            cursor.execute("""
+                SELECT script_path, browser, viewport FROM test_run_scripts WHERE run_id = %s ORDER BY script_path
+            """, [str(run_id)])
+            scripts = cursor.fetchall()
+
+            for sp, browser, viewport in scripts:
+                cursor.execute("""
+                    INSERT INTO test_run_scripts (id, run_id, script_path, status, browser, viewport)
+                    VALUES (gen_random_uuid(), %s, %s, 'queued', %s, %s)
+                """, [new_run_id, sp, browser, viewport])
+
+        if not scripts:
+            return JsonResponse({'error': 'No scripts in original run'}, status=400)
+
+        script_paths = [s[0] for s in scripts]
+
+        from core.utils import spawn_background_task
+        if suite_id or len(script_paths) > 1:
+            def _run_suite(rid=new_run_id):
+                try:
+                    from tasks.run_tasks import execute_suite_run
+                    execute_suite_run(rid)
+                except Exception as e:
+                    print(f'[rerun] error: {e}')
+                    from django.db import connection as conn
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+            spawn_background_task(_run_suite)
+        else:
+            def _run_task(rid=new_run_id, sp=script_paths[0]):
+                try:
+                    from tasks.run_tasks import execute_single_script
+                    execute_single_script(rid, sp)
+                except Exception as e:
+                    print(f'[rerun] error: {e}')
+                    from django.db import connection as conn
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s", [rid])
+                        cur.execute("UPDATE test_run_scripts SET status='error', error_message=%s, completed_at=now() WHERE run_id=%s AND status IN ('queued','running')", [str(e), rid])
+            spawn_background_task(_run_task)
+
+        return JsonResponse({'ok': True, 'run_id': new_run_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

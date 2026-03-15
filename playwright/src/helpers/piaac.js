@@ -242,6 +242,15 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
 
   while (true) {
     await itemPage.waitForLoadState('networkidle');
+
+    // Capture page text for AI analysis
+    try {
+      const text = await extractItemContent(itemPage);
+      if (text && text.trim()) {
+        console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `Screen ${screenIndex}`, text: text.trim() })}`);
+      }
+    } catch { /* text extraction is best-effort */ }
+
     await onScreen(itemPage, screenIndex);
 
     // Try to advance: next button first, then finish/continue as end-of-item indicators
@@ -279,6 +288,12 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
               await itemPage.waitForTimeout(1000);
               screenIndex++;
               await itemPage.waitForLoadState('networkidle');
+              try {
+                const text = await extractItemContent(itemPage);
+                if (text && text.trim()) {
+                  console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `Screen ${screenIndex}`, text: text.trim() })}`);
+                }
+              } catch { /* best-effort */ }
               await onScreen(itemPage, screenIndex);
             }
           }

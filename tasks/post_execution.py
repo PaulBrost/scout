@@ -7,6 +7,23 @@ from django.db import connection
 from django.conf import settings
 
 
+def _get_custom_prompt(key):
+    """Load a custom prompt from ai_settings. Returns None if not set."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT value FROM ai_settings WHERE key = %s", [key])
+            row = cursor.fetchone()
+            if row and row[0]:
+                val = row[0]
+                if isinstance(val, str):
+                    val = json.loads(val)
+                if val and isinstance(val, str) and val.strip():
+                    return val.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _resolve_artifact_path(relative_path):
     """Resolve an artifact path, checking archive first then Playwright root."""
     archive_root = Path(settings.SCOUT_ARCHIVE_DIR)
@@ -194,6 +211,7 @@ def run_text_analysis(run_id):
         return
 
     provider = get_provider_for_feature('text')
+    custom_prompt = _get_custom_prompt('text_analysis_prompt')
 
     for result in results:
         text = result.get('execution_log') or ''
@@ -203,7 +221,7 @@ def run_text_analysis(run_id):
         start = time.time()
         try:
             connection.close()
-            analysis = provider.analyze_text(text)
+            analysis = provider.analyze_text(text, custom_prompt=custom_prompt)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
 
@@ -213,6 +231,7 @@ def run_text_analysis(run_id):
                 raw_response=analysis.get('raw', ''),
                 model_used=analysis.get('model', ''),
                 duration_ms=duration_ms,
+                summary=analysis.get('summary', ''),
             )
         except Exception as e:
             print(f'[PostExec] Text analysis failed for result {result["id"]}: {e}')
@@ -238,6 +257,7 @@ def run_visual_analysis(run_id):
         return
 
     provider = get_provider_for_feature('vision')
+    custom_prompt = _get_custom_prompt('vision_analysis_prompt')
 
     for result in results:
         screenshot_path = _resolve_artifact_path(result['screenshot_path'])
@@ -248,7 +268,7 @@ def run_visual_analysis(run_id):
         try:
             b64 = base64.b64encode(screenshot_path.read_bytes()).decode()
             connection.close()
-            analysis = provider.analyze_screenshot(b64, result.get('title') or '')
+            analysis = provider.analyze_screenshot(b64, result.get('title') or '', custom_prompt=custom_prompt)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
 
@@ -258,6 +278,7 @@ def run_visual_analysis(run_id):
                 raw_response=analysis.get('raw', ''),
                 model_used=analysis.get('model', ''),
                 duration_ms=duration_ms,
+                summary=analysis.get('summary', ''),
             )
         except Exception as e:
             print(f'[PostExec] Visual analysis failed for result {result["id"]}: {e}')
@@ -303,19 +324,19 @@ def _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root)
 
 def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, issues,
                                 raw_response='', model_used='', duration_ms=0,
-                                screenshot_name=None):
+                                screenshot_name=None, summary=''):
     """Create an AIAnalysis record, and a Review if issues were found."""
     issues_found = len(issues) > 0
 
     with connection.cursor() as cursor:
         cursor.execute("""
             INSERT INTO ai_analyses (id, run_id, item_id, test_result_id, analysis_type,
-                                     status, issues_found, issues, raw_response,
+                                     status, issues_found, issues, summary, raw_response,
                                      model_used, duration_ms, screenshot_name, created_at)
-            VALUES (gen_random_uuid(), %s, %s, %s, %s, 'completed', %s, %s, %s, %s, %s, %s, now())
+            VALUES (gen_random_uuid(), %s, %s, %s, %s, 'completed', %s, %s, %s, %s, %s, %s, %s, now())
             RETURNING id
         """, [run_id, item_id, test_result_id, analysis_type,
-              issues_found, json.dumps(issues), raw_response,
+              issues_found, json.dumps(issues), summary, raw_response,
               model_used, duration_ms, screenshot_name])
         analysis_id = cursor.fetchone()[0]
 
@@ -362,6 +383,7 @@ def analyze_run_screenshots(run_id):
     _update_analysis_progress(run_id, 0, total)
 
     provider = get_provider_for_feature('vision')
+    custom_prompt = _get_custom_prompt('vision_analysis_prompt')
     analyzed = 0
 
     for i, ss in enumerate(screenshots):
@@ -376,7 +398,7 @@ def analyze_run_screenshots(run_id):
             context = f"Screenshot: {ss['name']}"
             # Release DB connection before AI API call
             connection.close()
-            analysis = provider.analyze_screenshot(b64, context)
+            analysis = provider.analyze_screenshot(b64, context, custom_prompt=custom_prompt)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
 
@@ -387,6 +409,7 @@ def analyze_run_screenshots(run_id):
                 model_used=analysis.get('model', ''),
                 duration_ms=duration_ms,
                 screenshot_name=ss['name'],
+                summary=analysis.get('summary', ''),
             )
             analyzed += 1
         except Exception as e:
@@ -400,8 +423,14 @@ def analyze_run_screenshots(run_id):
 
 
 def analyze_run_text(run_id):
-    """Run AI text analysis on execution logs for this run."""
+    """Run AI text analysis on extracted [SCOUT_TEXT] content from execution logs.
+
+    Only analyzes text explicitly captured by test scripts via extractAndLogItemText()
+    or manual [SCOUT_TEXT] markers. Falls back to full execution_log if no markers found
+    (backward compat for ai_content test_type scripts).
+    """
     from ai.provider import get_provider_for_feature
+    from executor.runner import parse_text_content
 
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -418,16 +447,20 @@ def analyze_run_text(run_id):
         return
 
     provider = get_provider_for_feature('text')
+    custom_prompt = _get_custom_prompt('text_analysis_prompt')
 
     for script in scripts:
-        text = script.get('execution_log') or ''
-        if not text.strip():
+        execution_log = script.get('execution_log') or ''
+        if not execution_log.strip():
             continue
+
+        # Prefer extracted [SCOUT_TEXT] content; fall back to full log for legacy ai_content scripts
+        text = parse_text_content(execution_log) or execution_log
 
         start = time.time()
         try:
             connection.close()
-            analysis = provider.analyze_text(text)
+            analysis = provider.analyze_text(text, custom_prompt=custom_prompt)
             duration_ms = int((time.time() - start) * 1000)
             issues = analysis.get('issues', [])
 
@@ -437,6 +470,7 @@ def analyze_run_text(run_id):
                 raw_response=analysis.get('raw', ''),
                 model_used=analysis.get('model', ''),
                 duration_ms=duration_ms,
+                summary=analysis.get('summary', ''),
             )
         except Exception as e:
             print(f'[PostExec] Text analysis failed for script {script["script_path"]}: {e}')

@@ -11,26 +11,29 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex gap-2">
-    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if not status_filter or status_filter == 'pending' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'pending' %}active{% endif %}">
       Pending
     </a>
-    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'issue' %}btn-danger{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'issue' %}active{% endif %}">
       Issues
     </a>
-    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'suppressed' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=resolved&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'resolved' %}active{% endif %}">
+      Resolved
+    </a>
+    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'suppressed' %}active{% endif %}">
       Suppressed
     </a>
-    <a href="?status=&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == '' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status=all&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}">
       All
     </a>
     <span class="border-start mx-1"></span>
-    <a href="?status={{ status_filter }}&source=&page_size={{ page_size }}" class="btn btn-sm {% if not source_filter %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}" title="All sources">
+    <a href="?status={{ status_filter }}&source=all&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if not source_filter or source_filter == 'all' %}active{% endif %}" title="All sources">
       All Types
     </a>
-    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}" class="btn btn-sm {% if source_filter == 'ai_analysis' %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if source_filter == 'ai_analysis' %}active{% endif %}">
       <i class="bi bi-cpu"></i> AI
     </a>
-    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}" class="btn btn-sm {% if source_filter == 'screenshot' %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">
+    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if source_filter == 'screenshot' %}active{% endif %}">
       <i class="bi bi-camera"></i> Screenshots
     </a>
   </div>
@@ -53,7 +56,7 @@
       </thead>
       <tbody>
         {% for rv in reviews %}
-        <tr id="review-{{ rv.id }}">
+        <tr id="review-{{ rv.id }}" class="review-row" style="cursor:pointer" onclick="toggleDetail('{{ rv.id }}')">
           <td>
             {% if rv.source_type == 'screenshot' %}
             <span class="badge bg-light text-dark"><i class="bi bi-camera me-1"></i>Screenshot</span>
@@ -69,11 +72,14 @@
             {% endif %}
             {% else %}
             <span class="font-monospace small">{{ rv.item_id|default:"—" }}</span>
+            {% if rv.analysis_screenshot_name %}
+            <br><span class="text-muted" style="font-size:.72rem">{{ rv.analysis_screenshot_name }}</span>
+            {% endif %}
             {% endif %}
           </td>
           <td>
             {% if rv.run_id %}
-            <a href="/runs/{{ rv.run_id }}/" class="font-monospace small text-decoration-none">{{ rv.run_id|truncatechars:12 }}</a>
+            <a href="/runs/{{ rv.run_id }}/" class="font-monospace small text-decoration-none" onclick="event.stopPropagation()">{{ rv.run_id|truncatechars:12 }}</a>
             {% else %}
             <span class="text-muted">—</span>
             {% endif %}
@@ -87,17 +93,104 @@
             <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td><span class="status-badge status-{{ rv.status }}">{{ rv.status }}</span></td>
+          <td><span class="status-badge status-{{ rv.status }}" id="status-badge-{{ rv.id }}">{{ rv.status }}</span></td>
           <td class="text-muted small">{{ rv.created_at|default:"—" }}</td>
-          <td class="text-nowrap">
-            {% if rv.status == 'pending' %}
-            <button class="btn btn-sm btn-danger" onclick="reviewAction('{{ rv.id }}', 'issue')" title="Confirm as issue">
-              <i class="bi bi-exclamation-triangle"></i> Issue
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="reviewAction('{{ rv.id }}', 'suppress')" title="Suppress">
-              <i class="bi bi-shield-x"></i> Suppress
-            </button>
-            {% endif %}
+          <td class="text-nowrap" onclick="event.stopPropagation()">
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" id="action-btn-{{ rv.id }}">
+                <i class="bi bi-three-dots"></i>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                {% if rv.status != 'issue' %}
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'issue'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Mark as Issue</a></li>
+                {% endif %}
+                {% if rv.status != 'resolved' %}
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'resolve'); return false;"><i class="bi bi-check-circle text-success me-2"></i>Mark Resolved</a></li>
+                {% endif %}
+                {% if rv.status != 'suppressed' %}
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'suppress'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Suppress</a></li>
+                {% endif %}
+                {% if rv.status != 'pending' %}
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'pending'); return false;"><i class="bi bi-arrow-counterclockwise text-primary me-2"></i>Reopen (Pending)</a></li>
+                {% endif %}
+              </ul>
+            </div>
+          </td>
+        </tr>
+        <!-- Expandable detail row -->
+        <tr id="detail-{{ rv.id }}" class="detail-row" style="display:none">
+          <td colspan="7" class="bg-light p-0">
+            <div class="p-3">
+              <div class="row">
+                {% if rv.screenshot_path %}
+                <div class="col-md-4 mb-3 mb-md-0">
+                  <div class="border rounded overflow-hidden bg-white">
+                    <img src="/runs/screenshot/img/{{ rv.screenshot_path }}"
+                         class="w-100" alt="{{ rv.screenshot_name }}" loading="lazy"
+                         style="cursor:zoom-in" onclick="showScreenshotModal(this.src, '{{ rv.screenshot_name }}')">
+                  </div>
+                  <div class="text-muted small mt-1">{{ rv.screenshot_name }}</div>
+                </div>
+                {% endif %}
+                <div class="{% if rv.screenshot_path %}col-md-8{% else %}col-12{% endif %}">
+                  {% if rv.summary %}
+                  <div class="mb-2">
+                    <strong class="small text-muted">Summary</strong>
+                    <div>{{ rv.summary }}</div>
+                  </div>
+                  {% endif %}
+
+                  {% if rv.source_type == 'ai_analysis' and rv.issues %}
+                  <strong class="small text-muted">Issues Found</strong>
+                  <div class="mt-1">
+                    {% for issue in rv.issues %}
+                    <div class="border rounded p-2 mb-2 bg-white">
+                      <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge {% if issue.severity == 'high' %}bg-danger{% elif issue.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                          {{ issue.severity|default:"—" }}
+                        </span>
+                        <span class="badge bg-light text-dark">{{ issue.type|default:"—" }}</span>
+                      </div>
+                      {% if issue.detail %}
+                      <div class="small">{{ issue.detail }}</div>
+                      {% endif %}
+                      {% if issue.text %}
+                      <div class="small"><strong>Text:</strong> <code>{{ issue.text }}</code>
+                        {% if issue.suggestion %} <i class="bi bi-arrow-right"></i> <code>{{ issue.suggestion }}</code>{% endif %}
+                      </div>
+                      {% endif %}
+                      {% if issue.context %}
+                      <div class="small text-muted mt-1">"...{{ issue.context }}..."</div>
+                      {% endif %}
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% elif rv.source_type == 'screenshot' %}
+                  {% if rv.flag_notes %}
+                  <div class="mb-2">
+                    <strong class="small text-muted">Flag Notes</strong>
+                    <div>{{ rv.flag_notes }}</div>
+                  </div>
+                  {% endif %}
+                  {% endif %}
+
+                  {% if rv.notes %}
+                  <div class="mb-2">
+                    <strong class="small text-muted">Review Notes</strong>
+                    <div>{{ rv.notes }}</div>
+                  </div>
+                  {% endif %}
+
+                  {% if rv.environment_name %}
+                  <div class="text-muted small">
+                    <i class="bi bi-globe me-1"></i>{{ rv.environment_name }}
+                    {% if rv.model_used %} &middot; <i class="bi bi-cpu me-1"></i>{{ rv.model_used }}{% endif %}
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
           </td>
         </tr>
         {% empty %}
@@ -123,27 +216,99 @@
   {% endif %}
 </div>
 
+<!-- Screenshot zoom modal -->
+<div class="modal fade" id="screenshotModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <span class="modal-title small text-muted" id="screenshotModalLabel"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 text-center bg-dark">
+        <img id="screenshotModalImg" src="" class="img-fluid">
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+var statusClasses = {
+  pending: 'status-pending',
+  issue: 'status-issue',
+  resolved: 'status-resolved',
+  suppressed: 'status-suppressed'
+};
+
+function toggleDetail(id) {
+  var row = document.getElementById('detail-' + id);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function showScreenshotModal(src, name) {
+  document.getElementById('screenshotModalImg').src = src;
+  document.getElementById('screenshotModalLabel').textContent = name;
+  new bootstrap.Modal(document.getElementById('screenshotModal')).show();
+}
+
 function reviewAction(id, action) {
-  var label = action === 'issue' ? 'Confirm as Issue' : 'Suppress';
   if (action === 'suppress' && !confirm('Suppress this item? Future runs with the same screenshot, script, and environment will be auto-suppressed.')) return;
 
   fetch('/reviews/action/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({reviewId: id, action: action})
-  }).then(r => r.json()).then(d => {
+  }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
-      var row = document.getElementById('review-' + id);
-      if (row) row.remove();
+      // Update status badge in-place
+      var badge = document.getElementById('status-badge-' + id);
+      if (badge) {
+        badge.textContent = d.status;
+        badge.className = 'status-badge status-' + d.status;
+      }
+      // Update action dropdown
+      updateActionDropdown(id, d.status);
     } else {
       alert('Error: ' + (d.error || 'Unknown error'));
     }
   });
 }
+
+function updateActionDropdown(id, status) {
+  var btn = document.getElementById('action-btn-' + id);
+  if (!btn) return;
+  var menu = btn.nextElementSibling;
+  if (!menu) return;
+
+  var items = [];
+  if (status !== 'issue')
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'issue\'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Mark as Issue</a></li>');
+  if (status !== 'resolved')
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'resolve\'); return false;"><i class="bi bi-check-circle text-success me-2"></i>Mark Resolved</a></li>');
+  if (status !== 'suppressed')
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'suppress\'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Suppress</a></li>');
+  if (status !== 'pending') {
+    items.push('<li><hr class="dropdown-divider"></li>');
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'pending\'); return false;"><i class="bi bi-arrow-counterclockwise text-primary me-2"></i>Reopen (Pending)</a></li>');
+  }
+  menu.innerHTML = items.join('');
+}
+
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
 }
 </script>
+
+<style>
+.filter-btn { background: none; border: 1px solid #dee2e6; color: #6c757d; }
+.filter-btn:hover { background: #f0f6ff; color: #4da3ff; border-color: #4da3ff; }
+.filter-btn.active { background: #4da3ff; color: #fff; border-color: #4da3ff; }
+.status-pending { background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.status-issue { background: #f8d7da; color: #842029; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.status-resolved { background: #d1e7dd; color: #0f5132; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.status-suppressed { background: #e2e3e5; color: #41464b; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.detail-row td { border-top: none !important; }
+.review-row:hover { background: #f8f9fa; }
+</style>
 {% endblock %}

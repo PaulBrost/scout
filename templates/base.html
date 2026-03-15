@@ -200,13 +200,13 @@
 
         <div class="nav-section">Testing</div>
         <a href="/test-cases/" class="{% if 'test-cases' in request.path and 'builder' not in request.path %}active{% endif %}">
-          <i class="bi bi-file-code"></i> <span class="nav-label">Tests</span>
+          <i class="bi bi-file-code"></i> <span class="nav-label">Scripts</span>
         </a>
         <a href="/suites/" class="{% if 'suites' in request.path %}active{% endif %}">
           <i class="bi bi-collection"></i> <span class="nav-label">Suites</span>
         </a>
         <a href="/runs/" class="{% if 'runs' in request.path %}active{% endif %}">
-          <i class="bi bi-play-circle"></i> <span class="nav-label">Results</span>
+          <i class="bi bi-play-circle"></i> <span class="nav-label">Tests</span>
         </a>
         <a href="/reviews/" class="{% if 'reviews' in request.path %}active{% endif %}">
           <i class="bi bi-flag"></i> <span class="nav-label">Reviews</span>

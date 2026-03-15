@@ -325,7 +325,15 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '- For NAEP/CRA tests, use `src/helpers/auth.js`: `loginAndStartTest(page, {formKey})` handles login + form selection + intro screen skip. The formKey is the assessment ID (e.g., cra-form1, gates-student-experience-form). It maps to the form dropdown value automatically.\n'
     prompt += '- For NAEP/CRA **baseline** tests, use `navigateAllScreens(page, envConfig, onScreen)` from `src/helpers/items.js` instead of a TOTAL_ITEMS loop. It walks through ALL screens (intro, items, end) automatically, handles video screens by seeking to end, and detects end-of-assessment via configurable selectors in `launcher_config`. Pass `skipIntro: false` to `loginAndStartTest` so intro screens are captured.\n'
     prompt += '- For NAEP/CRA **QC checklist** tests, use `navigateAllScreens` + `runQcChecks` from `src/helpers/qc.js`. This auto-detects interaction types and runs checks on every screen. Use `get_test_template` with type `qc_checklist` for the ready-made script.\n'
-    prompt += '- For NAEP/CRA non-baseline tests that target specific items, use `loginAndStartTest` with default `skipIntro: true` and navigate to the target item.\n\n'
+    prompt += '- For NAEP/CRA non-baseline tests that target specific items, use `loginAndStartTest` with default `skipIntro: true` and navigate to the target item.\n'
+    prompt += '- **Test Data**: Use `src/helpers/testdata.js` to access linked datasets at runtime. Datasets are linked via the UI or `link_test_data` tool and passed via `SCOUT_TEST_DATA` env var.\n'
+    prompt += '  ```\n'
+    prompt += '  const { getCredentials, getInputs, getItemList, getCustomData } = require(\'../src/helpers/testdata\');\n'
+    prompt += '  const creds = getCredentials();          // first credentials dataset\n'
+    prompt += '  const creds = getCredentials(\'Admin\');   // credentials dataset named "Admin"\n'
+    prompt += '  const inputs = getInputs();              // first inputs dataset\n'
+    prompt += '  ```\n'
+    prompt += '  Each dataset has: `{ name, assessment_id, item_id, description, entries: [...] }` where entries is the user-defined JSON array.\n\n'
 
     # QC Checklist instructions
     prompt += '## QC Checklist Tests\n'
@@ -376,6 +384,32 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
             prompt += '\n'.join(f'- {p}' for p in ctx_parts) + '\n'
             prompt += 'Use this context to inform the test you generate. You do NOT need to ask the user which item or assessment this test is for — it is already specified above.\n'
             prompt += 'If an assessment is specified without a specific item, the test should cover ALL items in that assessment (e.g., iterate through items). Do not ask the user to pick specific items.\n\n'
+
+    # Include linked test data context
+    if filename:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT td.name, td.data_type, td.description,
+                           jsonb_array_length(COALESCE(td.data, '[]'::jsonb)) AS entry_count
+                    FROM test_script_data_sets tsds
+                    JOIN test_data_sets td ON tsds.data_set_id = td.id
+                    JOIN test_scripts ts ON tsds.script_id = ts.id
+                    WHERE ts.script_path = %s
+                    ORDER BY td.data_type, td.name
+                """, [filename])
+                linked_ds = [{'name': r[0], 'data_type': r[1], 'description': r[2], 'entry_count': r[3]}
+                             for r in cursor.fetchall()]
+            if linked_ds:
+                prompt += '## Linked Test Data\nThe following datasets are linked to this test and available at runtime via `src/helpers/testdata.js`:\n'
+                for d in linked_ds:
+                    prompt += f"- [{d['data_type']}] **{d['name']}** — {d['entry_count']} entries"
+                    if d.get('description'):
+                        prompt += f" ({d['description']})"
+                    prompt += '\n'
+                prompt += 'Access them with: `getCredentials()`, `getInputs()`, `getItemList()`, `getCustomData()` or `getCredentials("Name")` for a specific named dataset.\n\n'
+        except Exception:
+            pass
 
     if current_code and current_code.strip() and current_code != '// Generated test code will appear here...':
         fname_part = f' ({filename})' if filename else ''
@@ -1057,6 +1091,132 @@ def execute_tool(tool_id, args, context):
     elif tool_id == 'get_test_template':
         return _build_test_template(args, context, project_root)
 
+    elif tool_id == 'get_test_data':
+        script_path = context.get('filename', '').strip()
+        if not script_path:
+            return {'success': False, 'result': 'No script path in context'}
+        try:
+            with connection.cursor() as cursor:
+                # Get script's environment/assessment/item
+                cursor.execute(
+                    'SELECT id, environment_id, assessment_id, item_id FROM test_scripts WHERE script_path = %s',
+                    [script_path]
+                )
+                srow = cursor.fetchone()
+                if not srow:
+                    return {'success': True, 'result': 'Script not saved yet — no test data available.'}
+                script_id, s_env, s_assess, s_item = srow
+
+                # Get linked datasets
+                cursor.execute("""
+                    SELECT td.id, td.name, td.data_type, td.description,
+                           jsonb_array_length(COALESCE(td.data, '[]'::jsonb)) AS entry_count
+                    FROM test_script_data_sets tsds
+                    JOIN test_data_sets td ON tsds.data_set_id = td.id
+                    WHERE tsds.script_id = %s
+                    ORDER BY td.data_type, td.name
+                """, [str(script_id)])
+                cols = [c[0] for c in cursor.description]
+                linked = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+                # Get eligible but unlinked datasets
+                if s_env:
+                    if s_item and s_assess:
+                        cursor.execute("""
+                            SELECT td.id, td.name, td.data_type, td.description,
+                                   jsonb_array_length(COALESCE(td.data, '[]'::jsonb)) AS entry_count
+                            FROM test_data_sets td
+                            WHERE td.environment_id = %s
+                              AND (td.assessment_id IS NULL OR td.assessment_id = %s)
+                              AND (td.item_id IS NULL OR td.item_id = %s)
+                              AND td.id NOT IN (SELECT data_set_id FROM test_script_data_sets WHERE script_id = %s)
+                            ORDER BY td.data_type, td.name
+                        """, [str(s_env), str(s_assess), s_item, str(script_id)])
+                    elif s_assess:
+                        cursor.execute("""
+                            SELECT td.id, td.name, td.data_type, td.description,
+                                   jsonb_array_length(COALESCE(td.data, '[]'::jsonb)) AS entry_count
+                            FROM test_data_sets td
+                            WHERE td.environment_id = %s
+                              AND (td.assessment_id IS NULL OR td.assessment_id = %s)
+                              AND td.item_id IS NULL
+                              AND td.id NOT IN (SELECT data_set_id FROM test_script_data_sets WHERE script_id = %s)
+                            ORDER BY td.data_type, td.name
+                        """, [str(s_env), str(s_assess), str(script_id)])
+                    else:
+                        cursor.execute("""
+                            SELECT td.id, td.name, td.data_type, td.description,
+                                   jsonb_array_length(COALESCE(td.data, '[]'::jsonb)) AS entry_count
+                            FROM test_data_sets td
+                            WHERE td.environment_id = %s
+                              AND td.assessment_id IS NULL AND td.item_id IS NULL
+                              AND td.id NOT IN (SELECT data_set_id FROM test_script_data_sets WHERE script_id = %s)
+                            ORDER BY td.data_type, td.name
+                        """, [str(s_env), str(script_id)])
+                    cols = [c[0] for c in cursor.description]
+                    eligible = [dict(zip(cols, r)) for r in cursor.fetchall()]
+                else:
+                    eligible = []
+
+            parts = []
+            if linked:
+                parts.append('**Linked datasets** (will be passed to this test at runtime via SCOUT_TEST_DATA):')
+                for d in linked:
+                    parts.append(f"- [{d['data_type']}] **{d['name']}** — {d['entry_count']} entries"
+                                 + (f" ({d['description']})" if d.get('description') else '')
+                                 + f" (id: {d['id']})")
+            else:
+                parts.append('No datasets are currently linked to this test.')
+
+            if eligible:
+                parts.append('\n**Available (unlinked) datasets** — use `link_test_data` to add:')
+                for d in eligible:
+                    parts.append(f"- [{d['data_type']}] **{d['name']}** — {d['entry_count']} entries"
+                                 + (f" ({d['description']})" if d.get('description') else '')
+                                 + f" (id: {d['id']})")
+
+            return {'success': True, 'result': '\n'.join(parts)}
+        except Exception as e:
+            return {'success': False, 'result': f'Database error: {e}'}
+
+    elif tool_id == 'link_test_data':
+        script_path = context.get('filename', '').strip()
+        if not script_path:
+            return {'success': False, 'result': 'No script path in context'}
+        data_set_id = (args.get('dataSetId') or args.get('data_set_id') or '').strip()
+        data_set_name = (args.get('name') or '').strip()
+        if not data_set_id and not data_set_name:
+            return {'success': False, 'result': 'Provide dataSetId or name to identify the dataset'}
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT id FROM test_scripts WHERE script_path = %s', [script_path])
+                srow = cursor.fetchone()
+                if not srow:
+                    return {'success': False, 'result': 'Script not found in database'}
+                script_id = srow[0]
+
+                if data_set_name and not data_set_id:
+                    # Look up by name (case-insensitive)
+                    cursor.execute(
+                        "SELECT id, name, data_type FROM test_data_sets WHERE LOWER(name) = LOWER(%s) LIMIT 2",
+                        [data_set_name]
+                    )
+                    matches = cursor.fetchall()
+                    if not matches:
+                        return {'success': False, 'result': f'No dataset found with name "{data_set_name}"'}
+                    if len(matches) > 1:
+                        return {'success': False, 'result': f'Multiple datasets match name "{data_set_name}". Use get_test_data to see IDs.'}
+                    data_set_id = str(matches[0][0])
+
+                cursor.execute("""
+                    INSERT INTO test_script_data_sets (id, script_id, data_set_id, created_at)
+                    VALUES (gen_random_uuid(), %s, %s::uuid, now())
+                    ON CONFLICT (script_id, data_set_id) DO NOTHING
+                """, [str(script_id), data_set_id])
+            return {'success': True, 'result': f'Dataset linked to test script successfully.'}
+        except Exception as e:
+            return {'success': False, 'result': f'Error linking dataset: {e}'}
+
     return {'success': False, 'result': f'No executor for tool: {tool_id}'}
 
 
@@ -1088,12 +1248,12 @@ def chat(message, conversation_id, current_code, filename, script_context=None, 
     If the AI responds with just a planning message (no tools), it is
     automatically nudged to continue and actually execute the work.
     """
-    from ai.provider import get_provider
+    from ai.provider import get_provider_for_feature
 
     # Tools that trigger auto-continue (research / context-gathering)
     RESEARCH_TOOLS = {'read_file', 'list_helpers', 'search_tests', 'get_items',
                       'explain_code', 'analyze_script', 'get_run_screenshots',
-                      'get_qc_checklists', 'get_test_template'}
+                      'get_qc_checklists', 'get_test_template', 'get_test_data'}
 
     # Load or create conversation
     if conversation_id:
@@ -1120,7 +1280,7 @@ def chat(message, conversation_id, current_code, filename, script_context=None, 
     if len(messages) > MAX_TURNS * 2:
         messages = messages[-MAX_TURNS * 2:]
 
-    provider = get_provider()
+    provider = get_provider_for_feature('builder')
     all_tool_results = []
     code_update = None
     final_text = ''

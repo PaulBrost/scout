@@ -8,4 +8,6 @@ urlpatterns = [
     path('api/save/', views.api_save, name='test_data_save'),
     path('api/save/<uuid:dataset_id>/', views.api_save, name='test_data_update'),
     path('api/delete/<uuid:dataset_id>/', views.api_delete, name='test_data_delete'),
+    path('api/assessments/', views.api_assessments, name='test_data_assessments'),
+    path('api/items/', views.api_items, name='test_data_items'),
 ]

@@ -45,13 +45,16 @@ def index(request):
     where = []
     params = []
 
-    if status_filter:
+    if status_filter and status_filter != 'all':
         params.append(status_filter)
         where.append('rv.status = %s')
-    else:
-        where.append("rv.status = 'pending'")
+    elif not status_filter:
+        # Default view (no param) shows pending
+        status_filter = 'pending'
+        params.append('pending')
+        where.append('rv.status = %s')
 
-    if source_filter:
+    if source_filter and source_filter != 'all':
         params.append(source_filter)
         where.append('rv.source_type = %s')
 
@@ -82,10 +85,12 @@ def index(request):
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     # Unified query: LEFT JOIN both ai_analyses and run_screenshots
+    # Also join run_screenshots for AI analyses that reference a screenshot_name
     base_query = """
         FROM reviews rv
         LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
         LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+        LEFT JOIN run_screenshots aa_ss ON aa.run_id = aa_ss.run_id AND aa.screenshot_name = aa_ss.name
         LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
     """
 
@@ -99,11 +104,12 @@ def index(request):
         cursor.execute(f"""
             SELECT rv.id, rv.status, rv.notes, rv.reviewed_at, rv.created_at,
                    rv.source_type,
-                   aa.analysis_type, aa.issues_found, aa.issues, aa.model_used,
+                   aa.analysis_type, aa.issues_found, aa.issues, aa.summary,
+                   aa.model_used, aa.screenshot_name AS analysis_screenshot_name,
                    aa.run_id AS ai_run_id, aa.item_id,
                    rs.id AS screenshot_id, rs.name AS screenshot_name,
-                   rs.file_path AS screenshot_path, rs.flagged,
-                   rs.flag_notes, rs.run_id AS ss_run_id,
+                   COALESCE(rs.file_path, aa_ss.file_path) AS screenshot_path,
+                   rs.flagged, rs.flag_notes, rs.run_id AS ss_run_id,
                    COALESCE(aa.run_id, rs.run_id) AS run_id,
                    trs.script_path,
                    e.name AS environment_name
@@ -146,13 +152,13 @@ def review_action(request):
     try:
         data = json.loads(request.body)
         review_id = data.get('reviewId')
-        action = data.get('action')  # issue, suppress
+        action = data.get('action')  # issue, suppress, resolve, pending
         notes = data.get('notes', '')
 
-        if not review_id or action not in ('issue', 'suppress'):
+        if not review_id or action not in ('issue', 'suppress', 'resolve', 'pending'):
             return JsonResponse({'error': 'Invalid request'}, status=400)
 
-        status_map = {'issue': 'issue', 'suppress': 'suppressed'}
+        status_map = {'issue': 'issue', 'suppress': 'suppressed', 'resolve': 'resolved', 'pending': 'pending'}
         new_status = status_map[action]
 
         with connection.cursor() as cursor:

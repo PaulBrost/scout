@@ -38,25 +38,39 @@
     </div>
   </div>
 </div>
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div class="d-flex align-items-center gap-2">
-    <label class="text-muted small mb-0">Show</label>
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
-      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
-    </select>
-    <span class="text-muted small">entries</span>
-    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
-      <option value="">Bulk actions</option>
-      <option value="delete">Delete</option>
-    </select>
-    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Environment</label>
+        <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
+          <option value="">All Environments</option>
+          {% for env in environments %}
+          <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col">
+        <form method="get" class="d-flex gap-2">
+          <input type="hidden" name="page_size" value="{{ page_size }}">
+          {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
+          <input type="text" name="search" class="form-control form-control-sm" placeholder="Search assessments…" value="{{ search }}" style="width:200px">
+          <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+          {% if search %}<a href="?page_size={{ page_size }}{% if env_filter %}&environment={{ env_filter }}{% endif %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
+        </form>
+      </div>
+      <div class="col-auto d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+          {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+          <option value="">Bulk</option>
+          <option value="delete">Delete</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Go</button>
+      </div>
+    </div>
   </div>
-  <form method="get" class="d-flex gap-2">
-    <input type="hidden" name="page_size" value="{{ page_size }}">
-    <input type="text" name="search" class="form-control form-control-sm" placeholder="Search assessments…" value="{{ search }}" style="width:220px">
-    <button class="btn btn-sm btn-outline-secondary">Search</button>
-    {% if search %}<a href="?page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
-  </form>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -65,7 +79,7 @@
       <thead class="table-light">
         <tr>
           <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
-          <th><a href="?sort=name&dir={% if sort == 'name' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Name {% if sort == 'name' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th><a href="?sort=name&dir={% if sort == 'name' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}&search={{ search }}&environment={{ env_filter }}">Name {% if sort == 'name' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Subject</th>
           <th>Grade</th>
           <th>Year</th>
@@ -96,13 +110,13 @@
   <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">«</a></li>
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">«</a></li>
     {% for pg in page_range %}
     {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">{{ pg }}</a></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">{{ pg }}</a></li>
     {% endif %}
     {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}">»</a></li>
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">»</a></li>
   </ul></nav>
   {% endif %}
 </div>

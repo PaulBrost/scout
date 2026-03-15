@@ -1,50 +1,69 @@
 {% extends "base.html" %}
-{% block title %}Tests{% endblock %}
-{% block page_title %}Tests{% endblock %}
+{% block title %}Scripts{% endblock %}
+{% block page_title %}Scripts{% endblock %}
 
 {% block topbar_actions %}
-<a href="/builder/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Test</a>
+<a href="/builder/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Script</a>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div class="d-flex align-items-center gap-2">
-    <label class="text-muted small mb-0">Show</label>
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
-      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
-    </select>
-    <span class="text-muted small">entries</span>
-    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
-      <option value="">Bulk actions</option>
-      <option value="delete">Delete</option>
-    </select>
-    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('test_type',this.value)">
-      <option value="">All Types</option>
-      {% for val, label in test_types %}
-      <option value="{{ val }}" {% if test_type_filter == val %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    {% if test_type_filter %}
-    <a href="?page_size={{ page_size }}&search={{ search }}&environment={{ env_filter }}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-x"></i> Clear type
-    </a>
-    {% endif %}
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
-      <option value="">All Environments</option>
-      {% for env in environments %}
-      <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
-      {% endfor %}
-    </select>
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Environment</label>
+        <select class="form-select form-select-sm" id="filterEnv" style="width:auto" onchange="onEnvChange(this.value)">
+          <option value="">All Environments</option>
+          {% for env in environments %}
+          <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Assessment</label>
+        <select class="form-select form-select-sm" id="filterAssessment" style="width:auto" onchange="onAssessmentChange(this.value)">
+          <option value="">All Assessments</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Item</label>
+        <select class="form-select form-select-sm" id="filterItem" style="width:auto" onchange="updateParam('item',this.value)">
+          <option value="">All Items</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Type</label>
+        <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('test_type',this.value)">
+          <option value="">All Types</option>
+          {% for val, label in test_types %}
+          <option value="{{ val }}" {% if test_type_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col">
+        <form method="get" class="d-flex gap-2">
+          <input type="hidden" name="page_size" value="{{ page_size }}">
+          {% if test_type_filter %}<input type="hidden" name="test_type" value="{{ test_type_filter }}">{% endif %}
+          {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
+          {% if assessment_filter %}<input type="hidden" name="assessment" value="{{ assessment_filter }}">{% endif %}
+          {% if item_filter %}<input type="hidden" name="item" value="{{ item_filter }}">{% endif %}
+          <input type="text" name="search" class="form-control form-control-sm" placeholder="Search…" value="{{ search }}" style="width:180px">
+          <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+          {% if search %}<a href="?page_size={{ page_size }}{% if test_type_filter %}&test_type={{ test_type_filter }}{% endif %}{% if env_filter %}&environment={{ env_filter }}{% endif %}{% if assessment_filter %}&assessment={{ assessment_filter }}{% endif %}{% if item_filter %}&item={{ item_filter }}{% endif %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
+        </form>
+      </div>
+      <div class="col-auto d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+          {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+          <option value="">Bulk</option>
+          <option value="delete">Delete</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Go</button>
+      </div>
+    </div>
   </div>
-  <form method="get" class="d-flex gap-2">
-    <input type="hidden" name="page_size" value="{{ page_size }}">
-    {% if test_type_filter %}<input type="hidden" name="test_type" value="{{ test_type_filter }}">{% endif %}
-    {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
-    <input type="text" name="search" class="form-control form-control-sm" placeholder="Search scripts…" value="{{ search }}" style="width:240px">
-    <button class="btn btn-sm btn-outline-secondary">Search</button>
-    {% if search %}<a href="?page_size={{ page_size }}{% if test_type_filter %}&test_type={{ test_type_filter }}{% endif %}{% if env_filter %}&environment={{ env_filter }}{% endif %}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
-  </form>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -53,11 +72,11 @@
       <thead class="table-light">
         <tr>
           <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
-          <th>Test</th>
+          <th>Script</th>
           <th>Environment</th>
           <th>Item</th>
           <th>Type</th>
-          <th>Actions</th>
+          <th style="width:70px">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -66,8 +85,7 @@
           <td><input type="checkbox" class="form-check-input row-check" value="{{ sc.id }}" onchange="updateSelection()"></td>
           <td>
             <a href="/builder/?file={{ sc.script_path|urlencode }}" class="text-decoration-none">
-              <div class="small fw-semibold">{{ sc.description|default:sc.script_path }}</div>
-              {% if sc.description %}<div class="text-muted" style="font-size:.7rem">{{ sc.script_path }}</div>{% endif %}
+              <div class="small fw-semibold">{{ sc.description|default:"Untitled test" }}</div>
             </a>
           </td>
           <td class="small">
@@ -81,8 +99,8 @@
             {% if sc.item_id %}
             <a href="/items/{{ sc.item_numeric_id|default:sc.item_id }}/">{{ sc.item_id }}</a>
             {% if sc.item_title %}<div class="text-muted">{{ sc.item_title|truncatechars:40 }}</div>{% endif %}
-            {% elif sc.assessment_id %}
-            <span class="text-muted">assessment</span>
+            {% elif sc.assessment_name %}
+            <a href="/assessments/{{ sc.assessment_numeric_id }}/">{{ sc.assessment_name }}</a>
             {% else %}
             <span class="text-muted">—</span>
             {% endif %}
@@ -101,25 +119,20 @@
             {% else %}
             <span class="badge bg-secondary">{{ sc.test_type|default:"—" }}</span>
             {% endif %}
-            {% if sc.tags %}
-              {% for tag in sc.tags %}
-              <span class="badge bg-light text-dark border" style="font-size:.65rem">{{ tag }}</span>
-              {% endfor %}
-            {% endif %}
           </td>
           <td class="text-nowrap">
-            <a href="/builder/?file={{ sc.script_path|urlencode }}" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-pencil-square"></i> Edit
+            <a href="/builder/?file={{ sc.script_path|urlencode }}" class="text-primary me-2" title="Edit">
+              <i class="bi bi-pencil-square"></i>
             </a>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteScript({{ sc.id }}, '{{ sc.script_path|escapejs }}')" title="Delete test">
+            <a href="javascript:void(0)" class="text-danger" onclick="deleteScript({{ sc.id }}, '{{ sc.script_path|escapejs }}')" title="Delete">
               <i class="bi bi-trash"></i>
-            </button>
+            </a>
           </td>
         </tr>
         {% empty %}
         <tr><td colspan="6" class="text-muted text-center py-5">No test scripts found.
-          {% if not search and not test_type_filter and not env_filter %}
-          <a href="/builder/">Create one in the Test Editor</a>.
+          {% if not search and not test_type_filter and not env_filter and not assessment_filter and not item_filter %}
+          <a href="/builder/">Create one in the Script Editor</a>.
           {% endif %}
         </td></tr>
         {% endfor %}
@@ -132,21 +145,88 @@
   <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">«</a></li>
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}&assessment={{ assessment_filter }}&item={{ item_filter }}">«</a></li>
     {% for pg in page_range %}
     {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">{{ pg }}</a></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}&assessment={{ assessment_filter }}&item={{ item_filter }}">{{ pg }}</a></li>
     {% endif %}
     {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}">»</a></li>
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&test_type={{ test_type_filter }}&environment={{ env_filter }}&assessment={{ assessment_filter }}&item={{ item_filter }}">»</a></li>
   </ul></nav>
   {% endif %}
 </div>
 
 <script>
+var currentEnvFilter = '{{ env_filter|escapejs }}';
+var currentAssessmentFilter = '{{ assessment_filter|escapejs }}';
+var currentItemFilter = '{{ item_filter|escapejs }}';
+
 function updateParam(key, val) {
-  var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+  var url = new URL(window.location);
+  url.searchParams.set(key, val);
+  url.searchParams.set('page', 1);
+  // Cascade: clear downstream filters
+  if (key === 'environment') {
+    url.searchParams.delete('assessment');
+    url.searchParams.delete('item');
+  } else if (key === 'assessment') {
+    url.searchParams.delete('item');
+  }
+  window.location = url;
 }
+
+function onEnvChange(val) {
+  updateParam('environment', val);
+}
+
+function onAssessmentChange(val) {
+  updateParam('assessment', val);
+}
+
+// Populate cascading dropdowns on page load
+function populateAssessments(envId, selectedId) {
+  var sel = document.getElementById('filterAssessment');
+  sel.innerHTML = '<option value="">All Assessments</option>';
+  if (!envId) return Promise.resolve();
+  return fetch('/test-data/api/assessments/?environment_id=' + encodeURIComponent(envId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.assessments || []).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        if (String(a.id) === String(selectedId)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+}
+
+function populateItems(assessmentId, selectedId) {
+  var sel = document.getElementById('filterItem');
+  sel.innerHTML = '<option value="">All Items</option>';
+  if (!assessmentId) return Promise.resolve();
+  return fetch('/test-data/api/items/?assessment_id=' + encodeURIComponent(assessmentId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.items || []).forEach(function(i) {
+        var opt = document.createElement('option');
+        opt.value = i.item_id;
+        opt.textContent = i.item_id + (i.title ? ' — ' + i.title : '');
+        if (String(i.item_id) === String(selectedId)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+}
+
+// On page load, populate cascading dropdowns with current filter state
+if (currentEnvFilter) {
+  populateAssessments(currentEnvFilter, currentAssessmentFilter).then(function() {
+    if (currentAssessmentFilter) {
+      populateItems(currentAssessmentFilter, currentItemFilter);
+    }
+  });
+}
+
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
@@ -163,7 +243,7 @@ function updateSelection() {
   document.getElementById('selectAll').indeterminate = count > 0 && count < total;
 }
 function deleteScript(id, path) {
-  if (!confirm('Delete test "' + path + '"? This will remove the file and its metadata. This cannot be undone.')) return;
+  if (!confirm('Delete test "' + path + '"? This cannot be undone.')) return;
   fetch('/test-cases/api/delete-script/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
@@ -186,7 +266,7 @@ function applyBulkAction() {
   var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return parseInt(cb.value); });
   if (ids.length === 0) { alert('No rows selected.'); return; }
   if (action === 'delete') {
-    if (!confirm('Delete ' + ids.length + ' selected test' + (ids.length === 1 ? '' : 's') + '? This will remove the files and metadata. This cannot be undone.')) return;
+    if (!confirm('Delete ' + ids.length + ' selected test' + (ids.length === 1 ? '' : 's') + '? This cannot be undone.')) return;
     fetch('/test-cases/api/delete-scripts/', {
       method: 'POST',
       headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},

@@ -8,8 +8,14 @@ urlpatterns = [
     path('ai/settings/', views.update_settings, name='admin_update_settings'),
     path('ai/text-analysis/', views.update_text_analysis, name='admin_update_text_analysis'),
     path('ai/vision-analysis/', views.update_vision_analysis, name='admin_update_vision_analysis'),
-    path('ai/test-provider/', views.test_provider, name='admin_test_provider'),
     path('ai/feature-provider/', views.save_feature_provider, name='admin_save_feature_provider'),
+    # AI Provider CRUD
+    path('ai/providers/', views.list_providers, name='admin_list_providers'),
+    path('ai/providers/<uuid:provider_id>/', views.get_provider, name='admin_get_provider'),
+    path('ai/providers/save/', views.save_provider, name='admin_save_provider'),
+    path('ai/providers/delete/', views.delete_provider, name='admin_delete_provider'),
+    path('ai/providers/test/', views.test_provider_connection, name='admin_test_provider_connection'),
+    # General settings
     path('general/', views.general_settings, name='admin_general'),
     path('general/update/', views.update_general_settings, name='admin_update_general'),
     path('archives/', views.test_archives, name='admin_archives'),

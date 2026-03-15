@@ -254,15 +254,26 @@ async function navigateToItem(page, itemNumber) {
 
 /**
  * Extract all visible text from the item content area.
+ * Automatically emits a [SCOUT_TEXT] marker so SCOUT can detect that page text
+ * was captured and use it for AI text analysis.
  * @param {import('@playwright/test').Page} page
+ * @param {string} [label] - Optional label (e.g., screen number or item ID)
  * @returns {string} The item's text content
  */
-async function extractItemText(page) {
+async function extractItemText(page, label) {
   const el = page.locator('#item');
+  let text = '';
   if (await el.isVisible({ timeout: 3000 })) {
-    return await el.innerText();
+    text = await el.innerText();
   }
-  return '';
+  if (text && text.trim()) {
+    const payload = JSON.stringify({
+      label: label || '',
+      text: text.trim(),
+    });
+    console.log(`[SCOUT_TEXT] ${payload}`);
+  }
+  return text;
 }
 
 /**
@@ -426,6 +437,9 @@ async function navigateAllScreens(page, envConfig, onScreen) {
     // Handle video screens — seek to end before screenshotting
     await skipVideoIfPresent(page, lc);
 
+    // Capture page text for AI analysis (extractItemText emits [SCOUT_TEXT] automatically)
+    await extractItemText(page, `Screen ${screenIndex}`);
+
     // Call user's callback on this screen
     await onScreen(page, screenIndex);
 
@@ -503,6 +517,7 @@ module.exports = {
   answerAndAdvance,
   navigateToItem,
   extractItemText,
+  extractAndLogItemText: extractItemText,  // alias for backward compat
   isNextEnabled,
   isBackEnabled,
   setZoom,

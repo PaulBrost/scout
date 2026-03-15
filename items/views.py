@@ -33,6 +33,7 @@ def index(request):
     sort = request.GET.get('sort', 'numeric_id')
     direction = 'DESC' if request.GET.get('dir', 'asc') == 'desc' else 'ASC'
     search = request.GET.get('search', '').strip()
+    env_filter = request.GET.get('environment', '')
     assessment_filter = request.GET.get('assessment', '')
 
     valid_sorts = {
@@ -56,7 +57,9 @@ def index(request):
             return render(request, 'items/list.html', {
                 'items': [], 'total': 0, 'page': 1, 'page_size': page_size,
                 'page_size_options': [10, 25, 50, 100], 'sort': sort, 'direction': direction.lower(),
-                'search': search, 'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
+                'search': search, 'env_filter': env_filter, 'assessment_filter': assessment_filter,
+                'environments': [],
+                'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
         params.append(tuple(str(e) for e in env_ids))
         where.append('i.environment_id = ANY(%s::uuid[])')
@@ -65,6 +68,9 @@ def index(request):
         params.append(f'%{search.lower()}%')
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(i.item_id) LIKE %s OR LOWER(i.title) LIKE %s)')
+    if env_filter:
+        params.append(env_filter)
+        where.append('i.environment_id = %s::uuid')
     if assessment_filter:
         params.append(assessment_filter)
         where.append('i.assessment_id = %s')
@@ -96,6 +102,16 @@ def index(request):
         cols = [c[0] for c in cursor.description]
         items = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    # Load environments for filter dropdown
+    env_query = 'SELECT id, name FROM environments ORDER BY name'
+    env_params = []
+    if env_ids is not None:
+        env_query = 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name'
+        env_params = [tuple(str(e) for e in env_ids)]
+    with connection.cursor() as cursor:
+        cursor.execute(env_query, env_params)
+        environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+
     total_pages = max(1, (total + page_size - 1) // page_size)
     start_item = (page - 1) * page_size + 1 if total > 0 else 0
     end_item = min(page * page_size, total)
@@ -103,7 +119,8 @@ def index(request):
     return render(request, 'items/list.html', {
         'items': items, 'total': total, 'page': page, 'page_size': page_size,
         'page_size_options': [10, 25, 50, 100], 'sort': sort, 'direction': direction.lower(),
-        'search': search, 'assessment_filter': assessment_filter,
+        'search': search, 'env_filter': env_filter, 'assessment_filter': assessment_filter,
+        'environments': environments,
         'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
     })

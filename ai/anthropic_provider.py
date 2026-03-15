@@ -4,23 +4,18 @@ from .provider import BaseProvider
 from . import prompts as p
 
 
-class AzureFoundryProvider(BaseProvider):
+class AnthropicProvider(BaseProvider):
+    """Provider for Anthropic Messages API (direct Anthropic + Azure AI Foundry)."""
+
     def __init__(self, config):
-        # Support both flat config dict and legacy nested format
-        if 'azure' in config:
-            azure = config['azure']
-            self.endpoint = azure['endpoint'].rstrip('/')
-            self.api_key = azure['apiKey']
-            self.text_deployment = azure['textDeployment']
-            self.vision_deployment = azure['visionDeployment']
-            self.api_version = azure['apiVersion']
-        else:
-            self.endpoint = (config.get('base_url') or '').rstrip('/')
-            self.api_key = config.get('api_key', '')
-            deployment = config.get('deployment_id', '')
-            self.text_deployment = deployment
-            self.vision_deployment = deployment
-            self.api_version = config.get('api_version', '2024-02-01')
+        self.api_key = config.get('api_key', '')
+        self.model = config.get('model', 'claude-sonnet-4-5')
+        base_url = config.get('base_url', 'https://api.anthropic.com/v1/')
+        if not base_url:
+            base_url = 'https://api.anthropic.com/v1/'
+        if not base_url.endswith('/'):
+            base_url += '/'
+        self.base_url = base_url
 
     def analyze_text(self, text, language='English', custom_prompt=None):
         start = time.time()
@@ -30,7 +25,7 @@ class AzureFoundryProvider(BaseProvider):
                 {'role': 'system', 'content': 'You are a proofreading assistant. Respond with ONLY a JSON object. No markdown, no explanation.'},
                 {'role': 'user', 'content': prompt},
             ],
-            deployment=self.text_deployment, max_tokens=4000
+            max_tokens=4000
         )
         result = self._parse_response(raw)
         issues = result['issues']
@@ -41,7 +36,7 @@ class AzureFoundryProvider(BaseProvider):
         return {
             'issues': issues, 'issuesFound': len(issues) > 0,
             'summary': summary,
-            'raw': raw, 'model': self.text_deployment,
+            'raw': raw, 'model': self.model,
             'durationMs': int((time.time() - start) * 1000),
         }
 
@@ -54,11 +49,11 @@ class AzureFoundryProvider(BaseProvider):
                 'role': 'user',
                 'content': [
                     {'type': 'text', 'text': prompt},
-                    {'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{screenshot_b64}'}},
+                    {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': screenshot_b64}},
                 ],
             },
         ]
-        raw = self._chat_completion(messages, deployment=self.vision_deployment, max_tokens=4000)
+        raw = self._chat_completion(messages, max_tokens=4000)
         result = self._parse_response(raw)
         issues = result['issues']
         summary = result['summary'] or (
@@ -68,7 +63,7 @@ class AzureFoundryProvider(BaseProvider):
         return {
             'issues': issues, 'issuesFound': len(issues) > 0,
             'summary': summary,
-            'raw': raw, 'model': self.vision_deployment,
+            'raw': raw, 'model': self.model,
             'durationMs': int((time.time() - start) * 1000),
         }
 
@@ -80,12 +75,12 @@ class AzureFoundryProvider(BaseProvider):
                 {'role': 'system', 'content': 'You are a proofreading assistant. Respond with ONLY a JSON array. No markdown, no explanation.'},
                 {'role': 'user', 'content': prompt},
             ],
-            deployment=self.text_deployment, max_tokens=1500
+            max_tokens=1500
         )
         diffs = self._parse_issues(raw)
         return {
             'differences': diffs, 'hasDifferences': len(diffs) > 0,
-            'raw': raw, 'model': self.text_deployment,
+            'raw': raw, 'model': self.model,
             'durationMs': int((time.time() - start) * 1000),
         }
 
@@ -97,52 +92,69 @@ class AzureFoundryProvider(BaseProvider):
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': description},
             ],
-            deployment=self.text_deployment, max_tokens=2000
+            max_tokens=2000
         )
 
     def health_check(self):
         try:
             raw = self._chat_completion(
                 [{'role': 'user', 'content': 'Reply with "ok"'}],
-                deployment=self.text_deployment, max_tokens=10
+                max_tokens=10
             )
             return {
-                'healthy': True, 'provider': 'azure',
+                'healthy': True, 'provider': 'anthropic',
                 'details': {
-                    'endpoint': self.endpoint,
-                    'textDeployment': self.text_deployment,
+                    'base_url': self.base_url,
+                    'model': self.model,
                     'response': raw.strip(),
                 },
             }
         except Exception as e:
-            return {'healthy': False, 'provider': 'azure', 'details': {'error': str(e)}}
+            return {'healthy': False, 'provider': 'anthropic', 'details': {'error': str(e)}}
 
     def chat_completion(self, messages, options=None):
         options = options or {}
         return self._chat_completion(messages, max_tokens=options.get('max_tokens', 3000))
 
-    def _chat_completion(self, messages, deployment=None, max_tokens=1000):
-        deployment = deployment or self.text_deployment
-        url = f"{self.endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self.api_version}"
-        body = {'messages': messages, 'max_completion_tokens': max_tokens}
-        last_error = None
+    def _chat_completion(self, messages, max_tokens=1000):
+        url = self.base_url + 'messages'
 
+        # Extract system message — Anthropic uses top-level 'system' field
+        system_text = ''
+        api_messages = []
+        for msg in messages:
+            if msg['role'] == 'system':
+                system_text += (msg.get('content') or '') + '\n'
+            else:
+                api_messages.append(msg)
+        system_text = system_text.strip()
+
+        headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': self.api_key,
+            'anthropic-version': '2023-06-01',
+        }
+        body = {
+            'model': self.model,
+            'max_tokens': max_tokens,
+            'messages': api_messages,
+        }
+        if system_text:
+            body['system'] = system_text
+
+        last_error = None
         for attempt in range(3):
             try:
-                resp = requests.post(
-                    url, json=body,
-                    headers={'Content-Type': 'application/json', 'api-key': self.api_key},
-                    timeout=120
-                )
+                resp = requests.post(url, json=body, headers=headers, timeout=120)
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get('retry-after', '2'))
-                    delay = min(retry_after * 1000, 10000) * (attempt + 1) / 1000
+                    delay = min(retry_after, 10) * (attempt + 1)
                     time.sleep(delay)
-                    last_error = Exception(f"Azure rate limited (429)")
+                    last_error = Exception("Anthropic rate limited (429)")
                     continue
                 resp.raise_for_status()
                 data = resp.json()
-                return data['choices'][0]['message']['content']
+                return data['content'][0]['text']
             except Exception as e:
                 last_error = e
                 if attempt < 2 and '401' not in str(e) and '403' not in str(e):

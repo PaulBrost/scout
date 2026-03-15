@@ -10,7 +10,7 @@ class MockProvider(BaseProvider):
     def _delay(self):
         time.sleep(0.05 + random.random() * 0.1)
 
-    def analyze_text(self, text, language='English'):
+    def analyze_text(self, text, language='English', custom_prompt=None):
         start = time.time()
         self._delay()
         if self.mode == 'error':
@@ -20,21 +20,25 @@ class MockProvider(BaseProvider):
                 {'type': 'spelling', 'text': 'teh', 'suggestion': 'the', 'context': '...teh answer...'},
                 {'type': 'homophone', 'text': 'plain', 'suggestion': 'plane', 'context': '...on a plain...'},
             ]
-            return {'issues': issues, 'issuesFound': True, 'raw': 'Mock: 2 issues', 'model': 'mock',
+            return {'issues': issues, 'issuesFound': True, 'summary': 'Analyzed text content. Found 2 spelling/homophone issues.',
+                    'raw': 'Mock: 2 issues', 'model': 'mock',
                     'durationMs': int((time.time() - start) * 1000)}
-        return {'issues': [], 'issuesFound': False, 'raw': 'No issues.', 'model': 'mock',
+        return {'issues': [], 'issuesFound': False, 'summary': 'Analyzed text content. No issues found.',
+                'raw': 'No issues.', 'model': 'mock',
                 'durationMs': int((time.time() - start) * 1000)}
 
-    def analyze_screenshot(self, screenshot_b64, context=''):
+    def analyze_screenshot(self, screenshot_b64, context='', custom_prompt=None):
         start = time.time()
         self._delay()
         if self.mode == 'error':
             raise Exception('Mock AI error: simulated failure')
         if self.mode == 'issues':
             issues = [{'type': 'readability', 'detail': 'Text slightly blurry', 'severity': 'low'}]
-            return {'issues': issues, 'issuesFound': True, 'raw': 'Mock: 1 issue', 'model': 'mock',
+            return {'issues': issues, 'issuesFound': True, 'summary': 'Checked screenshot for visual quality. Found 1 readability issue.',
+                    'raw': 'Mock: 1 issue', 'model': 'mock',
                     'durationMs': int((time.time() - start) * 1000)}
-        return {'issues': [], 'issuesFound': False, 'raw': 'No visual issues.', 'model': 'mock',
+        return {'issues': [], 'issuesFound': False, 'summary': 'Checked screenshot for visual quality. No issues detected.',
+                'raw': 'No visual issues.', 'model': 'mock',
                 'durationMs': int((time.time() - start) * 1000)}
 
     def compare_text(self, baseline, current, language='English'):

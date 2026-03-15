@@ -166,6 +166,68 @@ def builder_view(request):
         except Exception:
             pass
 
+    # Load eligible test datasets for this script (scoped by env/assessment/item)
+    eligible_datasets = []
+    linked_dataset_ids = set()
+    if file_path and script_meta and script_meta.get('environment_id'):
+        try:
+            with connection.cursor() as cursor:
+                # Get already-linked dataset IDs
+                cursor.execute("""
+                    SELECT tsds.data_set_id FROM test_script_data_sets tsds
+                    JOIN test_scripts ts ON tsds.script_id = ts.id
+                    WHERE ts.script_path = %s
+                """, [file_path])
+                linked_dataset_ids = {str(r[0]) for r in cursor.fetchall()}
+
+                # Build scoped eligible query
+                s_env = script_meta['environment_id']
+                s_assess = script_meta.get('assessment_id')
+                s_item = script_meta.get('item_id')
+
+                if s_item and s_assess:
+                    # E + A + I: datasets at env-level, assessment-level, or item-level
+                    cursor.execute("""
+                        SELECT id, name, data_type, description,
+                               jsonb_array_length(COALESCE(data, '[]'::jsonb)) AS entry_count
+                        FROM test_data_sets
+                        WHERE environment_id = %s
+                          AND (assessment_id IS NULL OR assessment_id = %s)
+                          AND (item_id IS NULL OR item_id = %s)
+                        ORDER BY data_type, name
+                    """, [str(s_env), str(s_assess), s_item])
+                elif s_assess:
+                    # E + A: datasets at env-level or assessment-level (no item-specific)
+                    cursor.execute("""
+                        SELECT id, name, data_type, description,
+                               jsonb_array_length(COALESCE(data, '[]'::jsonb)) AS entry_count
+                        FROM test_data_sets
+                        WHERE environment_id = %s
+                          AND (assessment_id IS NULL OR assessment_id = %s)
+                          AND item_id IS NULL
+                        ORDER BY data_type, name
+                    """, [str(s_env), str(s_assess)])
+                else:
+                    # E only: only env-level datasets (no assessment or item)
+                    cursor.execute("""
+                        SELECT id, name, data_type, description,
+                               jsonb_array_length(COALESCE(data, '[]'::jsonb)) AS entry_count
+                        FROM test_data_sets
+                        WHERE environment_id = %s
+                          AND assessment_id IS NULL
+                          AND item_id IS NULL
+                        ORDER BY data_type, name
+                    """, [str(s_env)])
+
+                cols = [c[0] for c in cursor.description]
+                for row in cursor.fetchall():
+                    ds = dict(zip(cols, row))
+                    ds['id'] = str(ds['id'])
+                    ds['is_linked'] = ds['id'] in linked_dataset_ids
+                    eligible_datasets.append(ds)
+        except Exception:
+            pass
+
     return render(request, 'builder/builder.html', {
         'file_content': file_content,
         'file_path': file_path,
@@ -181,6 +243,8 @@ def builder_view(request):
         'chat_conversation_id': str(chat_conversation_id) if chat_conversation_id else None,
         'test_summary': test_summary,
         'baselines': baselines,
+        'eligible_datasets': eligible_datasets,
+        'linked_datasets': [ds for ds in eligible_datasets if ds.get('is_linked')],
     })
 
 
@@ -678,6 +742,58 @@ def api_clear_baselines(request):
 
         with connection.cursor() as cursor:
             cursor.execute('DELETE FROM test_script_baselines WHERE script_path = %s', [script_path])
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_link_test_data(request):
+    """Link a test data set to a test script."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('filePath', '').strip()
+        data_set_id = data.get('dataSetId', '').strip()
+        if not file_path or not data_set_id:
+            return JsonResponse({'error': 'filePath and dataSetId required'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT id FROM test_scripts WHERE script_path = %s', [file_path])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Script not found'}, status=404)
+            script_id = row[0]
+
+            cursor.execute("""
+                INSERT INTO test_script_data_sets (id, script_id, data_set_id, created_at)
+                VALUES (gen_random_uuid(), %s, %s::uuid, now())
+                ON CONFLICT (script_id, data_set_id) DO NOTHING
+            """, [str(script_id), data_set_id])
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_unlink_test_data(request):
+    """Unlink a test data set from a test script."""
+    try:
+        data = json.loads(request.body)
+        file_path = data.get('filePath', '').strip()
+        data_set_id = data.get('dataSetId', '').strip()
+        if not file_path or not data_set_id:
+            return JsonResponse({'error': 'filePath and dataSetId required'}, status=400)
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                DELETE FROM test_script_data_sets
+                WHERE script_id = (SELECT id FROM test_scripts WHERE script_path = %s)
+                  AND data_set_id = %s::uuid
+            """, [file_path, data_set_id])
         return JsonResponse({'ok': True})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

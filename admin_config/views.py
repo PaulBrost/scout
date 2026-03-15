@@ -41,7 +41,13 @@ def ai_settings(request):
         cols = [c[0] for c in cursor.description]
         tools = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
-    # Extract per-feature provider settings
+        cursor.execute('SELECT id, name, provider_type, enabled FROM ai_providers ORDER BY name')
+        cols = [c[0] for c in cursor.description]
+        providers = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        # Stringify UUIDs for template
+        for p in providers:
+            p['id'] = str(p['id'])
+
     def _load_json(val):
         if isinstance(val, str):
             try:
@@ -50,21 +56,19 @@ def ai_settings(request):
                 return val
         return val
 
-    text_provider_type = _load_json(settings_dict.get('text_provider_type', '"default"'))
-    text_provider_config = _load_json(settings_dict.get('text_provider_config', '{}'))
-    vision_provider_type = _load_json(settings_dict.get('vision_provider_type', '"default"'))
-    vision_provider_config = _load_json(settings_dict.get('vision_provider_config', '{}'))
+    builder_provider_id = _load_json(settings_dict.get('builder_provider_id', '"mock"')) or 'mock'
+    text_provider_id = _load_json(settings_dict.get('text_provider_id', '"mock"')) or 'mock'
+    vision_provider_id = _load_json(settings_dict.get('vision_provider_id', '"mock"')) or 'mock'
 
     return render(request, 'admin_config/ai_settings.html', {
         'settings': settings_dict,
         'tools': tools,
-        'provider': settings.AI_PROVIDER,
+        'providers': providers,
+        'builder_provider_id': builder_provider_id,
+        'text_provider_id': text_provider_id,
+        'vision_provider_id': vision_provider_id,
         'success': request.GET.get('success'),
-        'tab': request.GET.get('tab', 'prompt'),
-        'text_provider_type': text_provider_type or 'default',
-        'text_provider_config': json.dumps(text_provider_config if isinstance(text_provider_config, dict) else {}),
-        'vision_provider_type': vision_provider_type or 'default',
-        'vision_provider_config': json.dumps(vision_provider_config if isinstance(vision_provider_config, dict) else {}),
+        'tab': request.GET.get('tab', 'providers'),
     })
 
 
@@ -127,8 +131,6 @@ def update_vision_analysis(request):
                         request.POST.get('vision_analysis_enabled') == 'true')
         _upsert_setting(cursor, 'vision_analysis_prompt',
                         request.POST.get('vision_analysis_prompt', ''))
-        _upsert_setting(cursor, 'baseline_comparison_enabled',
-                        request.POST.get('baseline_comparison_enabled') == 'true')
         threshold = request.POST.get('baseline_diff_threshold', '0.01')
         try:
             threshold = float(threshold)
@@ -142,22 +144,23 @@ def update_vision_analysis(request):
 @require_http_methods(["POST"])
 @admin_required
 def save_feature_provider(request):
-    """AJAX — save per-feature provider type + config."""
+    """AJAX — save a provider UUID (or 'mock') for a feature."""
     try:
         body = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
 
     feature = body.get('feature')
-    if feature not in ('text', 'vision'):
+    if feature not in ('builder', 'text', 'vision'):
         return JsonResponse({'ok': False, 'error': 'Invalid feature'}, status=400)
 
-    provider_type = body.get('providerType', 'default')
-    provider_config = body.get('providerConfig', {})
+    provider_id = body.get('providerId', 'mock')
 
     with connection.cursor() as cursor:
-        _upsert_setting(cursor, f'{feature}_provider_type', provider_type)
-        _upsert_setting(cursor, f'{feature}_provider_config', provider_config)
+        _upsert_setting(cursor, f'{feature}_provider_id', provider_id)
+
+    from ai.provider import invalidate_provider_cache
+    invalidate_provider_cache()
 
     return JsonResponse({'ok': True})
 
@@ -165,56 +168,205 @@ def save_feature_provider(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 @admin_required
-def test_provider(request):
-    """AJAX — test an AI provider connection. Returns {ok, message, durationMs}."""
-    import time
+def list_providers(request):
+    """Return all AI providers as JSON (API keys masked)."""
+    # Accept GET-style via POST for consistency
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, name, provider_type, api_key, model, base_url,
+                   deployment_id, api_version, enabled, created_at, updated_at
+            FROM ai_providers ORDER BY name
+        """)
+        cols = [c[0] for c in cursor.description]
+        providers = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    for p in providers:
+        p['id'] = str(p['id'])
+        p['has_api_key'] = bool(p['api_key'])
+        p['api_key'] = ''  # never send key to browser
+        p['created_at'] = str(p['created_at'])
+        p['updated_at'] = str(p['updated_at'])
+
+    return JsonResponse({'ok': True, 'providers': providers})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@admin_required
+def get_provider(request, provider_id):
+    """Return a single AI provider as JSON (API key masked)."""
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id, name, provider_type, api_key, model, base_url,
+                   deployment_id, api_version, enabled
+            FROM ai_providers WHERE id = %s
+        """, [str(provider_id)])
+        row = cursor.fetchone()
+
+    if not row:
+        return JsonResponse({'ok': False, 'error': 'Not found'}, status=404)
+
+    cols = ['id', 'name', 'provider_type', 'api_key', 'model', 'base_url',
+            'deployment_id', 'api_version', 'enabled']
+    p = dict(zip(cols, row))
+    p['id'] = str(p['id'])
+    p['has_api_key'] = bool(p['api_key'])
+    p['api_key'] = ''
+    return JsonResponse({'ok': True, 'provider': p})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def save_provider(request):
+    """Create or update an AI provider."""
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+    provider_id = body.get('id')
+    name = (body.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'ok': False, 'error': 'Name is required'}, status=400)
+
+    provider_type = body.get('provider_type', '')
+    if provider_type not in ('anthropic', 'azure_openai', 'openai_compat'):
+        return JsonResponse({'ok': False, 'error': 'Invalid provider type'}, status=400)
+
+    api_key = body.get('api_key', '')
+    model = body.get('model', '')
+    base_url = body.get('base_url', '')
+    deployment_id = body.get('deployment_id', '')
+    api_version = body.get('api_version', '')
+    enabled = body.get('enabled', True)
+
+    with connection.cursor() as cursor:
+        if provider_id:
+            # Update — keep existing api_key if blank submitted
+            if not api_key:
+                cursor.execute("SELECT api_key FROM ai_providers WHERE id = %s", [provider_id])
+                row = cursor.fetchone()
+                if row:
+                    api_key = row[0]
+
+            cursor.execute("""
+                UPDATE ai_providers
+                SET name = %s, provider_type = %s, api_key = %s, model = %s,
+                    base_url = %s, deployment_id = %s, api_version = %s,
+                    enabled = %s, updated_at = now()
+                WHERE id = %s
+            """, [name, provider_type, api_key, model, base_url,
+                  deployment_id, api_version, enabled, provider_id])
+        else:
+            import uuid
+            provider_id = str(uuid.uuid4())
+            cursor.execute("""
+                INSERT INTO ai_providers (id, name, provider_type, api_key, model,
+                    base_url, deployment_id, api_version, enabled, created_at, updated_at)
+                VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+            """, [provider_id, name, provider_type, api_key, model,
+                  base_url, deployment_id, api_version, enabled])
+
+    from ai.provider import invalidate_provider_cache
+    invalidate_provider_cache(provider_id)
+
+    return JsonResponse({'ok': True, 'id': str(provider_id)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def delete_provider(request):
+    """Delete an AI provider and clear any feature assignments referencing it."""
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+    provider_id = body.get('id')
+    if not provider_id:
+        return JsonResponse({'ok': False, 'error': 'id required'}, status=400)
+
+    with connection.cursor() as cursor:
+        # Clear feature assignments referencing this provider
+        for feature in ('builder', 'text', 'vision'):
+            cursor.execute(
+                "SELECT value FROM ai_settings WHERE key = %s",
+                [f'{feature}_provider_id']
+            )
+            row = cursor.fetchone()
+            if row:
+                val = row[0]
+                if isinstance(val, str):
+                    try:
+                        val = json.loads(val)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if str(val) == str(provider_id):
+                    _upsert_setting(cursor, f'{feature}_provider_id', 'mock')
+
+        cursor.execute("DELETE FROM ai_providers WHERE id = %s", [str(provider_id)])
+
+    from ai.provider import invalidate_provider_cache
+    invalidate_provider_cache(provider_id)
+
+    return JsonResponse({'ok': True})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def test_provider_connection(request):
+    """Test an AI provider connection — by ID or inline config."""
+    import time as _time
 
     try:
         body = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
 
-    feature = body.get('feature')  # 'text', 'vision', 'chat', or None
-    provider_type = body.get('providerType')
-    provider_config = body.get('providerConfig')
+    provider_id = body.get('id')
+    start = _time.time()
 
-    start = time.time()
     try:
-        if provider_type and provider_type != 'default':
+        if provider_id:
+            # Test by saved provider ID
+            from ai.provider import _get_provider_by_id, _get_mock_provider
+            provider = _get_provider_by_id(provider_id)
+            if not provider:
+                return JsonResponse({'ok': False, 'error': 'Provider not found or disabled'})
+        elif body.get('provider_type'):
+            # Test by inline config (unsaved form values)
             from ai.provider import _instantiate_provider
-            provider = _instantiate_provider(provider_type, provider_config or {})
+            config = {
+                'api_key': body.get('api_key', ''),
+                'model': body.get('model', ''),
+                'base_url': body.get('base_url', ''),
+                'deployment_id': body.get('deployment_id', ''),
+                'api_version': body.get('api_version', ''),
+            }
+            provider = _instantiate_provider(body['provider_type'], config)
         else:
-            from ai.provider import get_provider_for_feature
-            provider = get_provider_for_feature(feature)
+            return JsonResponse({'ok': False, 'error': 'id or provider_type required'}, status=400)
 
-        if feature == 'text':
-            result = provider.analyze_text('The quick brown fox jumps over the lazy dog.')
-            duration_ms = int((time.time() - start) * 1000)
-            issue_count = len(result.get('issues', []))
-            model = result.get('model', 'unknown')
+        result = provider.health_check()
+        duration_ms = int((_time.time() - start) * 1000)
+        if result.get('healthy'):
             return JsonResponse({
                 'ok': True,
-                'message': f'Text analysis succeeded via {model} — {issue_count} issue(s) found',
+                'message': f'Connection successful — {result.get("details", {}).get("response", "ok")}',
                 'durationMs': duration_ms,
             })
         else:
-            result = provider.health_check()
-            duration_ms = int((time.time() - start) * 1000)
-            if result.get('healthy'):
-                return JsonResponse({
-                    'ok': True,
-                    'message': f'Provider "{result.get("provider", "unknown")}" is healthy',
-                    'durationMs': duration_ms,
-                })
-            else:
-                detail = result.get('details', {}).get('error', 'Unknown error')
-                return JsonResponse({
-                    'ok': False,
-                    'error': f'Health check failed: {detail}',
-                    'durationMs': duration_ms,
-                })
+            detail = result.get('details', {}).get('error', 'Unknown error')
+            return JsonResponse({
+                'ok': False,
+                'error': f'Health check failed: {detail}',
+                'durationMs': duration_ms,
+            })
     except Exception as e:
-        duration_ms = int((time.time() - start) * 1000)
+        duration_ms = int((_time.time() - start) * 1000)
         return JsonResponse({
             'ok': False,
             'error': str(e),

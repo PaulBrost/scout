@@ -281,6 +281,43 @@ def parse_qc_results(execution_log):
     }
 
 
+def parse_text_content(execution_log):
+    """Parse [SCOUT_TEXT] structured lines from execution log.
+
+    Returns concatenated extracted text or None if no text lines found.
+    Each [SCOUT_TEXT] line contains JSON: {"label": "...", "text": "..."}
+    """
+    texts = []
+
+    for line in execution_log.split('\n'):
+        idx = line.find('[SCOUT_TEXT]')
+        if idx == -1:
+            continue
+        raw = line[idx + len('[SCOUT_TEXT]'):].strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+            text = data.get('text', '').strip()
+            label = data.get('label', '')
+            if text:
+                if label:
+                    texts.append(f'--- {label} ---\n{text}')
+                else:
+                    texts.append(text)
+        except (json.JSONDecodeError, TypeError):
+            # Plain text fallback (no JSON wrapper)
+            if raw:
+                texts.append(raw)
+
+    return '\n\n'.join(texts) if texts else None
+
+
+def has_text_content(execution_log):
+    """Check if execution log contains any [SCOUT_TEXT] markers."""
+    return '[SCOUT_TEXT]' in (execution_log or '')
+
+
 BROWSER_TO_PROJECT = {
     'chromium': 'chrome-desktop',
     'firefox': 'firefox-desktop',
@@ -504,19 +541,21 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
     }
 
 
-def prepare_test_data(run_id, environment_id):
-    """Serialize TestDataSets for the environment into a temp JSON file.
-    Returns the path to the temp file, or None if no data sets exist."""
-    if not environment_id:
-        return None
+def prepare_test_data(run_id, script_path):
+    """Serialize linked TestDataSets for a script into a temp JSON file.
+    Only includes datasets explicitly linked via test_script_data_sets.
+    Returns the path to the temp file, or None if no datasets are linked."""
 
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT name, data_type, data, assessment_id, description
-            FROM test_data_sets
-            WHERE environment_id = %s
-            ORDER BY data_type, name
-        """, [str(environment_id)])
+            SELECT td.name, td.data_type, td.data, td.assessment_id,
+                   td.item_id, td.description
+            FROM test_script_data_sets tsds
+            JOIN test_data_sets td ON tsds.data_set_id = td.id
+            JOIN test_scripts ts ON tsds.script_id = ts.id
+            WHERE ts.script_path = %s
+            ORDER BY td.data_type, td.name
+        """, [script_path])
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
@@ -532,6 +571,7 @@ def prepare_test_data(run_id, environment_id):
         test_data[dt].append({
             'name': row['name'],
             'assessment_id': row['assessment_id'],
+            'item_id': row['item_id'],
             'description': row['description'],
             'entries': row['data'] if isinstance(row['data'], list) else [],
         })
@@ -553,8 +593,7 @@ def execute_run(run_id, script_paths, options=None):
     total_qc_checks = 0
     total_qc_failures = 0
 
-    # Prepare test data and environment config if environment is set on the run
-    test_data_path = None
+    # Prepare environment config if environment is set on the run
     env_config_json = None
     is_baseline_run = False
     environment_id = None
@@ -565,7 +604,6 @@ def execute_run(run_id, script_paths, options=None):
             is_baseline_run = True
         if row and row[0]:
             environment_id = row[0]
-            test_data_path = prepare_test_data(run_id, environment_id)
 
             # Fetch full environment config so Playwright helpers can use it
             cursor.execute(
@@ -623,11 +661,6 @@ def execute_run(run_id, script_paths, options=None):
                     [run_id]
                 )
                 print(f'[Executor] Run {str(run_id)[:8]} cancelled by user')
-                if test_data_path:
-                    try:
-                        os.unlink(test_data_path)
-                    except OSError:
-                        pass
                 return
 
         script_path = entry['script_path']
@@ -639,7 +672,11 @@ def execute_run(run_id, script_paths, options=None):
                 [run_script_id]
             )
 
+        test_data_path = None
         try:
+            # Prepare test data for this specific script (linked datasets only)
+            test_data_path = prepare_test_data(run_id, script_path)
+
             env_vars = dict(options.get('env') or {})
             if test_data_path:
                 env_vars['SCOUT_TEST_DATA'] = test_data_path
@@ -783,6 +820,13 @@ def execute_run(run_id, script_paths, options=None):
                     [f'Execution engine error: {e}', f'Internal error: {e}', run_script_id]
                 )
             errors += 1
+        finally:
+            # Clean up per-script test data temp file
+            if test_data_path:
+                try:
+                    os.unlink(test_data_path)
+                except OSError:
+                    pass
 
     run_status = 'completed' if (failed + errors) == 0 else 'failed'
     summary_data = {
@@ -799,12 +843,5 @@ def execute_run(run_id, script_paths, options=None):
             "UPDATE test_runs SET status = %s, completed_at = now(), summary = %s WHERE id = %s",
             [run_status, summary, run_id]
         )
-
-    # Clean up temp test data file
-    if test_data_path:
-        try:
-            os.unlink(test_data_path)
-        except OSError:
-            pass
 
     print(f'[Executor] Run {str(run_id)[:8]} complete: {passed} passed, {failed} failed, {errors} errors')

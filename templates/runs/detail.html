@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load core_filters %}
-{% block title %}Testing Results{% endblock %}
-{% block page_title %}Testing Results{% endblock %}
+{% block title %}Test Results{% endblock %}
+{% block page_title %}Test Results{% endblock %}
 
 {% block topbar_actions %}
 {% if run.status == 'running' or run.status == 'scheduled' %}
@@ -28,7 +28,10 @@
 
 <!-- Details -->
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold">Details</div>
+  <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+    <span>{% if run.suite_id %}Suite: <a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% elif run.test_name %}Script: <a href="/builder/?file={{ script_results.0.script_path }}">{{ run.test_name }}</a>{% else %}{{ run.notes|default:"—" }}{% endif %}</span>
+    <button class="btn btn-sm btn-outline-primary" onclick="rerunTest()"><i class="bi bi-arrow-repeat"></i> Rerun Test</button>
+  </div>
   <div class="card-body">
     <div class="row g-3 small">
       <div class="col-md-4">
@@ -40,7 +43,7 @@
         {% if run.suite_id %}Suite{% else %}Ad-hoc{% endif %}
       </div>
       <div class="col-md-4">
-        <span class="text-muted">{% if run.suite_id %}Suite:{% else %}Test:{% endif %}</span>
+        <span class="text-muted">{% if run.suite_id %}Suite:{% else %}Script:{% endif %}</span>
         {% if run.suite_id %}<a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% else %}{{ run.test_name|default:run.notes|default:"—" }}{% endif %}
       </div>
       <div class="col-md-4">
@@ -151,7 +154,6 @@
             <div class="d-flex align-items-center gap-1">
               <div>
                 <div class="small fw-semibold">{{ sr.test_name|default:sr.script_path }}</div>
-                {% if sr.test_name %}<div class="text-muted" style="font-size:.7rem">{{ sr.script_path }}</div>{% endif %}
               </div>
               {% if sr.test_summary %}
               <button class="btn btn-sm p-0 ms-1 text-info" onclick="showSummary({{ forloop.counter0 }})" title="View test summary">
@@ -268,33 +270,51 @@
     </div>
     {% if run.status != 'running' and run.status != 'scheduled' %}
     <div class="d-flex gap-2">
+      {% if analyses %}
+      <button class="btn btn-sm btn-outline-danger" onclick="clearAnalyses()" id="clearAnalysesBtn">
+        <i class="bi bi-trash"></i> Clear
+      </button>
+      {% endif %}
+      {% if vision_analysis_enabled and screenshots %}
       <button class="btn btn-sm btn-outline-info" onclick="runAnalysis('visual')" id="analyzeVisualBtn">
         <i class="bi bi-eye"></i> Analyze Screenshots
       </button>
+      {% endif %}
+      {% if text_analysis_enabled and has_extracted_text %}
       <button class="btn btn-sm btn-outline-warning" onclick="runAnalysis('text')" id="analyzeTextBtn">
         <i class="bi bi-spellcheck"></i> Analyze Text
       </button>
+      {% endif %}
     </div>
     {% endif %}
   </div>
   <div class="card-body" id="analysisResults">
     {% if analyses %}
     <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0">
+      <table class="table table-sm align-middle mb-0" id="analysisTable">
         <thead class="table-light">
           <tr>
-            <th>Type</th>
-            <th>Screenshot</th>
-            <th>Status</th>
-            <th>Issues</th>
-            <th>Model</th>
-            <th>Duration</th>
-            <th>Created</th>
+            <th class="sortable" data-sort="screenshot" style="cursor:pointer">Screenshot <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="created" style="cursor:pointer">Created <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="type" style="cursor:pointer">Type <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="model" style="cursor:pointer">Model <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="duration" style="cursor:pointer">Duration <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="issues" style="cursor:pointer">Issues <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
+            <th class="sortable" data-sort="status" style="cursor:pointer">Status <i class="bi bi-chevron-expand sort-icon text-muted" style="font-size:.7rem"></i></th>
           </tr>
         </thead>
         <tbody>
           {% for a in analyses %}
-          <tr>
+          <tr data-screenshot="{{ a.screenshot_name|default:"" }}"
+              data-created="{{ a.created_at|date:'Y-m-d H:i:s' }}"
+              data-type="{{ a.analysis_type }}"
+              data-model="{{ a.model_used|default:"" }}"
+              data-duration="{{ a.duration_ms|default:0 }}"
+              data-issues="{{ a.issues|length }}"
+              data-status="{{ a.status }}"
+              data-index="{{ forloop.counter0 }}">
+            <td class="small text-muted">{{ a.screenshot_name|default:"—" }}</td>
+            <td class="small text-muted">{{ a.created_at|shorttime:user_timezone }}</td>
             <td>
               {% if a.analysis_type == 'visual_layout' %}
               <i class="bi bi-eye text-info me-1"></i>
@@ -307,20 +327,23 @@
               {% endif %}
               <span class="small">{{ a.analysis_type }}</span>
             </td>
-            <td class="small text-muted">{{ a.screenshot_name|default:"—" }}</td>
-            <td><span class="status-badge status-{{ a.status }}">{{ a.status }}</span></td>
-            <td>
-              {% if a.issues_found %}
-              <a href="#" class="text-danger text-decoration-none" onclick="showAnalysisIssues({{ forloop.counter0 }}); return false;">
-                {{ a.issues|length }} issue{{ a.issues|length|pluralize }}
-              </a>
-              {% else %}
-              <span class="text-success small">Clean</span>
-              {% endif %}
-            </td>
             <td class="small text-muted">{{ a.model_used|default:"—" }}</td>
             <td class="small text-muted">{% if a.duration_ms %}{{ a.duration_ms }}ms{% else %}—{% endif %}</td>
-            <td class="small text-muted">{{ a.created_at|shorttime:user_timezone }}</td>
+            <td>
+              <div class="d-flex align-items-center gap-1">
+                {% if a.issues_found %}
+                <a href="#" class="text-danger text-decoration-none" onclick="showAnalysisIssues({{ forloop.counter0 }}); return false;">
+                  {{ a.issues|length }} issue{{ a.issues|length|pluralize }}
+                </a>
+                {% else %}
+                <span class="text-success small">Clean</span>
+                {% endif %}
+                <button class="btn btn-sm p-0 ms-1 text-info" onclick="showAnalysisSummary({{ forloop.counter0 }})" title="View analysis summary">
+                  <i class="bi bi-info-circle"></i>
+                </button>
+              </div>
+            </td>
+            <td><span class="status-badge status-{{ a.status }}">{{ a.status }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
@@ -381,10 +404,39 @@
         </div>
       </div>
       <div class="modal-footer justify-content-between">
-        <div>
-          <input type="text" id="ssModalNotes" class="form-control form-control-sm" placeholder="Flag notes..." style="width:350px">
-        </div>
         <small class="text-muted font-monospace" id="ssModalPath"></small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Flag Dialog Modal -->
+<div class="modal fade" id="flagModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="flagModalTitle">Flag Screenshot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Description <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="flagDescription" class="form-control form-control-sm" rows="3" placeholder="Describe the issue..."></textarea>
+        </div>
+        <div class="mb-0">
+          <label class="form-label small fw-semibold">Review Status</label>
+          <select id="flagReviewStatus" class="form-select form-select-sm">
+            <option value="pending" selected>Pending</option>
+            <option value="issue">Issue</option>
+            <option value="suppressed">Suppressed</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-warning" id="flagSubmitBtn" onclick="submitFlag()">
+          <i class="bi bi-flag-fill"></i> Flag
+        </button>
       </div>
     </div>
   </div>
@@ -698,7 +750,7 @@ function showScreenshot(id, name, src, flagged, notes) {
   document.getElementById('ssModalTitle').textContent = name;
   document.getElementById('ssModalImg').src = src;
   document.getElementById('ssModalPath').textContent = src.replace('/runs/screenshot/img/', '');
-  document.getElementById('ssModalNotes').value = notes || '';
+
   updateModalFlagUI(flagged);
   ssUpdateNav();
   if (!_ssModal) _ssModal = new bootstrap.Modal(document.getElementById('screenshotModal'));
@@ -719,28 +771,57 @@ function updateModalFlagUI(flagged) {
   }
 }
 
+var _flagTargetId = null;
+var _flagModal = null;
+
 function toggleFlag(id) {
-  var notes = '';
-  var noteEl = document.getElementById('flag-note-' + id);
-  if (noteEl) notes = noteEl.textContent || '';
-  doToggleFlag(id, null, notes);
+  // Check if already flagged — if so, unflag directly
+  var icon = document.getElementById('flag-icon-' + id);
+  if (icon && icon.classList.contains('bi-flag-fill')) {
+    doFlag(id, false, '', 'pending');
+    return;
+  }
+  openFlagDialog(id);
 }
 
 function toggleFlagFromModal() {
   if (!currentScreenshotId) return;
-  var notes = document.getElementById('ssModalNotes').value;
-  doToggleFlag(currentScreenshotId, null, notes);
+  if (currentScreenshotFlagged) {
+    doFlag(currentScreenshotId, false, '', 'pending');
+    return;
+  }
+  openFlagDialog(currentScreenshotId);
 }
 
-function doToggleFlag(id, forceFlagged, notes) {
-  var body = {};
-  if (forceFlagged !== null && forceFlagged !== undefined) body.flagged = forceFlagged;
-  if (notes !== undefined) body.notes = notes;
+function openFlagDialog(id) {
+  _flagTargetId = id;
+  // Pre-populate from existing notes if any
+  var noteEl = document.getElementById('flag-note-' + id);
+  document.getElementById('flagDescription').value = (noteEl ? noteEl.textContent : '') || '';
+  document.getElementById('flagReviewStatus').value = 'pending';
+  // Find screenshot name for the title
+  var name = '';
+  for (var i = 0; i < ssList.length; i++) {
+    if (ssList[i].id === id) { name = ssList[i].name; break; }
+  }
+  document.getElementById('flagModalTitle').textContent = 'Flag: ' + (name || 'Screenshot');
+  if (!_flagModal) _flagModal = new bootstrap.Modal(document.getElementById('flagModal'));
+  _flagModal.show();
+}
 
+function submitFlag() {
+  if (!_flagTargetId) return;
+  var notes = document.getElementById('flagDescription').value.trim();
+  var reviewStatus = document.getElementById('flagReviewStatus').value;
+  if (_flagModal) _flagModal.hide();
+  doFlag(_flagTargetId, true, notes, reviewStatus);
+}
+
+function doFlag(id, flagged, notes, reviewStatus) {
   fetch('/runs/screenshot/' + id + '/flag/', {
     method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
-    body: JSON.stringify(body),
+    body: JSON.stringify({ flagged: flagged, notes: notes || null, review_status: reviewStatus }),
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -758,6 +839,14 @@ function doToggleFlag(id, forceFlagged, notes) {
     if (noteEl) {
       noteEl.textContent = d.flag_notes || '';
       noteEl.style.display = d.flagged && d.flag_notes ? '' : 'none';
+    }
+    // Update ssList entry
+    for (var i = 0; i < ssList.length; i++) {
+      if (ssList[i].id === d.id) {
+        ssList[i].flagged = d.flagged;
+        ssList[i].notes = d.flag_notes || '';
+        break;
+      }
     }
     // Update modal if open
     if (currentScreenshotId === d.id) {
@@ -1069,7 +1158,7 @@ showScreenshot = function(id, name, src, flagged, notes) {
   document.getElementById('ssModalImg').src = src;
   document.getElementById('ssModalImgLeft').src = src;
   document.getElementById('ssModalPath').textContent = src.replace('/runs/screenshot/img/', '');
-  document.getElementById('ssModalNotes').value = notes || '';
+
   updateModalFlagUI(flagged);
   ssUpdateNav();
 
@@ -1107,6 +1196,45 @@ showScreenshot = function(id, name, src, flagged, notes) {
 
 // --- AI Analysis ---
 var analysesData = JSON.parse('{{ analyses_json|escapejs }}');
+
+// Column sorting for analysis table
+var analysisSortCol = null;
+var analysisSortDir = 'asc';
+
+document.querySelectorAll('#analysisTable th.sortable').forEach(function(th) {
+  th.addEventListener('click', function() {
+    var col = th.dataset.sort;
+    if (analysisSortCol === col) {
+      analysisSortDir = analysisSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      analysisSortCol = col;
+      analysisSortDir = 'asc';
+    }
+    // Update sort icons
+    document.querySelectorAll('#analysisTable th.sortable .sort-icon').forEach(function(icon) {
+      icon.className = 'bi bi-chevron-expand sort-icon text-muted';
+      icon.style.fontSize = '.7rem';
+    });
+    var icon = th.querySelector('.sort-icon');
+    icon.className = 'bi bi-caret-' + (analysisSortDir === 'asc' ? 'up' : 'down') + '-fill sort-icon text-primary';
+    icon.style.fontSize = '.7rem';
+
+    var tbody = document.querySelector('#analysisTable tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+      var av = a.dataset[col] || '';
+      var bv = b.dataset[col] || '';
+      if (col === 'duration' || col === 'issues') {
+        av = parseInt(av) || 0;
+        bv = parseInt(bv) || 0;
+        return analysisSortDir === 'asc' ? av - bv : bv - av;
+      }
+      var cmp = av.localeCompare(bv);
+      return analysisSortDir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+  });
+});
 
 function runAnalysis(type) {
   var btn = type === 'visual' ? document.getElementById('analyzeVisualBtn') : document.getElementById('analyzeTextBtn');
@@ -1199,6 +1327,48 @@ function showAnalysisIssues(index) {
   }).join('\n\n');
   document.getElementById('logContent').textContent = text || 'No issue details available.';
   new bootstrap.Modal(document.getElementById('logModal')).show();
+}
+
+function showAnalysisSummary(index) {
+  var analyses = analysesData;
+  if (!analyses || !analyses[index]) return;
+  var summary = analyses[index].summary || 'No summary available. Clear and re-run the analysis to generate summaries.';
+  document.getElementById('logContent').textContent = summary;
+  new bootstrap.Modal(document.getElementById('logModal')).show();
+}
+
+function clearAnalyses() {
+  if (!confirm('Delete all AI analysis results for this run?')) return;
+  var btn = document.getElementById('clearAnalysesBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  fetch('/runs/' + runId + '/clear-analyses/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { alert('Error: ' + d.error); btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash"></i> Clear'; return; }
+    location.reload();
+  })
+  .catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash"></i> Clear'; });
+}
+
+function rerunTest() {
+  if (!confirm('Create a new run with the same configuration and execute it?')) return;
+  fetch('/runs/' + runId + '/rerun/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) {
+      alert('Error: ' + d.error);
+      return;
+    }
+    window.location.href = '/runs/' + d.run_id + '/';
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
 }
 </script>
 {% endblock %}

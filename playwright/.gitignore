@@ -5,3 +5,9 @@ auth/
 .env
 .env.pb.txt
 *.session.json
+
+# Test scripts (generated and user-created)
+tests/
+
+# Baseline snapshots
+**/*-snapshots/

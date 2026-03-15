@@ -21,7 +21,7 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Environment *</label>
-          <select id="dsEnv" class="form-select">
+          <select id="dsEnv" class="form-select" onchange="onEnvironmentChange(this.value)">
             <option value="">— Select —</option>
             {% for env in environments %}
             <option value="{{ env.id }}" {% if dataset and dataset.environment_id|stringformat:'s' == env.id %}selected{% endif %}>{{ env.name }}</option>
@@ -30,10 +30,19 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Assessment</label>
-          <select id="dsAssessment" class="form-select">
+          <select id="dsAssessment" class="form-select" onchange="onAssessmentChange(this.value)">
             <option value="">— None —</option>
             {% for a in assessments %}
             <option value="{{ a.id }}" {% if dataset and dataset.assessment_id|stringformat:'s' == a.id %}selected{% endif %}>{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Item</label>
+          <select id="dsItem" class="form-select">
+            <option value="">— None —</option>
+            {% for i in items %}
+            <option value="{{ i.item_id }}" {% if dataset and dataset.item_id == i.item_id %}selected{% endif %}>{{ i.item_id }}{% if i.title %} — {{ i.title }}{% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -88,6 +97,47 @@ function formatJson() {
   }
 }
 
+// ── Cascading dropdowns ──
+function onEnvironmentChange(envId) {
+  var assessmentSelect = document.getElementById('dsAssessment');
+  var itemSelect = document.getElementById('dsItem');
+
+  // Clear both downstream dropdowns
+  assessmentSelect.innerHTML = '<option value="">— None —</option>';
+  itemSelect.innerHTML = '<option value="">— None —</option>';
+
+  if (!envId) return;
+
+  fetch('/test-data/api/assessments/?environment_id=' + encodeURIComponent(envId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.assessments || []).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        assessmentSelect.appendChild(opt);
+      });
+    });
+}
+
+function onAssessmentChange(assessmentId) {
+  var itemSelect = document.getElementById('dsItem');
+  itemSelect.innerHTML = '<option value="">— None —</option>';
+
+  if (!assessmentId) return;
+
+  fetch('/test-data/api/items/?assessment_id=' + encodeURIComponent(assessmentId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.items || []).forEach(function(i) {
+        var opt = document.createElement('option');
+        opt.value = i.item_id;
+        opt.textContent = i.item_id + (i.title ? ' — ' + i.title : '');
+        itemSelect.appendChild(opt);
+      });
+    });
+}
+
 function saveDataset() {
   var name = document.getElementById('dsName').value.trim();
   if (!name) { alert('Name is required'); return; }
@@ -108,6 +158,7 @@ function saveDataset() {
     name: name,
     environment_id: envId,
     assessment_id: document.getElementById('dsAssessment').value || null,
+    item_id: document.getElementById('dsItem').value || null,
     data_type: document.getElementById('dsType').value,
     description: document.getElementById('dsDesc').value.trim() || null,
     data: data

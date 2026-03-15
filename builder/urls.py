@@ -14,4 +14,6 @@ urlpatterns = [
     path('api/generate-baseline/', views.api_generate_baseline, name='builder_generate_baseline'),
     path('api/delete-baseline/', views.api_delete_baseline, name='builder_delete_baseline'),
     path('api/clear-baselines/', views.api_clear_baselines, name='builder_clear_baselines'),
+    path('api/link-test-data/', views.api_link_test_data, name='builder_link_test_data'),
+    path('api/unlink-test-data/', views.api_unlink_test_data, name='builder_unlink_test_data'),
 ]
