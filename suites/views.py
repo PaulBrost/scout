@@ -294,12 +294,34 @@ def suite_run(request, suite_id):
         if not suite_entries:
             return JsonResponse({'error': 'Suite has no scripts'}, status=400)
 
+        # Merge ai_config from all scripts in suite (OR logic: if any script wants analysis, enable it)
+        ai_config = {'text_analysis': False, 'visual_analysis': False}
+        script_paths_list = [e['script_path'] for e in suite_entries]
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT ai_config FROM test_scripts WHERE script_path = ANY(%s) AND ai_config IS NOT NULL',
+                [script_paths_list]
+            )
+            for (cfg_row,) in cursor.fetchall():
+                cfg = cfg_row or {}
+                if isinstance(cfg, str):
+                    try:
+                        cfg = json.loads(cfg)
+                    except Exception:
+                        cfg = {}
+                if cfg.get('text_analysis'):
+                    ai_config['text_analysis'] = True
+                if cfg.get('visual_analysis'):
+                    ai_config['visual_analysis'] = True
+
+        run_config = json.dumps({'ai_config': ai_config})
+
         # Create run
         with connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO test_runs (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at)
-                   VALUES (gen_random_uuid(), 'running', 'dashboard', %s, %s, '{}'::jsonb, %s, now()) RETURNING id""",
-                [suite_id, suite.get('environment_id'), f"Suite: {suite['name']}"]
+                   VALUES (gen_random_uuid(), 'running', 'dashboard', %s, %s, %s::jsonb, %s, now()) RETURNING id""",
+                [suite_id, suite.get('environment_id'), run_config, f"Suite: {suite['name']}"]
             )
             run_id = cursor.fetchone()[0]
             for entry in suite_entries:
@@ -338,12 +360,20 @@ def run_script(request):
             return JsonResponse({'error': 'scriptPath required'}, status=400)
 
         with connection.cursor() as cursor:
-            # Look up environment_id, browser, viewport from test_scripts
-            cursor.execute('SELECT environment_id, browser, viewport FROM test_scripts WHERE script_path = %s', [script_path])
+            # Look up environment_id, browser, viewport, ai_config from test_scripts
+            cursor.execute('SELECT environment_id, browser, viewport, ai_config FROM test_scripts WHERE script_path = %s', [script_path])
             ts_row = cursor.fetchone()
             environment_id = ts_row[0] if ts_row else None
             script_browser = (ts_row[1] if ts_row else None) or 'chromium'
             script_viewport = (ts_row[2] if ts_row else None) or '1920x1080'
+            script_ai_config = ts_row[3] if ts_row else {}
+            if isinstance(script_ai_config, str):
+                try:
+                    script_ai_config = json.loads(script_ai_config)
+                except Exception:
+                    script_ai_config = {}
+            if not script_ai_config:
+                script_ai_config = {}
             if not environment_id and data.get('environment_id'):
                 environment_id = data['environment_id']
             # Allow POST body to override browser/viewport for this run
@@ -353,7 +383,9 @@ def run_script(request):
                 script_viewport = data['viewport']
 
             scheduled_at = data.get('scheduled_at')
-            config = {}
+            # AI config: POST body overrides script defaults
+            ai_config = data.get('ai_config', script_ai_config)
+            config = {'ai_config': ai_config}
             if scheduled_at:
                 config['scheduled_at'] = scheduled_at
 

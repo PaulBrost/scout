@@ -51,56 +51,46 @@ def run_analysis_on_demand(run_id, analysis_type='both'):
 
 
 def dispatch_post_execution(run_id):
-    """Look up test_types and ai_config for scripts in this run and queue appropriate handlers."""
+    """Dispatch post-execution handlers based on run-level ai_config and script test_types."""
+    # Read run-level config (ai_config stored at run creation time)
     with connection.cursor() as cursor:
-        # Find distinct test_types and ai_configs for scripts in this run
+        cursor.execute("SELECT config FROM test_runs WHERE id = %s", [run_id])
+        row = cursor.fetchone()
+    if not row:
+        return
+
+    run_config = row[0] or {}
+    if isinstance(run_config, str):
+        try:
+            run_config = json.loads(run_config)
+        except Exception:
+            run_config = {}
+
+    ai_config = run_config.get('ai_config', {})
+    ai_text = ai_config.get('text_analysis', False)
+    ai_visual = ai_config.get('visual_analysis', False)
+
+    # Check test_types for visual_regression baseline comparison
+    with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT DISTINCT ts.test_type, ts.ai_config
+            SELECT DISTINCT ts.test_type
             FROM test_run_scripts trs
             JOIN test_scripts ts ON ts.script_path = trs.script_path
             WHERE trs.run_id = %s
         """, [run_id])
-        rows = cursor.fetchall()
-
-    test_types = set()
-    ai_text = False
-    ai_visual = False
-    for row in rows:
-        test_types.add(row[0])
-        cfg = row[1] or {}
-        if isinstance(cfg, str):
-            try:
-                cfg = json.loads(cfg)
-            except Exception:
-                cfg = {}
-        if cfg.get('text_analysis'):
-            ai_text = True
-        if cfg.get('visual_analysis'):
-            ai_visual = True
+        test_types = {r[0] for r in cursor.fetchall()}
 
     if not test_types and not ai_text and not ai_visual:
         return
 
-    # Dispatch handlers for each test_type
+    # Baseline comparison (driven by test_type, not ai_config)
     if 'visual_regression' in test_types:
         try:
             compare_baselines(run_id)
         except Exception as e:
             print(f'[PostExec] compare_baselines error for run {str(run_id)[:8]}: {e}')
 
-    if 'ai_content' in test_types:
-        try:
-            run_text_analysis(run_id)
-        except Exception as e:
-            print(f'[PostExec] run_text_analysis error for run {str(run_id)[:8]}: {e}')
-
-    if 'ai_visual' in test_types:
-        try:
-            run_visual_analysis(run_id)
-        except Exception as e:
-            print(f'[PostExec] run_visual_analysis error for run {str(run_id)[:8]}: {e}')
-
-    # ai_config-driven analysis on RunScreenshots
+    # AI analysis driven by run-level ai_config
     if ai_visual:
         try:
             analyze_run_screenshots(run_id)

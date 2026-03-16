@@ -49,6 +49,13 @@
       <div class="col-md-4">
         <span class="text-muted">Trigger:</span> {{ run.trigger_type }}
       </div>
+      {% if run_ai_config.text_analysis or run_ai_config.visual_analysis %}
+      <div class="col-md-4">
+        <span class="text-muted">Auto-analyze:</span>
+        {% if run_ai_config.text_analysis %}<span class="badge bg-warning text-dark ms-1"><i class="bi bi-spellcheck me-1"></i>Text</span>{% endif %}
+        {% if run_ai_config.visual_analysis %}<span class="badge bg-info text-dark ms-1"><i class="bi bi-eye me-1"></i>Visual</span>{% endif %}
+      </div>
+      {% endif %}
       {% if run_assessment %}
       <div class="col-md-4">
         <span class="text-muted">Assessment:</span>

@@ -593,7 +593,7 @@
             <option value="webkit">WebKit (Safari)</option>
           </select>
         </div>
-        <div>
+        <div class="mb-3">
           <label class="form-label small fw-semibold mb-1">Viewport</label>
           <select id="runCfgViewport" class="form-select form-select-sm">
             <option value="1920x1080">1920 x 1080 (Full HD)</option>
@@ -603,6 +603,23 @@
             <option value="768x1024">768 x 1024 (Tablet Portrait)</option>
             <option value="375x812">375 x 812 (Mobile)</option>
           </select>
+        </div>
+        <div>
+          <label class="form-label small fw-semibold mb-1">Auto-analyze after run</label>
+          <div class="d-flex gap-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="runCfgTextAnalysis">
+              <label class="form-check-label small" for="runCfgTextAnalysis">
+                <i class="bi bi-spellcheck text-warning me-1"></i>Text
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="runCfgVisualAnalysis">
+              <label class="form-check-label small" for="runCfgVisualAnalysis">
+                <i class="bi bi-eye text-info me-1"></i>Visual
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer py-2">
@@ -1221,7 +1238,7 @@ function setRunStatus(msg, cls) {
   el.className = 'small me-auto ' + (cls || 'text-muted');
 }
 
-function doRunScript(scheduledAt, browser, viewport) {
+function doRunScript(scheduledAt, browser, viewport, aiConfig) {
   if (!currentFilePath) {
     alert('Save the test first before running.');
     return;
@@ -1232,6 +1249,7 @@ function doRunScript(scheduledAt, browser, viewport) {
   if (scheduledAt) payload.scheduled_at = scheduledAt;
   if (browser) payload.browser = browser;
   if (viewport) payload.viewport = viewport;
+  if (aiConfig) payload.ai_config = aiConfig;
 
   setRunStatus(scheduledAt ? 'Scheduling…' : 'Starting run…', 'text-info');
 
@@ -1265,17 +1283,26 @@ function saveAndRun() {
   var metaViewport = document.getElementById('metaViewport');
   document.getElementById('runCfgBrowser').value = metaBrowser ? metaBrowser.value : 'chromium';
   document.getElementById('runCfgViewport').value = metaViewport ? metaViewport.value : '1920x1080';
+  // Pre-populate AI analysis checkboxes from script defaults
+  var aiText = document.getElementById('aiTextAnalysis');
+  var aiVisual = document.getElementById('aiVisualAnalysis');
+  document.getElementById('runCfgTextAnalysis').checked = aiText ? aiText.checked : false;
+  document.getElementById('runCfgVisualAnalysis').checked = aiVisual ? aiVisual.checked : false;
   new bootstrap.Modal(document.getElementById('runConfigModal')).show();
 }
 
 function confirmRun() {
   var browser = document.getElementById('runCfgBrowser').value;
   var viewport = document.getElementById('runCfgViewport').value;
+  var aiConfig = {
+    text_analysis: document.getElementById('runCfgTextAnalysis').checked,
+    visual_analysis: document.getElementById('runCfgVisualAnalysis').checked,
+  };
   bootstrap.Modal.getInstance(document.getElementById('runConfigModal')).hide();
-  _doSaveAndRun(browser, viewport);
+  _doSaveAndRun(browser, viewport, aiConfig);
 }
 
-function _doSaveAndRun(browser, viewport) {
+function _doSaveAndRun(browser, viewport, aiConfig) {
   var code = document.getElementById('codeEditor').value;
 
   if (isDirty || !currentFilePath) {
@@ -1311,13 +1338,13 @@ function _doSaveAndRun(browser, viewport) {
       document.getElementById('dirtyIndicator').style.display = 'none';
       if (d.path) currentFilePath = d.path;
       updateRunButtons();
-      doRunScript(null, browser, viewport);
+      doRunScript(null, browser, viewport, aiConfig);
     })
     .catch(err => {
       setRunStatus('Save error: ' + err.message, 'text-danger');
     });
   } else {
-    doRunScript(null, browser, viewport);
+    doRunScript(null, browser, viewport, aiConfig);
   }
 }
 
@@ -1339,11 +1366,17 @@ function scheduleRun() {
   // Close modal
   bootstrap.Modal.getInstance(document.getElementById('scheduleModal')).hide();
 
-  // Use script-level browser/viewport
+  // Use script-level browser/viewport and AI config defaults
   var metaBrowser = document.getElementById('metaBrowser');
   var metaViewport = document.getElementById('metaViewport');
   var browser = metaBrowser ? metaBrowser.value : 'chromium';
   var viewport = metaViewport ? metaViewport.value : '1920x1080';
+  var aiText = document.getElementById('aiTextAnalysis');
+  var aiVisual = document.getElementById('aiVisualAnalysis');
+  var schedAiConfig = {
+    text_analysis: aiText ? aiText.checked : false,
+    visual_analysis: aiVisual ? aiVisual.checked : false,
+  };
 
   if (isDirty || !currentFilePath) {
     var envPicker = document.getElementById('envPicker');
@@ -1378,13 +1411,13 @@ function scheduleRun() {
       document.getElementById('dirtyIndicator').style.display = 'none';
       if (d.path) currentFilePath = d.path;
       updateRunButtons();
-      doRunScript(timeVal, browser, viewport);
+      doRunScript(timeVal, browser, viewport, schedAiConfig);
     })
     .catch(err => {
       setRunStatus('Save error: ' + err.message, 'text-danger');
     });
   } else {
-    doRunScript(timeVal, browser, viewport);
+    doRunScript(timeVal, browser, viewport, schedAiConfig);
   }
 }
 

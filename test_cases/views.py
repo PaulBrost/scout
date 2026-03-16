@@ -85,7 +85,7 @@ def index(request):
         cursor.execute(f"""
             SELECT ts.id, ts.script_path, ts.description, ts.item_id, ts.assessment_id,
                    ts.test_type, ts.tags, ts.category, ts.updated_at, ts.environment_id,
-                   ts.browser, ts.viewport,
+                   ts.browser, ts.viewport, ts.ai_config,
                    i.title AS item_title, i.numeric_id AS item_numeric_id,
                    e.name AS environment_name,
                    a.name AS assessment_name,
@@ -100,6 +100,17 @@ def index(request):
         """, params + [page_size, offset])
         cols = [c[0] for c in cursor.description]
         scripts = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    # Parse ai_config JSONB into boolean flags for template
+    for sc in scripts:
+        cfg = sc.get('ai_config') or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                cfg = {}
+        sc['ai_text'] = 1 if cfg.get('text_analysis') else 0
+        sc['ai_visual'] = 1 if cfg.get('visual_analysis') else 0
 
     # Load environments for filter dropdown
     env_query = 'SELECT id, name FROM environments ORDER BY name'

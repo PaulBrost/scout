@@ -195,7 +195,7 @@ def script_run(request, script_id):
 
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT script_path, browser, viewport FROM test_scripts WHERE id = %s AND environment_id = %s::uuid',
+            'SELECT script_path, browser, viewport, ai_config FROM test_scripts WHERE id = %s AND environment_id = %s::uuid',
             [script_id, env_id],
         )
         row = cursor.fetchone()
@@ -203,7 +203,13 @@ def script_run(request, script_id):
     if not row:
         return _err('not_found', 'Script not found or not accessible.', 404)
 
-    script_path, default_browser, default_viewport = row
+    script_path, default_browser, default_viewport, script_ai_config = row
+    if isinstance(script_ai_config, str):
+        try:
+            script_ai_config = json.loads(script_ai_config)
+        except Exception:
+            script_ai_config = {}
+    script_ai_config = script_ai_config or {}
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -212,13 +218,15 @@ def script_run(request, script_id):
 
     browser = data.get('browser', default_browser) or 'chromium'
     viewport = data.get('viewport', default_viewport) or '1920x1080'
+    ai_config = data.get('ai_config', script_ai_config)
+    run_config = json.dumps({'ai_config': ai_config})
 
     with connection.cursor() as cursor:
         cursor.execute(
             """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at)
-               VALUES (gen_random_uuid(), 'running', 'api', %s::uuid, '{}'::jsonb, %s, now())
+               VALUES (gen_random_uuid(), 'running', 'api', %s::uuid, %s::jsonb, %s, now())
                RETURNING id""",
-            [env_id, f'API: {script_path}'],
+            [env_id, run_config, f'API: {script_path}'],
         )
         run_id = cursor.fetchone()[0]
         cursor.execute(
@@ -478,13 +486,34 @@ def suite_run_view(request, suite_id):
     if not entries:
         return _err('validation_error', 'Suite has no scripts.')
 
+    # Merge ai_config from all scripts in suite (OR logic)
+    ai_config = {'text_analysis': False, 'visual_analysis': False}
+    script_paths_list = [e['script_path'] for e in entries]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT ai_config FROM test_scripts WHERE script_path = ANY(%s) AND ai_config IS NOT NULL',
+            [script_paths_list],
+        )
+        for (cfg_row,) in cursor.fetchall():
+            cfg = cfg_row or {}
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            if cfg.get('text_analysis'):
+                ai_config['text_analysis'] = True
+            if cfg.get('visual_analysis'):
+                ai_config['visual_analysis'] = True
+    run_config = json.dumps({'ai_config': ai_config})
+
     with connection.cursor() as cursor:
         cursor.execute(
             """INSERT INTO test_runs
                    (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at)
-               VALUES (gen_random_uuid(), 'running', 'api', %s, %s::uuid, '{}'::jsonb, %s, now())
+               VALUES (gen_random_uuid(), 'running', 'api', %s, %s::uuid, %s::jsonb, %s, now())
                RETURNING id""",
-            [str(suite_id), env_id, f'API Suite: {suite_name}'],
+            [str(suite_id), env_id, run_config, f'API Suite: {suite_name}'],
         )
         run_id = cursor.fetchone()[0]
         for e in entries:

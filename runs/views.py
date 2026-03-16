@@ -158,6 +158,15 @@ def detail(request, run_id):
         except Exception:
             run['summary'] = {}
 
+    # Parse config for ai_config display
+    run_config = run.get('config') or {}
+    if isinstance(run_config, str):
+        try:
+            run_config = json.loads(run_config)
+        except Exception:
+            run_config = {}
+    run_ai_config = run_config.get('ai_config', {})
+
     # Script results with test name/summary and linked assessment/item from test_scripts
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -301,6 +310,7 @@ def detail(request, run_id):
         'run_assessment': run_assessment,
         'run_item': run_item,
         'run_environment': run_environment,
+        'run_ai_config': run_ai_config,
     })
 
 

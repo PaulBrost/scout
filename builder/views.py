@@ -680,10 +680,11 @@ def api_generate_baseline(request):
             if data.get('viewport'):
                 script_viewport = data['viewport']
 
+            baseline_config = json.dumps({'ai_config': {'text_analysis': False, 'visual_analysis': False}})
             cursor.execute(
                 """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at)
-                   VALUES (gen_random_uuid(), 'running', 'baseline', %s, '{}', %s, now()) RETURNING id""",
-                [str(environment_id) if environment_id else None,
+                   VALUES (gen_random_uuid(), 'running', 'baseline', %s, %s::jsonb, %s, now()) RETURNING id""",
+                [str(environment_id) if environment_id else None, baseline_config,
                  f'Baseline generation: {script_path}']
             )
             run_id = cursor.fetchone()[0]
