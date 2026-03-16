@@ -332,8 +332,8 @@ def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, 
 
         if issues_found:
             cursor.execute("""
-                INSERT INTO reviews (id, analysis_id, status, created_at)
-                VALUES (gen_random_uuid(), %s, 'pending', now())
+                INSERT INTO reviews (id, analysis_id, source_type, status, created_at)
+                VALUES (gen_random_uuid(), %s, 'ai_analysis', 'pending', now())
             """, [str(analysis_id)])
 
 
