@@ -514,9 +514,26 @@
               </div>
             </div>
           </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold mb-1">Email Notifications</label>
+            <p class="text-muted mb-2" style="font-size:.72rem">Receive email when this script's run completes. Separate multiple addresses with semicolons.</p>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <select id="metaNotifyLevel" class="form-select form-select-sm">
+                  <option value="disabled" {% if script_meta.notify_level == 'disabled' or not script_meta.notify_level %}selected{% endif %}>Disabled</option>
+                  <option value="all" {% if script_meta.notify_level == 'all' %}selected{% endif %}>All (every completion)</option>
+                  <option value="issues" {% if script_meta.notify_level == 'issues' %}selected{% endif %}>Only Issues</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <input type="text" id="metaNotifyEmails" class="form-control form-control-sm"
+                  value="{{ script_meta.notify_emails|default:'' }}" placeholder="user@example.com; user2@example.com">
+              </div>
+            </div>
+          </div>
           <div class="col-12 d-flex align-items-center">
             <button class="btn btn-sm btn-primary" onclick="saveMeta()">
-              <i class="bi bi-check-lg"></i> Save Details
+              <i class="bi bi-check-lg"></i> Save Settings
             </button>
             <span id="metaSaveStatus" class="text-muted small ms-2"></span>
             <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteScript()">
@@ -1205,7 +1222,9 @@ function saveMeta() {
       aiConfig: {
         text_analysis: document.getElementById('aiTextAnalysis')?.checked || false,
         visual_analysis: document.getElementById('aiVisualAnalysis')?.checked || false,
-      }
+      },
+      notifyLevel: document.getElementById('metaNotifyLevel')?.value || 'disabled',
+      notifyEmails: document.getElementById('metaNotifyEmails')?.value || '',
     })
   })
   .then(r => r.json())

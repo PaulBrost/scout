@@ -360,6 +360,13 @@ class TestScript(models.Model):
     ]
     browser = models.TextField(default='chromium', choices=BROWSER_CHOICES)
     viewport = models.TextField(default='1920x1080', choices=VIEWPORT_CHOICES)
+    NOTIFY_LEVEL_CHOICES = [
+        ('disabled', 'Disabled'),
+        ('all', 'All (on every completion)'),
+        ('issues', 'Only Issues'),
+    ]
+    notify_emails = models.TextField(null=True, blank=True)
+    notify_level = models.TextField(default='disabled', choices=NOTIFY_LEVEL_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

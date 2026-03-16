@@ -117,6 +117,13 @@ def _run_post_execution(run_id):
     except Exception as e:
         print(f'[RunTasks] Post-execution failed for run {str(run_id)[:8]}: {e}')
 
+    # Send email notifications after all analysis is complete
+    try:
+        from tasks.notifications import send_run_notifications
+        send_run_notifications(run_id)
+    except Exception as e:
+        print(f'[RunTasks] Notification failed for run {str(run_id)[:8]}: {e}')
+
 
 def _compare_against_baselines(run_id):
     """Compare run screenshots against stored script baselines, flag mismatches."""

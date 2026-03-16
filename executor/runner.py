@@ -661,6 +661,11 @@ def execute_run(run_id, script_paths, options=None):
                     [run_id]
                 )
                 print(f'[Executor] Run {str(run_id)[:8]} cancelled by user')
+                try:
+                    from tasks.notifications import send_run_notifications
+                    send_run_notifications(run_id)
+                except Exception as e:
+                    print(f'[Executor] Notification failed for cancelled run {str(run_id)[:8]}: {e}')
                 return
 
         script_path = entry['script_path']

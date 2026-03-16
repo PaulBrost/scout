@@ -127,6 +127,16 @@ if not CSRF_TRUSTED_ORIGINS:
 # (https://...) doesn't match what Django thinks the scheme is (http://...).
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Email notifications
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.office365.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_REPLY_TO = config('EMAIL_REPLY_TO', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='')
+
 OLLAMA_HOST = config('OLLAMA_HOST', default='localhost:11434')
 OLLAMA_TEXT_MODEL = config('OLLAMA_TEXT_MODEL', default='qwen2.5:14b')
 OLLAMA_VISION_MODEL = config('OLLAMA_VISION_MODEL', default='gemma3:12b')
