@@ -19,7 +19,7 @@ class OllamaProvider(BaseProvider):
                 {'role': 'system', 'content': 'You are a proofreading assistant. Respond with ONLY a JSON object. No markdown, no explanation.'},
                 {'role': 'user', 'content': prompt},
             ],
-            model=self.text_model, max_tokens=4000
+            model=self.text_model, max_tokens=16000
         )
         result = self._parse_response(raw)
         issues = result['issues']

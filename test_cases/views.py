@@ -85,6 +85,7 @@ def index(request):
         cursor.execute(f"""
             SELECT ts.id, ts.script_path, ts.description, ts.item_id, ts.assessment_id,
                    ts.test_type, ts.tags, ts.category, ts.updated_at, ts.environment_id,
+                   ts.browser, ts.viewport,
                    i.title AS item_title, i.numeric_id AS item_numeric_id,
                    e.name AS environment_name,
                    a.name AS assessment_name,
