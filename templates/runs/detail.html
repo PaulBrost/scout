@@ -357,11 +357,22 @@
       </table>
     </div>
     {% else %}
-    <p class="text-muted small mb-0 py-2">
-      No AI analysis results yet.
-      {% if ai_config_enabled %}Analysis will run automatically when the script completes.{% endif %}
-      Use the buttons above to run analysis manually on this run's artifacts.
-    </p>
+      {% if run_ai_config.text_analysis or run_ai_config.visual_analysis %}
+        {% if run.status == 'running' or run.status == 'scheduled' %}
+        <p class="text-muted small mb-0 py-2">
+          <i class="bi bi-clock me-1"></i>AI analysis will run automatically when the script completes.
+        </p>
+        {% else %}
+        <div class="text-center py-3" id="aiAnalysisPending">
+          <span class="spinner-border spinner-border-sm me-2"></span>
+          <span class="text-muted small">AI analysis is running. Results will appear automatically...</span>
+        </div>
+        {% endif %}
+      {% else %}
+      <p class="text-muted small mb-0 py-2">
+        No AI analysis results yet. Use the buttons above to run analysis manually on this run's artifacts.
+      </p>
+      {% endif %}
     {% endif %}
   </div>
 </div>
@@ -969,6 +980,17 @@ if ('{{ run.status }}' === 'running' || '{{ run.status }}' === 'scheduled') {
   // Immediate stuck check on page load
   pollRunStatus();
 }
+
+// Auto-poll for AI analysis results if run is done and AI analysis was configured
+{% if run_ai_config.text_analysis or run_ai_config.visual_analysis %}
+if ('{{ run.status }}' !== 'running' && '{{ run.status }}' !== 'scheduled') {
+  var hasAnalysisTable = document.getElementById('analysisTable');
+  var hasPending = hasAnalysisTable && hasAnalysisTable.querySelector('[data-status="pending"], [data-status="processing"]');
+  if (!hasAnalysisTable || hasPending) {
+    pollAnalysisResults();
+  }
+}
+{% endif %}
 
 // --- Baseline comparison ---
 var baselineScreenshots = null; // map: name -> {file_path, ...}
