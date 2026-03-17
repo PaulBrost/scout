@@ -18,6 +18,7 @@ urlpatterns = [
     # General settings
     path('general/', views.general_settings, name='admin_general'),
     path('general/update/', views.update_general_settings, name='admin_update_general'),
+    path('general/script-types/', views.update_script_types, name='admin_update_script_types'),
     path('archives/', views.test_archives, name='admin_archives'),
     path('archives/restore/', views.restore_archive, name='admin_restore_archive'),
     path('archives/delete/', views.delete_archive, name='admin_delete_archive'),

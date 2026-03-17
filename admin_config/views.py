@@ -387,15 +387,36 @@ def _load_json_val(val):
     return val
 
 
+DEFAULT_SCRIPT_TYPES = [
+    {'value': 'functional', 'label': 'Functional'},
+    {'value': 'visual_regression', 'label': 'Visual Regression'},
+    {'value': 'qc_checklist', 'label': 'Item Types QC'},
+]
+
+
+def get_script_types(cursor):
+    """Load script types from settings, returning default list if not configured."""
+    cursor.execute("SELECT value FROM ai_settings WHERE key = 'script_types'")
+    row = cursor.fetchone()
+    if row:
+        types = _load_json_val(row[0])
+        if isinstance(types, list) and types:
+            return types
+    return list(DEFAULT_SCRIPT_TYPES)
+
+
 @admin_required
 def general_settings(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT key, value FROM ai_settings WHERE key IN ('archiving_enabled', 'archiving_retention_days')")
         rows = {r[0]: r[1] for r in cursor.fetchall()}
+        script_types = get_script_types(cursor)
 
     return render(request, 'admin_config/general_settings.html', {
         'archiving_enabled': _load_json_val(rows.get('archiving_enabled', False)),
         'retention_days': _load_json_val(rows.get('archiving_retention_days', 30)),
+        'script_types': script_types,
+        'script_types_json': json.dumps(script_types),
         'success': request.GET.get('success'),
     })
 
@@ -414,6 +435,39 @@ def update_general_settings(request):
         _upsert_setting(cursor, 'archiving_enabled', archiving_enabled)
         _upsert_setting(cursor, 'archiving_retention_days', retention_days)
     return redirect('/admin-config/general/?success=1')
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def update_script_types(request):
+    """Save the script types list from JSON body."""
+    try:
+        data = json.loads(request.body)
+        types = data.get('types', [])
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    # Validate: each entry needs value and label
+    cleaned = []
+    seen = set()
+    for t in types:
+        val = (t.get('value') or '').strip().lower().replace(' ', '_')
+        label = (t.get('label') or '').strip()
+        if not val or not label:
+            continue
+        if val in seen:
+            continue
+        seen.add(val)
+        cleaned.append({'value': val, 'label': label})
+
+    if not cleaned:
+        return JsonResponse({'error': 'At least one script type is required.'}, status=400)
+
+    with connection.cursor() as cursor:
+        _upsert_setting(cursor, 'script_types', cleaned)
+
+    return JsonResponse({'ok': True, 'types': cleaned})
 
 
 # ═══════════════════════════════════════════════════════════════════

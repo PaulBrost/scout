@@ -105,19 +105,7 @@
             {% endif %}
           </td>
           <td>
-            {% if sc.test_type == 'visual_regression' %}
-            <span class="badge bg-purple text-white" style="background:#7c3aed">Visual Reg</span>
-            {% elif sc.test_type == 'ai_content' %}
-            <span class="badge bg-warning text-dark">AI Content</span>
-            {% elif sc.test_type == 'ai_visual' %}
-            <span class="badge bg-info text-dark">AI Visual</span>
-            {% elif sc.test_type == 'functional' %}
-            <span class="badge bg-success">Functional</span>
-            {% elif sc.test_type == 'qc_checklist' %}
-            <span class="badge bg-danger">QC Checklist</span>
-            {% else %}
-            <span class="badge bg-secondary">{{ sc.test_type|default:"—" }}</span>
-            {% endif %}
+            <span class="badge bg-light text-dark border">{{ sc.test_type_label|default:sc.test_type|default:"—" }}</span>
           </td>
           <td class="text-nowrap">
             <a href="javascript:void(0)" class="text-success" title="Run"

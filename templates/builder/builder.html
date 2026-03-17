@@ -57,7 +57,7 @@
     </button>
   </li>
   <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabResults" type="button" role="tab">
+    <button class="nav-link" id="tabResults-tab" data-bs-toggle="tab" data-bs-target="#tabResults" type="button" role="tab">
       <i class="bi bi-journal-text me-1"></i>Run History{% if run_history %} ({{ run_history|length }}){% endif %}
     </button>
   </li>
@@ -322,11 +322,19 @@
   <!-- ═══ RESULTS TAB ═══ -->
   <div class="tab-pane fade" id="tabResults" role="tabpanel">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">Run History</div>
+      <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <span class="fw-semibold">Run History</span>
+        <div id="rh-bulk-actions" style="display:none">
+          <button class="btn btn-sm btn-outline-danger" onclick="rhDeleteSelected()">
+            <i class="bi bi-trash"></i> Delete Selected (<span id="rh-selected-count">0</span>)
+          </button>
+        </div>
+      </div>
       <div class="card-body p-0">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
+              <th style="width:32px"><input type="checkbox" id="rh-select-all" onchange="rhToggleAll(this)"></th>
               <th>Completed</th>
               <th>Trigger</th>
               <th>Duration</th>
@@ -334,24 +342,14 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {% for rh in run_history %}
-            <tr>
-              <td class="small">{% if rh.completed_at %}<a href="/runs/{{ rh.run_id }}/">{{ rh.completed_at|shorttime:user_timezone }}</a>{% else %}—{% endif %}</td>
-              <td class="small text-muted">{{ rh.suite_name|default:rh.trigger_type|default:"—" }}</td>
-              <td class="small text-muted">{% if rh.duration_ms %}{{ rh.duration_ms|duration }}{% else %}—{% endif %}</td>
-              <td><span class="status-badge status-{{ rh.status }}">{{ rh.status }}</span></td>
-              <td>
-                <a href="/runs/{{ rh.run_id }}/" class="btn btn-sm btn-outline-secondary" title="View run">
-                  <i class="bi bi-eye"></i>
-                </a>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="5" class="text-muted text-center py-4">No run history for this test.</td></tr>
-            {% endfor %}
-          </tbody>
+          <tbody id="rh-tbody"></tbody>
         </table>
+      </div>
+      <div class="card-footer bg-white d-flex align-items-center justify-content-between" id="rh-pagination-footer" style="display:none">
+        <div class="small text-muted" id="rh-page-info"></div>
+        <nav>
+          <ul class="pagination pagination-sm mb-0" id="rh-page-nav"></ul>
+        </nav>
       </div>
     </div>
   </div>
@@ -461,9 +459,9 @@
           <div class="col-md-4">
             <label class="form-label small fw-semibold mb-1">Test Type</label>
             <select id="metaTestType" class="form-select form-select-sm">
-              <option value="functional" {% if script_meta and script_meta.test_type == 'functional' %}selected{% endif %}>Functional</option>
-              <option value="visual_regression" {% if script_meta and script_meta.test_type == 'visual_regression' %}selected{% endif %}>Visual Regression</option>
-              <option value="qc_checklist" {% if script_meta and script_meta.test_type == 'qc_checklist' %}selected{% endif %}>Item Types QC</option>
+              {% for st in script_types %}
+              <option value="{{ st.value }}" {% if script_meta and script_meta.test_type == st.value %}selected{% endif %}>{{ st.label }}</option>
+              {% endfor %}
             </select>
           </div>
           <div class="col-md-4">
@@ -529,13 +527,10 @@
               </div>
             </div>
           </div>
-          <div class="col-12 d-flex align-items-center">
+          <div class="col-12 d-flex align-items-center justify-content-end">
+            <span id="metaSaveStatus" class="text-muted small me-2"></span>
             <button class="btn btn-sm btn-primary" onclick="saveMeta()">
               <i class="bi bi-check-lg"></i> Save Settings
-            </button>
-            <span id="metaSaveStatus" class="text-muted small ms-2"></span>
-            <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteScript()">
-              <i class="bi bi-trash"></i> Delete Test
             </button>
           </div>
         </div>
@@ -1447,22 +1442,6 @@ function updateRunButtons() {
   if (dropdownToggle) dropdownToggle.disabled = !hasFile;
 }
 
-function deleteScript() {
-  if (!currentFilePath) { alert('No test to delete.'); return; }
-  if (!confirm('Delete this test permanently?\n\n' + currentFilePath + '\n\nThis will remove the file and its metadata. Run history will be preserved.')) return;
-
-  fetch('/builder/api/delete/', {
-    method: 'POST',
-    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
-    body: JSON.stringify({ path: currentFilePath })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.error) { alert('Delete failed: ' + d.error); return; }
-    window.location.href = '/test-cases/';
-  })
-  .catch(err => { alert('Delete error: ' + err.message); });
-}
 
 function openDuplicateModal() {
   // Default name: current description + " (copy)"
@@ -1641,6 +1620,146 @@ function clearAllBaselines() {
 window.addEventListener('beforeunload', function(e) {
   if (isDirty) { e.preventDefault(); e.returnValue = ''; }
 });
+
+// ── Run History: pagination, selection, bulk delete ──
+var rhData = {{ run_history_json|safe }};
+var rhPageSize = 10;
+var rhPage = 1;
+
+function rhFormatDuration(ms) {
+  if (ms == null) return '—';
+  ms = parseInt(ms);
+  if (isNaN(ms)) return '—';
+  if (ms < 1000) return ms + 'ms';
+  var secs = Math.floor(ms / 1000);
+  var h = Math.floor(secs / 3600);
+  var m = Math.floor((secs % 3600) / 60);
+  var s = secs % 60;
+  if (h) return h + 'h ' + String(m).padStart(2,'0') + 'm ' + String(s).padStart(2,'0') + 's';
+  if (m) return m + 'm ' + String(s).padStart(2,'0') + 's';
+  return s + 's';
+}
+
+function rhFormatTime(iso) {
+  if (!iso) return '—';
+  var d = new Date(iso);
+  if (isNaN(d)) return '—';
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var hr = d.getHours() % 12 || 12;
+  var ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+  var min = String(d.getMinutes()).padStart(2,'0');
+  return months[d.getMonth()] + ' ' + d.getDate() + ', ' + hr + ':' + min + ' ' + ampm;
+}
+
+function rhEsc(s) {
+  var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+function rhRender() {
+  var tbody = document.getElementById('rh-tbody');
+  var total = rhData.length;
+  var totalPages = Math.max(1, Math.ceil(total / rhPageSize));
+  if (rhPage > totalPages) rhPage = totalPages;
+  var start = (rhPage - 1) * rhPageSize;
+  var page = rhData.slice(start, start + rhPageSize);
+
+  if (!total) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4">No run history for this test.</td></tr>';
+    document.getElementById('rh-pagination-footer').style.display = 'none';
+    document.getElementById('rh-bulk-actions').style.display = 'none';
+    return;
+  }
+
+  tbody.innerHTML = page.map(function(rh) {
+    var completed = rh.completed_at
+      ? '<a href="/runs/' + rhEsc(rh.run_id) + '/">' + rhFormatTime(rh.completed_at) + '</a>'
+      : '—';
+    var trigger = rhEsc(rh.suite_name || rh.trigger_type || '—');
+    return '<tr>' +
+      '<td><input type="checkbox" class="rh-cb" data-run-id="' + rhEsc(rh.run_id) + '" onchange="rhUpdateSelection()"></td>' +
+      '<td class="small">' + completed + '</td>' +
+      '<td class="small text-muted">' + trigger + '</td>' +
+      '<td class="small text-muted">' + rhFormatDuration(rh.duration_ms) + '</td>' +
+      '<td><span class="status-badge status-' + rhEsc(rh.status) + '">' + rhEsc(rh.status) + '</span></td>' +
+      '<td><a href="/runs/' + rhEsc(rh.run_id) + '/" class="btn btn-sm btn-outline-secondary" title="View run"><i class="bi bi-eye"></i></a></td>' +
+      '</tr>';
+  }).join('');
+
+  // Pagination footer
+  var footer = document.getElementById('rh-pagination-footer');
+  footer.style.display = total > rhPageSize ? '' : 'none';
+  document.getElementById('rh-page-info').textContent =
+    'Showing ' + (start + 1) + '–' + Math.min(start + rhPageSize, total) + ' of ' + total;
+
+  var nav = document.getElementById('rh-page-nav');
+  var html = '<li class="page-item ' + (rhPage <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="rhGoPage(' + (rhPage-1) + ');return false">&laquo;</a></li>';
+  for (var p = 1; p <= totalPages; p++) {
+    html += '<li class="page-item ' + (p === rhPage ? 'active' : '') + '"><a class="page-link" href="#" onclick="rhGoPage(' + p + ');return false">' + p + '</a></li>';
+  }
+  html += '<li class="page-item ' + (rhPage >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="rhGoPage(' + (rhPage+1) + ');return false">&raquo;</a></li>';
+  nav.innerHTML = html;
+
+  // Reset select-all
+  document.getElementById('rh-select-all').checked = false;
+  rhUpdateSelection();
+}
+
+function rhGoPage(p) {
+  var totalPages = Math.max(1, Math.ceil(rhData.length / rhPageSize));
+  if (p < 1 || p > totalPages) return;
+  rhPage = p;
+  rhRender();
+}
+
+function rhToggleAll(master) {
+  document.querySelectorAll('.rh-cb').forEach(function(cb) { cb.checked = master.checked; });
+  rhUpdateSelection();
+}
+
+function rhGetSelected() {
+  var ids = [];
+  document.querySelectorAll('.rh-cb:checked').forEach(function(cb) { ids.push(cb.dataset.runId); });
+  return [...new Set(ids)];
+}
+
+function rhUpdateSelection() {
+  var selected = rhGetSelected();
+  var bar = document.getElementById('rh-bulk-actions');
+  var count = document.getElementById('rh-selected-count');
+  if (selected.length) {
+    bar.style.display = '';
+    count.textContent = selected.length;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function rhDeleteSelected() {
+  var ids = rhGetSelected();
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' selected run(s) and all associated data? This cannot be undone.')) return;
+  fetch('/runs/api/delete-runs/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ids: ids})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { alert('Error: ' + d.error); return; }
+    // Remove deleted from local data
+    var removed = new Set(ids);
+    rhData = rhData.filter(function(rh) { return !removed.has(rh.run_id); });
+    rhRender();
+    // Update tab badge
+    var tabBtn = document.getElementById('tabResults-tab');
+    if (tabBtn) {
+      tabBtn.innerHTML = '<i class="bi bi-journal-text me-1"></i>Run History' + (rhData.length ? ' (' + rhData.length + ')' : '');
+    }
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+rhRender();
 
 </script>
 {% endblock %}

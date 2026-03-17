@@ -131,11 +131,23 @@ def index(request):
     start_item = offset + 1 if total > 0 else 0
     end_item = min(offset + page_size, total)
 
-    test_types = [
-        ('functional', 'Functional'),
-        ('visual_regression', 'Visual Regression'),
-        ('qc_checklist', 'Item Types QC'),
-    ]
+    # Load configurable script types from admin settings
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT value FROM ai_settings WHERE key = 'script_types'")
+        st_row = cursor.fetchone()
+    if st_row:
+        try:
+            _st = json.loads(st_row[0]) if isinstance(st_row[0], str) else st_row[0]
+            test_types = [(t['value'], t['label']) for t in _st if t.get('value') and t.get('label')]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            test_types = [('functional', 'Functional'), ('visual_regression', 'Visual Regression'), ('qc_checklist', 'Item Types QC')]
+    else:
+        test_types = [('functional', 'Functional'), ('visual_regression', 'Visual Regression'), ('qc_checklist', 'Item Types QC')]
+
+    # Map type values to display labels for the template
+    type_label_map = {v: l for v, l in test_types}
+    for sc in scripts:
+        sc['test_type_label'] = type_label_map.get(sc.get('test_type'), '')
 
     return render(request, 'test_cases/list.html', {
         'scripts': scripts, 'total': total, 'page': page, 'page_size': page_size,

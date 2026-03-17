@@ -234,12 +234,41 @@ def builder_view(request):
         except Exception:
             pass
 
+    # Load configurable script types
+    _default_types = [{'value': 'functional', 'label': 'Functional'}, {'value': 'visual_regression', 'label': 'Visual Regression'}, {'value': 'qc_checklist', 'label': 'Item Types QC'}]
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT value FROM ai_settings WHERE key = 'script_types'")
+        st_row = cursor.fetchone()
+    if st_row:
+        try:
+            _st = json.loads(st_row[0]) if isinstance(st_row[0], str) else st_row[0]
+            script_types = _st if isinstance(_st, list) and _st else _default_types
+        except (json.JSONDecodeError, TypeError):
+            script_types = _default_types
+    else:
+        script_types = _default_types
+
+    # Serialize run_history for client-side pagination
+    run_history_json = json.dumps([
+        {
+            'id': str(rh['id']),
+            'run_id': str(rh['run_id']),
+            'status': rh['status'] or '',
+            'duration_ms': rh['duration_ms'],
+            'completed_at': rh['completed_at'].isoformat() if rh.get('completed_at') else None,
+            'trigger_type': rh.get('trigger_type') or '',
+            'suite_name': rh.get('suite_name') or '',
+        }
+        for rh in run_history
+    ], default=str)
+
     return render(request, 'builder/builder.html', {
         'file_content': file_content,
         'file_path': file_path,
         'filename': filename,
         'script_meta': script_meta,
         'run_history': run_history,
+        'run_history_json': run_history_json,
         'assessment': assessment,
         'items': items,
         'assessments': assessments,
@@ -251,6 +280,7 @@ def builder_view(request):
         'baselines': baselines,
         'eligible_datasets': eligible_datasets,
         'linked_datasets': [ds for ds in eligible_datasets if ds.get('is_linked')],
+        'script_types': script_types,
     })
 
 
