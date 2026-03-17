@@ -316,9 +316,7 @@ class TestScript(models.Model):
     TEST_TYPE_CHOICES = [
         ('functional', 'Functional'),
         ('visual_regression', 'Visual Regression'),
-        ('ai_content', 'AI Content Analysis'),
-        ('ai_visual', 'AI Visual Analysis'),
-        ('qc_checklist', 'QC Checklist'),
+        ('qc_checklist', 'Item Types QC'),
     ]
 
     id = models.AutoField(primary_key=True)

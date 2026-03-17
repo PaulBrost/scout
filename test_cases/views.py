@@ -129,9 +129,7 @@ def index(request):
     test_types = [
         ('functional', 'Functional'),
         ('visual_regression', 'Visual Regression'),
-        ('ai_content', 'AI Content'),
-        ('ai_visual', 'AI Visual'),
-        ('qc_checklist', 'QC Checklist'),
+        ('qc_checklist', 'Item Types QC'),
     ]
 
     return render(request, 'test_cases/list.html', {

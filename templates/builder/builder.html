@@ -463,9 +463,7 @@
             <select id="metaTestType" class="form-select form-select-sm">
               <option value="functional" {% if script_meta and script_meta.test_type == 'functional' %}selected{% endif %}>Functional</option>
               <option value="visual_regression" {% if script_meta and script_meta.test_type == 'visual_regression' %}selected{% endif %}>Visual Regression</option>
-              <option value="ai_content" {% if script_meta and script_meta.test_type == 'ai_content' %}selected{% endif %}>AI Content Analysis</option>
-              <option value="ai_visual" {% if script_meta and script_meta.test_type == 'ai_visual' %}selected{% endif %}>AI Visual Analysis</option>
-              <option value="qc_checklist" {% if script_meta and script_meta.test_type == 'qc_checklist' %}selected{% endif %}>QC Checklist</option>
+              <option value="qc_checklist" {% if script_meta and script_meta.test_type == 'qc_checklist' %}selected{% endif %}>Item Types QC</option>
             </select>
           </div>
           <div class="col-md-4">

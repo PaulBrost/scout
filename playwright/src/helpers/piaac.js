@@ -161,27 +161,52 @@ async function openItem(portalPage, itemId) {
 
 /**
  * Extract text content from a PIAAC item page.
- * Handles items that render inside iframes or directly on the page.
+ * PIAAC items render inside deeply nested iframes (platform → module → stimulus/question).
+ * This walks all frames on the page and collects text from content-bearing ones,
+ * filtering out navigation/header chrome.
  *
  * @param {import('@playwright/test').Page} itemPage - The item page (popup)
  * @returns {Promise<string>} Extracted text content
  */
 async function extractItemContent(itemPage) {
-  // Check if item content is inside an iframe
-  let text = '';
-  try {
-    const hasIframe = await itemPage.locator('iframe').count();
-    if (hasIframe > 0) {
-      const frame = itemPage.frameLocator('iframe').first();
-      text = await frame.locator('body').innerText({ timeout: 10000 });
-    } else {
-      text = await itemPage.locator('body').innerText({ timeout: 10000 });
+  const texts = [];
+
+  // Content frames contain stimulus/question HTML — identified by URL patterns
+  const contentPatterns = [/stimulus/, /question/, /item/, /webbrowser/];
+  // Skip frames that are just runtime chrome (nav, header, transition)
+  const skipPatterns = [/navigation/, /header/, /transition/];
+
+  for (const frame of itemPage.frames()) {
+    const url = frame.url();
+    // Skip the main frame and non-content runtime frames
+    if (url === itemPage.url()) continue;
+    if (skipPatterns.some(p => p.test(url))) continue;
+
+    // Prefer frames matching content patterns, but accept any with substantial text
+    const isContentFrame = contentPatterns.some(p => p.test(url));
+
+    try {
+      const text = await frame.locator('body').innerText({ timeout: 3000 });
+      const trimmed = (text || '').trim();
+      // Only include frames with meaningful text content
+      if (trimmed.length > 20 || (isContentFrame && trimmed.length > 0)) {
+        texts.push(trimmed);
+      }
+    } catch {
+      // Frame may be detached or cross-origin — skip
     }
-  } catch {
-    // Fallback: try getting text from the whole page
-    text = await itemPage.locator('body').innerText().catch(() => '');
   }
-  return text;
+
+  if (texts.length > 0) {
+    return texts.join('\n\n');
+  }
+
+  // Fallback: try the page body directly (non-iframe items)
+  try {
+    return await itemPage.locator('body').innerText({ timeout: 5000 });
+  } catch {
+    return '';
+  }
 }
 
 /**

@@ -293,7 +293,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += 'This summary is displayed to users as the test description, so it must accurately reflect the whole script.\n\n'
     prompt += '## Fast Path for Test Generation\n'
     prompt += 'When asked to CREATE a new test script, ALWAYS call `get_test_template` FIRST with the appropriate type '
-    prompt += '(baseline, ai_content, ai_visual, qc_checklist, functional, visual_comparison). '
+    prompt += '(baseline, qc_checklist, functional, visual_comparison). '
     prompt += 'This returns a pre-filled skeleton with the correct helpers, imports, item counts, and platform patterns '
     prompt += 'already configured from the test context. Customize the skeleton and call `update_code` — '
     prompt += 'do NOT call list_helpers, read_file, search_tests, or get_items unless the template is insufficient.\n\n'
@@ -569,7 +569,7 @@ def _build_test_template(args, context, project_root):
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
 }"""
 
-    valid_types = ['baseline', 'ai_content', 'ai_visual', 'qc_checklist', 'functional', 'visual_comparison']
+    valid_types = ['baseline', 'qc_checklist', 'functional', 'visual_comparison']
 
     if template_type not in valid_types:
         return {
@@ -620,122 +620,6 @@ test('Baseline screenshots — {sc.get("assessmentName", "Assessment")}', async 
   await navigateAllScreens(page, envConfig, async (pg, idx) => {{
     await pg.screenshot({{ path: `test-results/screen-${{idx}}.png`, fullPage: true }});
   }});
-}});"""
-
-    elif template_type == 'ai_content':
-        if env_platform == 'piaac':
-            code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
-const {{ analyzeItemText }} = require('../src/helpers/ai');
-
-{env_config_block}
-
-test('AI content check — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
-  test.setTimeout(300000);
-  const envConfig = loadEnvConfig();
-  await login(page, {{ env: envConfig }});
-  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
-  const items = await getItemLinks(page);
-
-  for (const item of items) {{
-    const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    const text = await itemPage.locator('body').innerText();
-    if (text && text.trim().length >= 10) {{
-      const result = await analyzeItemText(text, 'English');
-      if (result.issuesFound) console.warn(`Issues in ${{item.itemId}}:`, result.issues);
-      await test.info().attach(`ai-text-${{item.itemId}}`, {{
-        body: JSON.stringify(result, null, 2), contentType: 'application/json'
-      }});
-    }}
-    await itemPage.close();
-  }}
-}});"""
-        else:
-            code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../src/helpers/auth');
-const {{ clickNext, extractItemText }} = require('../src/helpers/items');
-const {{ analyzeItemText }} = require('../src/helpers/ai');
-
-{env_config_block}
-
-test('AI content check — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
-  test.setTimeout(300000);
-  const envConfig = loadEnvConfig();
-  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
-
-  const TOTAL_ITEMS = {total_items};
-  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
-    await page.waitForLoadState('networkidle');
-    const text = await extractItemText(page);
-    if (text && text.trim().length >= 10) {{
-      const result = await analyzeItemText(text, 'English');
-      if (result.issuesFound) console.warn(`Issues in item ${{i}}:`, result.issues);
-      await test.info().attach(`ai-text-item-${{i}}`, {{
-        body: JSON.stringify(result, null, 2), contentType: 'application/json'
-      }});
-    }}
-    if (i < TOTAL_ITEMS) await clickNext(page);
-  }}
-}});"""
-
-    elif template_type == 'ai_visual':
-        if env_platform == 'piaac':
-            code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ login }} = require('../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
-const {{ analyzeItemScreenshot }} = require('../src/helpers/ai');
-
-{env_config_block}
-
-test('AI visual inspection — {sc.get("assessmentName", "PIAAC")}', async ({{ page }}) => {{
-  test.setTimeout(300000);
-  const envConfig = loadEnvConfig();
-  await login(page, {{ env: envConfig }});
-  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
-  const items = await getItemLinks(page);
-
-  for (const item of items) {{
-    const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    const screenshot = await itemPage.screenshot({{ fullPage: true }});
-    const result = await analyzeItemScreenshot(screenshot,
-      `Item ${{item.itemId}}. Check text readability, layout integrity, and visual anomalies.`
-    );
-    if (result.issuesFound) console.warn(`Visual issues in ${{item.itemId}}:`, result.issues);
-    await test.info().attach(`ai-vision-${{item.itemId}}`, {{
-      body: JSON.stringify(result, null, 2), contentType: 'image/png'
-    }});
-    await itemPage.close();
-  }}
-}});"""
-        else:
-            code = f"""const {{ test, expect }} = require('@playwright/test');
-const {{ loginAndStartTest }} = require('../src/helpers/auth');
-const {{ clickNext }} = require('../src/helpers/items');
-const {{ analyzeItemScreenshot }} = require('../src/helpers/ai');
-
-{env_config_block}
-
-test('AI visual inspection — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
-  test.setTimeout(300000);
-  const envConfig = loadEnvConfig();
-  await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig }});
-
-  const TOTAL_ITEMS = {total_items};
-  for (let i = 1; i <= TOTAL_ITEMS; i++) {{
-    await page.waitForLoadState('networkidle');
-    const screenshot = await page.screenshot({{ fullPage: true }});
-    const result = await analyzeItemScreenshot(screenshot,
-      `Assessment item ${{i}}. Check text readability, layout integrity, and visual anomalies.`
-    );
-    if (result.issuesFound) console.warn(`Visual issues in item ${{i}}:`, result.issues);
-    await test.info().attach(`ai-vision-item-${{i}}`, {{
-      body: JSON.stringify(result, null, 2), contentType: 'application/json'
-    }});
-    if (i < TOTAL_ITEMS) await clickNext(page);
-  }}
 }});"""
 
     elif template_type == 'qc_checklist':
