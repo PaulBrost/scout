@@ -1,6 +1,11 @@
 from django.db import migrations, models
 
 
+def set_db_defaults(apps, schema_editor):
+    """Set database-level defaults so raw SQL INSERTs that omit these columns still work."""
+    schema_editor.execute("ALTER TABLE test_scripts ALTER COLUMN notify_level SET DEFAULT 'disabled'")
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -22,4 +27,5 @@ class Migration(migrations.Migration):
                 ('issues', 'Only Issues'),
             ]),
         ),
+        migrations.RunPython(set_db_defaults, migrations.RunPython.noop),
     ]
