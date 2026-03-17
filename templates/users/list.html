@@ -56,6 +56,14 @@
             <a href="/users/{{ u.id }}/edit/" class="btn btn-sm btn-outline-secondary">
               <i class="bi bi-pencil"></i> Edit
             </a>
+            {% if not u.is_staff and u.id != request.user.id and u.is_active %}
+            <form method="post" action="/users/{{ u.id }}/impersonate/" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-warning" title="Impersonate">
+                <i class="bi bi-person-badge"></i>
+              </button>
+            </form>
+            {% endif %}
             {% if u.id != request.user.id %}
             <form method="post" action="/users/{{ u.id }}/delete/" class="d-inline"
                   onsubmit="return confirm('Delete user {{ u.username|escapejs }}? This cannot be undone.')">

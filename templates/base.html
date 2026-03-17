@@ -116,6 +116,11 @@
     body.sidebar-collapsed #sidebar nav a i { font-size: 1.1rem; }
     body.sidebar-collapsed #main-content { margin-left: var(--sidebar-collapsed-width); }
 
+    /* ── Impersonation offset ── */
+    body.impersonating #sidebar { top: calc(var(--brand-height) + 30px); }
+    body.impersonating #main-content { margin-top: calc(var(--brand-height) + 30px); }
+    body.impersonating #topbar { top: calc(var(--brand-height) + 30px); }
+
     /* ── Main content ── */
     #main-content {
       margin-left: var(--sidebar-width); margin-top: var(--brand-height);
@@ -158,7 +163,7 @@
   </style>
   {% block extra_head %}{% endblock %}
 </head>
-<body{% if request.COOKIES.sidebar_collapsed == '1' %} class="sidebar-collapsed"{% endif %}>
+<body{% if request.COOKIES.sidebar_collapsed == '1' %} class="sidebar-collapsed{% if is_impersonating %} impersonating{% endif %}"{% elif is_impersonating %} class="impersonating"{% endif %}>
   <!-- Full-width brand bar -->
   <div id="brand-bar">
     <div><img src="/static/img/scout-white.png" alt="Scout" style="height:22px;margin-right:.4rem;">SCOUT <span>v0.3</span></div>
@@ -168,6 +173,17 @@
       <a href="/logout/" title="Sign out"><i class="bi bi-box-arrow-right"></i></a>
     </div>
   </div>
+
+  {% if is_impersonating %}
+  <div id="impersonation-bar" style="
+    position: fixed; top: var(--brand-height); left: 0; right: 0; z-index: 102;
+    background: #ffc107; color: #000; text-align: center;
+    padding: 4px 1rem; font-size: .85rem; font-weight: 600;
+  ">
+    Viewing as <strong>{{ request.user.username }}</strong>
+    <a href="/users/stop-impersonate/" style="margin-left: 1rem; color: #000; text-decoration: underline;">Stop Impersonating</a>
+  </div>
+  {% endif %}
 
   <!-- Sidebar -->
   <div id="sidebar">
@@ -231,26 +247,23 @@
       {% if is_admin %}
       <div id="nav-admin" style="display:none;">
         <div class="nav-section">Admin</div>
+        <a href="/admin-config/general/" class="{% if request.path == '/admin-config/general/' %}active{% endif %}">
+          <i class="bi bi-sliders"></i> <span class="nav-label">General Settings</span>
+        </a>
+        <a href="/admin-config/ai/" class="{% if request.path == '/admin-config/ai/' %}active{% endif %}">
+          <i class="bi bi-gear"></i> <span class="nav-label">AI Settings</span>
+        </a>
         <a href="/environments/" class="{% if 'environments' in request.path %}active{% endif %}">
           <i class="bi bi-server"></i> <span class="nav-label">Environments</span>
         </a>
         <a href="/users/" class="{% if '/users/' in request.path %}active{% endif %}">
           <i class="bi bi-people"></i> <span class="nav-label">Users</span>
         </a>
-        <a href="/admin-config/ai/" class="{% if request.path == '/admin-config/ai/' %}active{% endif %}">
-          <i class="bi bi-gear"></i> <span class="nav-label">AI Settings</span>
-        </a>
-        <a href="/admin-config/general/" class="{% if request.path == '/admin-config/general/' %}active{% endif %}">
-          <i class="bi bi-sliders"></i> <span class="nav-label">General Settings</span>
-        </a>
         <a href="/admin-config/archives/" class="{% if request.path == '/admin-config/archives/' %}active{% endif %}">
-          <i class="bi bi-archive"></i> <span class="nav-label">Test Archives</span>
+          <i class="bi bi-archive"></i> <span class="nav-label">Archiving</span>
         </a>
         <a href="/admin-config/api/" class="{% if '/admin-config/api' in request.path %}active{% endif %}">
           <i class="bi bi-plug"></i> <span class="nav-label">API</span>
-        </a>
-        <a href="/django-admin/">
-          <i class="bi bi-shield-lock"></i> <span class="nav-label">Django Admin</span>
         </a>
       </div>
       {% endif %}

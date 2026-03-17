@@ -1,14 +1,17 @@
 from django.shortcuts import render, redirect
 from django.http import Http404, HttpResponseForbidden
 from django.db import connection
+from django.contrib.auth import login
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User
 
 
 def admin_required(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
             return redirect('/login/')
-        if not request.user.is_staff:
+        # Allow through if user is staff OR an admin is impersonating
+        if not request.user.is_staff and not getattr(request, 'is_impersonating', False):
             return HttpResponseForbidden('Admin access required.')
         return view_func(request, *args, **kwargs)
     wrapper.__name__ = view_func.__name__
@@ -219,3 +222,45 @@ def user_delete(request, user_id):
             cursor.execute('DELETE FROM user_environments WHERE user_id = %s', [user_id])
             cursor.execute('DELETE FROM auth_user WHERE id = %s', [user_id])
     return redirect('/users/')
+
+
+@admin_required
+def user_impersonate(request, user_id):
+    """Switch the admin's session to act as the target user."""
+    if request.method != 'POST':
+        return redirect('/users/')
+
+    try:
+        target = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        raise Http404
+
+    # Cannot impersonate yourself
+    if target.pk == request.user.pk:
+        return HttpResponseForbidden('Cannot impersonate yourself.')
+
+    # Cannot impersonate another admin/superuser
+    if target.is_staff or target.is_superuser:
+        return HttpResponseForbidden('Cannot impersonate an admin user.')
+
+    # Store the real admin's ID before switching
+    request.session['_impersonate_admin_id'] = request.user.pk
+    login(request, target, backend='django.contrib.auth.backends.ModelBackend')
+    return redirect('/')
+
+
+def user_stop_impersonate(request):
+    """Switch back to the real admin session."""
+    if not request.user.is_authenticated:
+        return redirect('/login/')
+
+    admin_id = request.session.pop('_impersonate_admin_id', None)
+    if admin_id:
+        try:
+            admin_user = User.objects.get(pk=admin_id, is_staff=True)
+            login(request, admin_user, backend='django.contrib.auth.backends.ModelBackend')
+            return redirect('/users/')
+        except User.DoesNotExist:
+            pass
+
+    return redirect('/')

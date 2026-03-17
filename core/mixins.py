@@ -12,11 +12,11 @@ class LoginRequiredMixin(DjangoLoginRequiredMixin):
 
 
 class AdminRequiredMixin(LoginRequiredMixin):
-    """Require is_staff or is_superuser."""
+    """Require is_staff or is_superuser (allows impersonating admins through)."""
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
-        if not request.user.is_staff:
+        if not request.user.is_staff and not getattr(request, 'is_impersonating', False):
             return HttpResponseForbidden("Admin access required.")
         return super().dispatch(request, *args, **kwargs)
 
