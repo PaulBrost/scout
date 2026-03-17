@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, can_user_access_record
 
 
 def fix_helper_paths(code, rel_path):
@@ -76,6 +76,12 @@ def builder_view(request):
                             script_meta['ai_config'] = {}
                     elif not isinstance(ai_cfg, dict):
                         script_meta['ai_config'] = {}
+                    # User-level access check
+                    if not can_user_access_record(request.user, script_meta.get('created_by_id')):
+                        script_meta = None
+                        file_content = None
+                        file_path = None
+                        filename = None
         except Exception:
             pass
 
@@ -464,17 +470,17 @@ def api_save(request):
         with connection.cursor() as cursor:
             if environment_id:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
+                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [rel_path, environment_id]
+                    [rel_path, environment_id, request.user.id]
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
+                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [rel_path]
+                    [rel_path, request.user.id]
                 )
         return JsonResponse({'path': rel_path})
     except Exception as e:
@@ -630,12 +636,13 @@ def api_duplicate(request):
                 cursor.execute(
                     """INSERT INTO test_scripts
                        (script_path, item_id, assessment_id, category, test_type, description,
-                        environment_id, browser, viewport, ai_config, test_summary, tags, created_at, updated_at)
+                        environment_id, browser, viewport, ai_config, test_summary, tags, created_by_id, created_at, updated_at)
                        VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s,
-                               %s::uuid, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s, '[]'::jsonb, now(), now())""",
+                               %s::uuid, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s, '[]'::jsonb, %s, now(), now())""",
                     [new_rel_path, item_id, str(assessment_id) if assessment_id else None,
                      category, test_type, new_desc,
-                     environment_id, browser or 'chromium', viewport or '1920x1080', ai_config, test_summary]
+                     environment_id, browser or 'chromium', viewport or '1920x1080', ai_config, test_summary,
+                     request.user.id]
                 )
         else:
             # No source metadata — create minimal record with any overrides
@@ -644,9 +651,9 @@ def api_duplicate(request):
             with connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO test_scripts
-                       (script_path, item_id, assessment_id, description, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, %s, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())""",
-                    [new_rel_path, new_item, new_assess, new_name]
+                       (script_path, item_id, assessment_id, description, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())""",
+                    [new_rel_path, new_item, new_assess, new_name, request.user.id]
                 )
 
         return JsonResponse({'ok': True, 'path': new_rel_path})
@@ -682,10 +689,10 @@ def api_generate_baseline(request):
 
             baseline_config = json.dumps({'ai_config': {'text_analysis': False, 'visual_analysis': False}})
             cursor.execute(
-                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at)
-                   VALUES (gen_random_uuid(), 'running', 'baseline', %s, %s::jsonb, %s, now()) RETURNING id""",
+                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, created_by_id, queued_at)
+                   VALUES (gen_random_uuid(), 'running', 'baseline', %s, %s::jsonb, %s, %s, now()) RETURNING id""",
                 [str(environment_id) if environment_id else None, baseline_config,
-                 f'Baseline generation: {script_path}']
+                 f'Baseline generation: {script_path}', request.user.id]
             )
             run_id = cursor.fetchone()[0]
             cursor.execute(

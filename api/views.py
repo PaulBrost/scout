@@ -291,11 +291,11 @@ def _create_suite(request):
     with connection.cursor() as cursor:
         cursor.execute(
             """INSERT INTO test_suites
-                   (id, name, description, created_by, browser_profiles,
+                   (id, name, description, browser_profiles,
                     environment_id, created_at, updated_at)
-               VALUES (gen_random_uuid(), %s, %s, %s, '[]'::jsonb, %s::uuid, now(), now())
+               VALUES (gen_random_uuid(), %s, %s, '[]'::jsonb, %s::uuid, now(), now())
                RETURNING id""",
-            [name, description, f'api:{request.api_client["name"]}', env_id],
+            [name, description, env_id],
         )
         suite_id = cursor.fetchone()[0]
 
@@ -372,7 +372,7 @@ def _get_suite(request, suite_id):
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT s.id, s.name, s.description, s.environment_id,
-                   s.created_by, s.created_at, s.updated_at
+                   s.created_by_id, s.created_at, s.updated_at
             FROM test_suites s
             WHERE s.id = %s AND s.environment_id = %s::uuid
         """, [str(suite_id), env_id])

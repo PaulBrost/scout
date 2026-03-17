@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
 from django.utils import timezone
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, can_user_access_record
 
 
 def build_page_range(page, total_pages):
@@ -89,6 +89,11 @@ def index(request):
             })
         params.append(tuple(str(e) for e in env_ids))
         where.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
+
+    # User-level scoping (via test run ownership)
+    if not request.user.is_staff:
+        where.append('(tr.created_by_id = %s OR tr.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -181,6 +186,19 @@ def review_action(request):
         if not review_id or action not in ('issue', 'suppress', 'resolve', 'pending'):
             return JsonResponse({'error': 'Invalid request'}, status=400)
 
+        # Ownership check via review's test run
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT tr.created_by_id FROM reviews rv
+                LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
+                LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+                LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
+                WHERE rv.id = %s
+            """, [review_id])
+            owner_row = cursor.fetchone()
+        if owner_row and not can_user_access_record(request.user, owner_row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
         status_map = {'issue': 'issue', 'suppress': 'suppressed', 'resolve': 'resolved', 'pending': 'pending'}
         new_status = status_map[action]
 
@@ -230,6 +248,19 @@ def api_list(request):
     if status_filter:
         params.append(status_filter)
         where.append('rv.status = %s')
+
+    # Environment scoping
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
+        params.append(tuple(str(e) for e in env_ids))
+        where.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(tr.created_by_id = %s OR tr.created_by_id IS NULL)')
+        params.append(request.user.id)
+
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
@@ -237,6 +268,7 @@ def api_list(request):
             f"""SELECT COUNT(*) FROM reviews rv
                 LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
                 LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+                LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
                 {where_clause}""",
             params
         )
@@ -248,6 +280,7 @@ def api_list(request):
             FROM reviews rv
             LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
             LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+            LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
             {where_clause}
             ORDER BY rv.created_at DESC
             LIMIT %s OFFSET %s

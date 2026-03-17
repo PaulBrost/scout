@@ -42,7 +42,7 @@ class BaselineAdmin(admin.ModelAdmin):
 
 @admin.register(TestRun)
 class TestRunAdmin(admin.ModelAdmin):
-    list_display = ['id', 'suite', 'environment', 'status', 'trigger_type', 'started_at', 'completed_at']
+    list_display = ['id', 'suite', 'environment', 'status', 'trigger_type', 'created_by', 'started_at', 'completed_at']
     list_filter = ['status', 'trigger_type', 'environment']
 
 @admin.register(TestRunScript)
@@ -62,7 +62,7 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(TestScript)
 class TestScriptAdmin(admin.ModelAdmin):
-    list_display = ['script_path', 'environment', 'item', 'assessment', 'test_type', 'category', 'updated_at']
+    list_display = ['script_path', 'environment', 'created_by', 'item', 'assessment', 'test_type', 'category', 'updated_at']
     list_filter = ['environment', 'test_type', 'category']
     search_fields = ['script_path']
 
@@ -77,7 +77,7 @@ class AIToolAdmin(admin.ModelAdmin):
 
 @admin.register(TestDataSet)
 class TestDataSetAdmin(admin.ModelAdmin):
-    list_display = ['name', 'environment', 'assessment', 'data_type', 'created_at']
+    list_display = ['name', 'environment', 'created_by', 'assessment', 'data_type', 'created_at']
     list_filter = ['environment', 'data_type']
     search_fields = ['name']
 

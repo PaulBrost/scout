@@ -5,7 +5,7 @@ from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, can_user_access_record
 
 
 @login_required(login_url='/login/')
@@ -34,6 +34,11 @@ def index(request):
     if type_filter:
         params.append(type_filter)
         where.append('td.data_type = %s')
+
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(td.created_by_id = %s OR td.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -92,6 +97,9 @@ def detail(request, dataset_id=None):
         if not row:
             raise Http404
         dataset = dict(zip(cols, row))
+        # User-level access check
+        if not can_user_access_record(request.user, dataset.get('created_by_id')):
+            raise Http404
         # Ensure data is serializable
         if isinstance(dataset.get('data'), str):
             try:
@@ -164,6 +172,11 @@ def api_save(request, dataset_id=None):
 
         with connection.cursor() as cursor:
             if dataset_id:
+                # Verify ownership
+                cursor.execute('SELECT created_by_id FROM test_data_sets WHERE id = %s', [str(dataset_id)])
+                owner_row = cursor.fetchone()
+                if owner_row and not can_user_access_record(request.user, owner_row[0]):
+                    return JsonResponse({'error': 'Access denied'}, status=403)
                 cursor.execute("""
                     UPDATE test_data_sets
                     SET name = %s, environment_id = %s, assessment_id = %s,
@@ -176,11 +189,11 @@ def api_save(request, dataset_id=None):
             else:
                 cursor.execute("""
                     INSERT INTO test_data_sets (name, environment_id, assessment_id,
-                                                item_id, data_type, description, data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                                item_id, data_type, description, data, created_by_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, [name, environment_id, assessment_id, item_id,
-                      data_type, description, json.dumps(entries)])
+                      data_type, description, json.dumps(entries), request.user.id])
                 new_id = cursor.fetchone()[0]
                 return JsonResponse({'ok': True, 'id': str(new_id),
                                      'redirect': f'/test-data/{new_id}/'})
@@ -195,6 +208,13 @@ def api_save(request, dataset_id=None):
 @login_required(login_url='/login/')
 def api_delete(request, dataset_id):
     try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_data_sets WHERE id = %s', [str(dataset_id)])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
         with connection.cursor() as cursor:
             # Also clean up junction table references
             cursor.execute('DELETE FROM test_script_data_sets WHERE data_set_id = %s', [str(dataset_id)])

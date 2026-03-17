@@ -124,7 +124,10 @@ class TestSuite(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.TextField()
     description = models.TextField(null=True, blank=True)
-    created_by = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_suites', db_column='created_by_id'
+    )
     schedule = models.JSONField(null=True, blank=True)
     browser_profiles = models.JSONField(default=list)
     environment = models.ForeignKey(
@@ -169,6 +172,10 @@ class TestRun(models.Model):
     environment = models.ForeignKey(
         Environment, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='runs'
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_runs', db_column='created_by_id'
     )
     status = models.TextField(default='running', choices=STATUS_CHOICES)
     trigger_type = models.TextField(default='manual')
@@ -326,6 +333,10 @@ class TestScript(models.Model):
         Environment, on_delete=models.CASCADE, related_name='test_scripts',
         db_column='environment_id'
     )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_scripts', db_column='created_by_id'
+    )
     item = models.ForeignKey(
         Item, on_delete=models.SET_NULL, null=True, blank=True,
         db_column='item_id', to_field='item_id'
@@ -441,6 +452,10 @@ class TestDataSet(models.Model):
     name = models.TextField()
     environment = models.ForeignKey(
         Environment, on_delete=models.CASCADE, related_name='test_data_sets'
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_datasets', db_column='created_by_id'
     )
     assessment = models.ForeignKey(
         Assessment, on_delete=models.SET_NULL, null=True, blank=True,

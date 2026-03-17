@@ -9,7 +9,7 @@ from django.db import connection
 from django.conf import settings
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_POST
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record
 
 
 def build_page_range(page, total_pages):
@@ -69,6 +69,11 @@ def index(request):
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(r.notes) LIKE %s OR LOWER(s.name) LIKE %s)')
         params.append(f'%{search.lower()}%')
+
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -150,6 +155,10 @@ def detail(request, run_id):
         run_env = str(run.get('environment_id') or '')
         if run_env and run_env not in [str(e) for e in env_ids]:
             raise Http404
+
+    # User-level access check
+    if not can_user_access_record(request.user, run.get('created_by_id')):
+        raise Http404
 
     # Parse summary
     if isinstance(run.get('summary'), str):
@@ -333,11 +342,14 @@ def api_run_status(request, run_id):
     """Lightweight JSON endpoint for polling run status + script results."""
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT status, summary, queued_at, started_at, completed_at FROM test_runs WHERE id = %s',
+            'SELECT status, summary, queued_at, started_at, completed_at, created_by_id FROM test_runs WHERE id = %s',
             [run_id]
         )
         row = cursor.fetchone()
     if not row:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if not can_user_access_record(request.user, row[5]):
         return JsonResponse({'error': 'Not found'}, status=404)
 
     run_status = row[0]
@@ -402,6 +414,11 @@ def api_list(request):
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(r.notes) LIKE %s OR LOWER(s.name) LIKE %s)')
 
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
+        params.append(request.user.id)
+
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
@@ -428,8 +445,20 @@ def api_list(request):
 
 @login_required(login_url='/login/')
 def api_latest(request):
+    where = []
+    params = []
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return JsonResponse({'run': None})
+        params.append(tuple(str(e) for e in env_ids))
+        where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
+    if not request.user.is_staff:
+        where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
+        params.append(request.user.id)
+    where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
     with connection.cursor() as cursor:
-        cursor.execute('SELECT * FROM test_runs ORDER BY queued_at DESC NULLS LAST LIMIT 1')
+        cursor.execute(f'SELECT * FROM test_runs r {where_clause} ORDER BY r.queued_at DESC NULLS LAST LIMIT 1', params)
         cols = [c[0] for c in cursor.description]
         row = cursor.fetchone()
     if not row:
@@ -485,6 +514,16 @@ def api_flag_screenshot(request, screenshot_id):
         row = cursor.fetchone()
     if not row:
         return JsonResponse({'error': 'Not found'}, status=404)
+
+    # Ownership check via screenshot's run
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT tr.created_by_id FROM run_screenshots rs JOIN test_runs tr ON rs.run_id = tr.id WHERE rs.id = %s',
+            [screenshot_id]
+        )
+        owner_row = cursor.fetchone()
+    if owner_row and not can_user_access_record(request.user, owner_row[0]):
+        return JsonResponse({'error': 'Access denied'}, status=403)
 
     new_flagged = data.get('flagged', not row[0])
     flag_notes = data.get('notes', None)
@@ -569,6 +608,11 @@ def api_runs_with_screenshots(request):
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
         params.append(tuple(str(e) for e in env_ids))
 
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
+        params.append(request.user.id)
+
     where_sql = ' AND '.join(where)
     params.append(limit)
 
@@ -624,6 +668,14 @@ def api_clear_analyses(request, run_id):
     """Delete all AI analyses (and related reviews) for a run."""
     try:
         with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Run not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
+        with connection.cursor() as cursor:
             cursor.execute('DELETE FROM reviews WHERE analysis_id IN (SELECT id FROM ai_analyses WHERE run_id = %s)', [str(run_id)])
             cursor.execute('DELETE FROM ai_analyses WHERE run_id = %s', [str(run_id)])
             deleted = cursor.rowcount
@@ -642,6 +694,13 @@ def api_run_analyze(request, run_id):
         data = {}
 
     analysis_type = data.get('type', 'both')  # 'text', 'visual', or 'both'
+
+    # Ownership check
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+        owner_row = cursor.fetchone()
+    if owner_row and not can_user_access_record(request.user, owner_row[0]):
+        return JsonResponse({'error': 'Access denied'}, status=403)
 
     # Verify run exists and is complete
     with connection.cursor() as cursor:
@@ -682,6 +741,13 @@ def api_retry_run(request, run_id):
             return JsonResponse({'error': 'Run not found'}, status=404)
 
         run_status, suite_id = row
+
+        # Ownership check
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+            owner_row = cursor.fetchone()
+        if owner_row and not can_user_access_record(request.user, owner_row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
 
         if run_status not in ('running', 'scheduled', 'failed'):
             return JsonResponse({'error': f'Run is {run_status}, cannot retry'}, status=400)
@@ -745,6 +811,14 @@ def api_cancel_run(request, run_id):
     """Cancel a running or scheduled test run."""
     try:
         with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Run not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
+        with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE test_runs SET status = 'cancelled', completed_at = now() WHERE id = %s AND status IN ('running', 'scheduled')",
                 [str(run_id)]
@@ -767,6 +841,14 @@ def api_cancel_run(request, run_id):
 def api_delete_run(request, run_id):
     """Delete a single run and all related data."""
     try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Run not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
         with connection.cursor() as cursor:
             # Delete in FK order to avoid constraint violations
             cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = %s', [str(run_id)])
@@ -798,6 +880,18 @@ def api_delete_runs_bulk(request):
         ids = data.get('ids', [])
         if not ids:
             return JsonResponse({'error': 'No IDs provided'}, status=400)
+
+        # Filter to owned runs for non-admins
+        if not request.user.is_staff:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    'SELECT id::text FROM test_runs WHERE id = ANY(%s::uuid[]) AND (created_by_id = %s OR created_by_id IS NULL)',
+                    [ids, request.user.id]
+                )
+                ids = [r[0] for r in cursor.fetchall()]
+            if not ids:
+                return JsonResponse({'error': 'No accessible runs'}, status=403)
+
         with connection.cursor() as cursor:
             # Delete in FK order to avoid constraint violations
             cursor.execute('UPDATE test_script_baselines SET source_run_id = NULL WHERE source_run_id = ANY(%s::uuid[])', [ids])
@@ -879,15 +973,22 @@ def api_rerun(request, run_id):
         if not row:
             return JsonResponse({'error': 'Run not found'}, status=404)
 
+        # Ownership check on source run
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+            owner_row = cursor.fetchone()
+        if owner_row and not can_user_access_record(request.user, owner_row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
         suite_id, environment_id, config, trigger_type, notes = row
         new_run_id = str(_uuid.uuid4())
 
         with connection.cursor() as cursor:
             # Create new run
             cursor.execute("""
-                INSERT INTO test_runs (id, suite_id, environment_id, config, status, trigger_type, notes, queued_at)
-                VALUES (%s, %s, %s, %s, 'scheduled', 'manual', %s, now())
-            """, [new_run_id, suite_id, environment_id, config, notes])
+                INSERT INTO test_runs (id, suite_id, environment_id, config, status, trigger_type, notes, queued_at, created_by_id)
+                VALUES (%s, %s, %s, %s, 'scheduled', 'manual', %s, now(), %s)
+            """, [new_run_id, suite_id, environment_id, config, notes, request.user.id])
 
             # Copy script entries from original run
             cursor.execute("""

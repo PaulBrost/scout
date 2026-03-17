@@ -5,7 +5,7 @@ from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record
 
 
 def build_page_range(page, total_pages):
@@ -61,6 +61,11 @@ def index(request):
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(s.name) LIKE %s OR LOWER(s.description) LIKE %s)')
 
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(s.created_by_id = %s OR s.created_by_id IS NULL)')
+        params.append(request.user.id)
+
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
@@ -109,7 +114,7 @@ def index(request):
     })
 
 
-def _get_scripts_for_environment(env_id, assessment_id=None, item_id=None):
+def _get_scripts_for_environment(env_id, assessment_id=None, item_id=None, user=None):
     """Query DB for test scripts belonging to an environment, optionally filtered by assessment/item."""
     if not env_id:
         return []
@@ -121,6 +126,9 @@ def _get_scripts_for_environment(env_id, assessment_id=None, item_id=None):
     elif assessment_id:
         where.append('ts.assessment_id = %s')
         params.append(assessment_id)
+    if user and not user.is_staff:
+        where.append('(ts.created_by_id = %s OR ts.created_by_id IS NULL)')
+        params.append(user.id)
     with connection.cursor() as cursor:
         cursor.execute(f"""
             SELECT ts.script_path, ts.description, ts.category, ts.test_type,
@@ -161,6 +169,10 @@ def suite_detail(request, suite_id):
         raise Http404
 
     suite = dict(zip(cols, row))
+
+    # User-level access check
+    if not can_user_access_record(request.user, suite.get('created_by_id')):
+        raise Http404
 
     # Load suite script entries with browser/viewport and description from test_scripts
     with connection.cursor() as cursor:
@@ -204,9 +216,9 @@ def suite_create(request):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_suites (id, name, description, created_by, browser_profiles, environment_id, created_at, updated_at)
+                """INSERT INTO test_suites (id, name, description, created_by_id, browser_profiles, environment_id, created_at, updated_at)
                    VALUES (gen_random_uuid(), %s, %s, %s, '[]'::jsonb, %s, now(), now()) RETURNING id""",
-                [name, description, request.user.username, environment_id]
+                [name, description, request.user.id, environment_id]
             )
             suite_id = cursor.fetchone()[0]
             for entry in scripts:
@@ -237,6 +249,15 @@ def suite_update(request, suite_id):
         scripts = data.get('scripts') or []
         environment_id = data.get('environment_id') or None
 
+        # Verify ownership
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_suites WHERE id = %s', [suite_id])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Suite not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
         with connection.cursor() as cursor:
             cursor.execute(
                 """UPDATE test_suites SET name=%s, description=%s,
@@ -265,6 +286,14 @@ def suite_update(request, suite_id):
 def suite_delete(request, suite_id):
     try:
         with connection.cursor() as cursor:
+            cursor.execute('SELECT created_by_id FROM test_suites WHERE id = %s', [suite_id])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Suite not found'}, status=404)
+        if not can_user_access_record(request.user, row[0]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
+        with connection.cursor() as cursor:
             cursor.execute('DELETE FROM test_suites WHERE id = %s', [suite_id])
         return JsonResponse({'ok': True})
     except Exception as e:
@@ -283,6 +312,10 @@ def suite_run(request, suite_id):
         if not row:
             return JsonResponse({'error': 'Suite not found'}, status=404)
         suite = dict(zip(cols, row))
+
+        # Verify suite ownership
+        if not can_user_access_record(request.user, suite.get('created_by_id')):
+            return JsonResponse({'error': 'Access denied'}, status=403)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -319,9 +352,9 @@ def suite_run(request, suite_id):
         # Create run
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_runs (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at)
-                   VALUES (gen_random_uuid(), 'running', 'dashboard', %s, %s, %s::jsonb, %s, now()) RETURNING id""",
-                [suite_id, suite.get('environment_id'), run_config, f"Suite: {suite['name']}"]
+                """INSERT INTO test_runs (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at, created_by_id)
+                   VALUES (gen_random_uuid(), 'running', 'dashboard', %s, %s, %s::jsonb, %s, now(), %s) RETURNING id""",
+                [suite_id, suite.get('environment_id'), run_config, f"Suite: {suite['name']}", request.user.id]
             )
             run_id = cursor.fetchone()[0]
             for entry in suite_entries:
@@ -392,10 +425,10 @@ def run_script(request):
             run_status = 'scheduled' if scheduled_at else 'running'
 
             cursor.execute(
-                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at)
-                   VALUES (gen_random_uuid(), %s, 'manual', %s, %s, %s, now()) RETURNING id""",
+                """INSERT INTO test_runs (id, status, trigger_type, environment_id, config, notes, queued_at, created_by_id)
+                   VALUES (gen_random_uuid(), %s, 'manual', %s, %s, %s, now(), %s) RETURNING id""",
                 [run_status, str(environment_id) if environment_id else None,
-                 json.dumps(config), f'Ad-hoc: {script_path}']
+                 json.dumps(config), f'Ad-hoc: {script_path}', request.user.id]
             )
             run_id = cursor.fetchone()[0]
             cursor.execute(
@@ -437,10 +470,24 @@ def api_list(request):
 
     where = []
     params = []
+
+    # Environment scoping
+    env_ids = get_user_env_ids(request.user)
+    if env_ids is not None:
+        if not env_ids:
+            return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
+        params.append(tuple(str(e) for e in env_ids))
+        where.append('s.environment_id = ANY(%s::uuid[])')
+
     if search:
         params.append(f'%{search.lower()}%')
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(s.name) LIKE %s OR LOWER(s.description) LIKE %s)')
+
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(s.created_by_id = %s OR s.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -479,7 +526,7 @@ def api_scripts_by_environment(request):
 
     assessment_id = request.GET.get('assessment_id', '').strip() or None
     item_id = request.GET.get('item_id', '').strip() or None
-    scripts = _get_scripts_for_environment(env_id, assessment_id=assessment_id, item_id=item_id)
+    scripts = _get_scripts_for_environment(env_id, assessment_id=assessment_id, item_id=item_id, user=request.user)
     return JsonResponse({'scripts': scripts}, json_dumps_params={'default': str})
 
 

@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, can_user_access_record
 
 
 def build_page_range(page, total_pages):
@@ -71,6 +71,11 @@ def index(request):
     if item_filter:
         params.append(item_filter)
         where.append('ts.item_id = %s')
+
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(ts.created_by_id = %s OR ts.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -175,17 +180,17 @@ def api_save(request):
         with connection.cursor() as cursor:
             if environment_id:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
+                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [file_path, environment_id]
+                    [file_path, environment_id, request.user.id]
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_at, updated_at)
-                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', now(), now())
+                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
                        ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [file_path]
+                    [file_path, request.user.id]
                 )
         return JsonResponse({'success': True, 'path': file_path})
     except Exception as e:
@@ -243,10 +248,10 @@ def api_associate(request):
 
         with connection.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, browser, viewport, ai_config, notify_emails, notify_level, tags, created_at, updated_at)
+                """INSERT INTO test_scripts (script_path, item_id, assessment_id, category, test_type, description, environment_id, browser, viewport, ai_config, notify_emails, notify_level, created_by_id, tags, created_at, updated_at)
                    VALUES (%s, %s, %s, %s, COALESCE(%s, 'functional'), %s,
                            COALESCE(%s::uuid, (SELECT environment_id FROM test_scripts WHERE script_path = %s)),
-                           %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s, %s, '[]'::jsonb, now(), now())
+                           %s, %s, COALESCE(%s::jsonb, '{}'::jsonb), %s, %s, %s, '[]'::jsonb, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET
                      item_id = COALESCE(EXCLUDED.item_id, test_scripts.item_id),
                      assessment_id = COALESCE(EXCLUDED.assessment_id, test_scripts.assessment_id),
@@ -262,7 +267,7 @@ def api_associate(request):
                      updated_at = now()""",
                 [script_path, item_id, assessment_id, category, test_type, description,
                  environment_id, script_path,
-                 browser, viewport, ai_config_json, notify_emails, notify_level,
+                 browser, viewport, ai_config_json, notify_emails, notify_level, request.user.id,
                  ai_config_json, ai_config_json]
             )
         return JsonResponse({'ok': True})
@@ -282,12 +287,14 @@ def api_delete_script(request):
             return JsonResponse({'error': 'id required'}, status=400)
 
         with connection.cursor() as cursor:
-            cursor.execute('SELECT script_path FROM test_scripts WHERE id = %s', [script_id])
+            cursor.execute('SELECT script_path, created_by_id FROM test_scripts WHERE id = %s', [script_id])
             row = cursor.fetchone()
         if not row:
             return JsonResponse({'error': 'Script not found'}, status=404)
 
         script_path = row[0]
+        if not can_user_access_record(request.user, row[1]):
+            return JsonResponse({'error': 'Access denied'}, status=403)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
         full_path = (tests_dir / script_path).resolve()
 
@@ -323,7 +330,13 @@ def api_delete_scripts_bulk(request):
 
         with connection.cursor() as cursor:
             enabled, _ = _get_archiving_config(cursor)
-            cursor.execute('SELECT id, script_path FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
+            if request.user.is_staff:
+                cursor.execute('SELECT id, script_path FROM test_scripts WHERE id = ANY(%s::int[])', [ids])
+            else:
+                cursor.execute(
+                    'SELECT id, script_path FROM test_scripts WHERE id = ANY(%s::int[]) AND (created_by_id = %s OR created_by_id IS NULL)',
+                    [ids, request.user.id]
+                )
             scripts = cursor.fetchall()
 
         deleted = 0
@@ -367,6 +380,11 @@ def api_list(request):
     if env_id:
         params.append(env_id)
         where.append('ts.environment_id = %s::uuid')
+
+    # User-level scoping
+    if not request.user.is_staff:
+        where.append('(ts.created_by_id = %s OR ts.created_by_id IS NULL)')
+        params.append(request.user.id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 

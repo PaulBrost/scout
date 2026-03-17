@@ -57,3 +57,30 @@ def env_scope_filter(user, env_field='environment_id'):
     if env_ids is None:
         return {}
     return {f'{env_field}__in': env_ids}
+
+
+def get_owner_filter_id(user):
+    """Return user.id for non-admins, None for admins (all access)."""
+    if user.is_staff:
+        return None
+    return user.id
+
+
+def build_user_scope_sql(user, table_alias, column='created_by_id'):
+    """Return (sql_fragment, params) for WHERE clause user scoping.
+
+    Admins: ('', [])
+    Non-admins: ('AND (alias.col = %s OR alias.col IS NULL)', [user.id])
+    """
+    if user.is_staff:
+        return ('', [])
+    return (f' AND ({table_alias}.{column} = %s OR {table_alias}.{column} IS NULL)', [user.id])
+
+
+def can_user_access_record(user, created_by_id):
+    """True for admins, matching user_id, or NULL (system records)."""
+    if user.is_staff:
+        return True
+    if created_by_id is None:
+        return True
+    return created_by_id == user.id
