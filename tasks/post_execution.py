@@ -70,21 +70,22 @@ def dispatch_post_execution(run_id):
     ai_text = ai_config.get('text_analysis', False)
     ai_visual = ai_config.get('visual_analysis', False)
 
-    # Check test_types for visual_regression baseline comparison
+    # Check if any scripts in this run have stored baselines
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT DISTINCT ts.test_type
-            FROM test_run_scripts trs
-            JOIN test_scripts ts ON ts.script_path = trs.script_path
-            WHERE trs.run_id = %s
+            SELECT EXISTS (
+                SELECT 1 FROM test_script_baselines tsb
+                JOIN test_run_scripts trs ON trs.script_path = tsb.script_path
+                WHERE trs.run_id = %s
+            )
         """, [run_id])
-        test_types = {r[0] for r in cursor.fetchall()}
+        has_baselines = cursor.fetchone()[0]
 
-    if not test_types and not ai_text and not ai_visual:
+    if not has_baselines and not ai_text and not ai_visual:
         return
 
-    # Baseline comparison (driven by test_type, not ai_config)
-    if 'visual_regression' in test_types:
+    # Baseline comparison (triggered when scripts have stored baselines)
+    if has_baselines:
         try:
             compare_baselines(run_id)
         except Exception as e:
@@ -103,13 +104,13 @@ def dispatch_post_execution(run_id):
         except Exception as e:
             print(f'[PostExec] analyze_run_text error for run {str(run_id)[:8]}: {e}')
 
-    print(f'[PostExec] Completed post-execution for run {str(run_id)[:8]}, types: {test_types}, ai_text={ai_text}, ai_visual={ai_visual}')
+    print(f'[PostExec] Completed post-execution for run {str(run_id)[:8]}, baselines={has_baselines}, ai_text={ai_text}, ai_visual={ai_visual}')
 
 
 def compare_baselines(run_id):
-    """Compare screenshots against approved baselines for visual_regression scripts."""
+    """Compare screenshots against approved baselines for scripts that have stored baselines."""
     with connection.cursor() as cursor:
-        # Get test results with screenshots for visual_regression scripts in this run
+        # Get test results with screenshots for scripts in this run
         cursor.execute("""
             SELECT tr.id, tr.item_id, tr.browser, tr.device_profile, tr.screenshot_path,
                    r.environment_id
