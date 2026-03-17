@@ -11,31 +11,40 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex gap-2">
-    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'pending' %}active{% endif %}">
+    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'pending' %}active{% endif %}">
       Pending
     </a>
-    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'issue' %}active{% endif %}">
+    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'issue' %}active{% endif %}">
       Issues
     </a>
-    <a href="?status=resolved&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'resolved' %}active{% endif %}">
+    <a href="?status=resolved&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'resolved' %}active{% endif %}">
       Resolved
     </a>
-    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'suppressed' %}active{% endif %}">
+    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'suppressed' %}active{% endif %}">
       Suppressed
     </a>
-    <a href="?status=all&source={{ source_filter }}&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}">
+    <a href="?status=all&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}">
       All
     </a>
     <span class="border-start mx-1"></span>
-    <a href="?status={{ status_filter }}&source=all&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if not source_filter or source_filter == 'all' %}active{% endif %}" title="All sources">
+    <a href="?status={{ status_filter }}&source=all&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if not source_filter or source_filter == 'all' %}active{% endif %}" title="All sources">
       All Types
     </a>
-    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if source_filter == 'ai_analysis' %}active{% endif %}">
+    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if source_filter == 'ai_analysis' %}active{% endif %}">
       <i class="bi bi-cpu"></i> AI
     </a>
-    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}" class="btn btn-sm filter-btn {% if source_filter == 'screenshot' %}active{% endif %}">
+    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if source_filter == 'screenshot' %}active{% endif %}">
       <i class="bi bi-camera"></i> Screenshots
     </a>
+    {% if assessments %}
+    <span class="border-start mx-1"></span>
+    <select class="form-select form-select-sm" style="width:auto;display:inline-block" onchange="window.location='?status={{ status_filter }}&source={{ source_filter }}&page_size={{ page_size }}&assessment='+this.value">
+      <option value="">All Assessments</option>
+      {% for a in assessments %}
+      <option value="{{ a.id }}" {% if assessment_filter == a.id %}selected{% endif %}>{{ a.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
 </div>
@@ -45,6 +54,7 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th>Assessment / Item</th>
           <th>Type</th>
           <th>Details</th>
           <th>Run</th>
@@ -57,6 +67,17 @@
       <tbody>
         {% for rv in reviews %}
         <tr id="review-{{ rv.id }}" class="review-row" style="cursor:pointer" onclick="toggleDetail('{{ rv.id }}')">
+          <td>
+            {% if rv.assessment_name %}
+            <span class="small">{{ rv.assessment_name }}</span>
+            {% endif %}
+            {% if rv.item_title or rv.resolved_item_id %}
+            <br><span class="text-muted" style="font-size:.72rem">{{ rv.item_title|default:rv.resolved_item_id }}</span>
+            {% endif %}
+            {% if not rv.assessment_name and not rv.item_title and not rv.resolved_item_id %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td>
             {% if rv.source_type == 'screenshot' %}
             <span class="badge bg-light text-dark"><i class="bi bi-camera me-1"></i>Screenshot</span>
@@ -71,9 +92,10 @@
             <br><span class="text-muted" style="font-size:.72rem">{{ rv.flag_notes }}</span>
             {% endif %}
             {% else %}
-            <span class="font-monospace small">{{ rv.item_id|default:"—" }}</span>
             {% if rv.analysis_screenshot_name %}
-            <br><span class="text-muted" style="font-size:.72rem">{{ rv.analysis_screenshot_name }}</span>
+            <span class="font-monospace small">{{ rv.analysis_screenshot_name }}</span>
+            {% else %}
+            <span class="font-monospace small">{{ rv.resolved_item_id|default:"—" }}</span>
             {% endif %}
             {% endif %}
           </td>
@@ -120,7 +142,7 @@
         </tr>
         <!-- Expandable detail row -->
         <tr id="detail-{{ rv.id }}" class="detail-row" style="display:none">
-          <td colspan="7" class="bg-light p-0">
+          <td colspan="8" class="bg-light p-0">
             <div class="p-3">
               <div class="row">
                 {% if rv.screenshot_path %}
@@ -194,7 +216,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
+        <tr><td colspan="8" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -205,13 +227,13 @@
   <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">«</a></li>
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}&assessment={{ assessment_filter }}">«</a></li>
     {% for pg in page_range %}
     {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">{{ pg }}</a></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}&assessment={{ assessment_filter }}">{{ pg }}</a></li>
     {% endif %}
     {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}">»</a></li>
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}&assessment={{ assessment_filter }}">»</a></li>
   </ul></nav>
   {% endif %}
 </div>

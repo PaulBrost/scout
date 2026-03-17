@@ -66,6 +66,12 @@ def index(request):
         params.append(f'%{search.lower()}%')
         params.append(f'%{search.lower()}%')
 
+    # Assessment/item filter
+    assessment_filter = request.GET.get('assessment', '')
+    if assessment_filter:
+        params.append(assessment_filter)
+        where.append('asmt.id = %s::uuid')
+
     # RBAC scoping
     env_ids = get_user_env_ids(request.user)
     if env_ids is not None:
@@ -76,6 +82,8 @@ def index(request):
                 'direction': 'asc' if direction == 'ASC' else 'desc',
                 'search': search, 'status_filter': status_filter,
                 'source_filter': source_filter,
+                'assessment_filter': '',
+                'assessments': [],
                 'total_pages': 1, 'start_item': 0, 'end_item': 0,
                 'page_range': [],
             })
@@ -86,12 +94,19 @@ def index(request):
 
     # Unified query: LEFT JOIN both ai_analyses and run_screenshots
     # Also join run_screenshots for AI analyses that reference a screenshot_name
+    # Join through to test_scripts → items → assessments for assessment/item info
     base_query = """
         FROM reviews rv
         LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
         LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
         LEFT JOIN run_screenshots aa_ss ON aa.run_id = aa_ss.run_id AND aa.screenshot_name = aa_ss.name
         LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
+        LEFT JOIN test_run_scripts trs ON COALESCE(rs.run_script_id, (
+            SELECT trs2.id FROM test_run_scripts trs2 WHERE trs2.run_id = tr.id LIMIT 1
+        )) = trs.id
+        LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+        LEFT JOIN items itm ON COALESCE(aa.item_id, ts.item_id) = itm.item_id
+        LEFT JOIN assessments asmt ON ts.assessment_id = asmt.id
     """
 
     with connection.cursor() as cursor:
@@ -112,9 +127,10 @@ def index(request):
                    rs.flagged, rs.flag_notes, rs.run_id AS ss_run_id,
                    COALESCE(aa.run_id, rs.run_id) AS run_id,
                    trs.script_path,
-                   e.name AS environment_name
+                   e.name AS environment_name,
+                   asmt.name AS assessment_name, asmt.id AS assessment_id,
+                   itm.title AS item_title, COALESCE(aa.item_id, ts.item_id) AS resolved_item_id
             {base_query}
-            LEFT JOIN test_run_scripts trs ON rs.run_script_id = trs.id
             LEFT JOIN environments e ON tr.environment_id = e.id
             {where_clause}
             ORDER BY {order_col} {direction}
@@ -130,6 +146,11 @@ def index(request):
             except Exception:
                 rv['issues'] = []
 
+    # Fetch assessments for the filter dropdown
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, name FROM assessments ORDER BY name")
+        assessments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+
     total_pages = max(1, (total + page_size - 1) // page_size)
     start_item = (page - 1) * page_size + 1 if total > 0 else 0
     end_item = min(page * page_size, total)
@@ -140,6 +161,8 @@ def index(request):
         'direction': 'asc' if direction == 'ASC' else 'desc',
         'search': search, 'status_filter': status_filter,
         'source_filter': source_filter,
+        'assessment_filter': assessment_filter,
+        'assessments': assessments,
         'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
     })

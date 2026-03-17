@@ -231,16 +231,65 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
   if (sel.content_frame) {
     try {
       const frame = itemPage.frameLocator(sel.content_frame).first();
-      // Verify the frame exists by checking for body
       await frame.locator('body').waitFor({ state: 'attached', timeout: 10000 });
       contentTarget = frame;
     } catch {
-      // Frame not found, use the page directly
       contentTarget = itemPage;
     }
   }
 
-  while (true) {
+  // Detect PIAAC portal pattern: item buttons (.itemButton) that load content into an iframe
+  // Wait for item buttons to appear (PIAAC portal loads them async after the popup opens)
+  let itemButtons = [];
+  try {
+    await itemPage.locator('button.itemButton').first().waitFor({ state: 'attached', timeout: 5000 });
+    itemButtons = await itemPage.locator('button.itemButton').all();
+  } catch {
+    // No item buttons — fall through to standard next-button navigation
+  }
+
+  if (itemButtons.length > 0) {
+    // PIAAC portal: click each item button and capture the screen
+    for (let i = 0; i < itemButtons.length; i++) {
+      const btn = itemButtons[i];
+      try {
+        const isVisible = await btn.isVisible({ timeout: 2000 });
+        if (!isVisible) continue;
+      } catch { continue; }
+
+      await btn.click();
+      await itemPage.waitForTimeout(2000);
+      await itemPage.waitForLoadState('networkidle');
+
+      // Wait for the iframe content to load
+      try {
+        const frame = itemPage.frameLocator('#itemPreview').first();
+        await frame.locator('body').waitFor({ state: 'attached', timeout: 10000 });
+      } catch { /* iframe may not exist for all buttons */ }
+
+      // Capture page text for AI analysis
+      try {
+        const text = await extractItemContent(itemPage);
+        if (text && text.trim()) {
+          console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `Screen ${screenIndex}`, text: text.trim() })}`);
+        }
+      } catch { /* best-effort */ }
+
+      await onScreen(itemPage, screenIndex);
+      screenIndex++;
+    }
+
+    return screenIndex - 1;
+  }
+
+  // Standard navigation: use configured selectors or common fallbacks (#nextButton, etc.)
+  const nextSelectors = [];
+  if (sel.next) nextSelectors.push(sel.next);
+  nextSelectors.push('#nextButton', 'button:has-text("Next")', '[aria-label="Next"]');
+
+  const maxScreens = 50;
+
+  while (screenIndex <= maxScreens) {
     await itemPage.waitForLoadState('networkidle');
 
     // Capture page text for AI analysis
@@ -253,12 +302,18 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
 
     await onScreen(itemPage, screenIndex);
 
-    // Try to advance: next button first, then finish/continue as end-of-item indicators
+    // Snapshot content before advancing to detect if the page actually changed
+    const contentBefore = await itemPage.evaluate(() => {
+      const el = document.getElementById('item') || document.getElementById('theItem') || document.body;
+      return el.innerHTML.substring(0, 1000);
+    }).catch(() => '');
+
+    // Try to advance using next-button selectors
     let advanced = false;
 
-    if (sel.next) {
+    for (const nextSel of nextSelectors) {
       try {
-        const nextBtn = contentTarget.locator(sel.next);
+        const nextBtn = contentTarget.locator(nextSel).first();
         const isVisible = await nextBtn.isVisible({ timeout: 3000 });
         if (isVisible) {
           const isDisabled = await nextBtn.isDisabled().catch(() => false);
@@ -266,16 +321,16 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
             await nextBtn.click();
             await itemPage.waitForTimeout(1000);
             advanced = true;
+            break;
           }
         }
       } catch {
-        // Next button not found or not clickable
+        // Selector not found or not clickable
       }
     }
 
     if (!advanced) {
-      // Check for finish/continue buttons — these indicate end of item
-      // but we may want to capture the screen after clicking them
+      // Check for finish/continue buttons — end-of-item indicators
       for (const btnSel of [sel.finish, sel.continue_btn]) {
         if (!btnSel) continue;
         try {
@@ -297,10 +352,19 @@ async function navigateItemScreens(itemPage, envConfig, onScreen) {
               await onScreen(itemPage, screenIndex);
             }
           }
-        } catch {
-          // Button not found
-        }
+        } catch { /* button not found */ }
       }
+      break;
+    }
+
+    // Check if the page actually changed after clicking next
+    await itemPage.waitForTimeout(500);
+    const contentAfter = await itemPage.evaluate(() => {
+      const el = document.getElementById('item') || document.getElementById('theItem') || document.body;
+      return el.innerHTML.substring(0, 1000);
+    }).catch(() => '');
+
+    if (contentBefore && contentAfter && contentBefore === contentAfter) {
       break;
     }
 
