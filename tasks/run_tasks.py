@@ -33,6 +33,123 @@ def execute_suite_run(run_id):
     _run_post_execution(run_id)
 
 
+def execute_scheduled_suite(suite_id):
+    """django-q scheduled task: create a run from a suite and execute it."""
+    suite_id = str(suite_id)
+
+    with connection.cursor() as cursor:
+        # Fetch suite
+        cursor.execute(
+            'SELECT id, name, environment_id, schedule, created_by_id FROM test_suites WHERE id = %s',
+            [suite_id]
+        )
+        row = cursor.fetchone()
+    if not row:
+        print(f'[Scheduled] Suite {suite_id[:8]} not found, skipping')
+        return
+
+    _sid, suite_name, environment_id, schedule, created_by_id = row
+    schedule = schedule or {}
+    if isinstance(schedule, str):
+        try:
+            schedule = json.loads(schedule)
+        except Exception:
+            schedule = {}
+
+    # Check if schedule is still enabled
+    if not schedule.get('enabled'):
+        print(f'[Scheduled] Suite {suite_id[:8]} schedule disabled, skipping')
+        return
+
+    # Check end_date
+    end_date = schedule.get('end_date')
+    if end_date:
+        from datetime import date
+        try:
+            if date.fromisoformat(end_date) < date.today():
+                print(f'[Scheduled] Suite {suite_id[:8]} schedule expired ({end_date}), disabling')
+                schedule['enabled'] = False
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        'UPDATE test_suites SET schedule = %s::jsonb WHERE id = %s',
+                        [json.dumps(schedule), suite_id]
+                    )
+                    # Remove the django-q schedule
+                    dq_id = schedule.get('dq_schedule_id')
+                    if dq_id:
+                        try:
+                            from django_q.models import Schedule as DQSchedule
+                            DQSchedule.objects.filter(id=dq_id).delete()
+                        except Exception:
+                            pass
+                return
+        except (ValueError, TypeError):
+            pass
+
+    # Fetch suite scripts
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT script_path, browser, viewport FROM test_suite_scripts WHERE suite_id = %s ORDER BY added_at',
+            [suite_id]
+        )
+        suite_entries = [{'script_path': r[0], 'browser': r[1] or 'chromium', 'viewport': r[2] or '1920x1080'} for r in cursor.fetchall()]
+
+    if not suite_entries:
+        print(f'[Scheduled] Suite {suite_id[:8]} has no scripts, skipping')
+        return
+
+    # Merge ai_config from all scripts
+    ai_config = {'text_analysis': False, 'visual_analysis': False}
+    script_paths_list = [e['script_path'] for e in suite_entries]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT ai_config FROM test_scripts WHERE script_path = ANY(%s) AND ai_config IS NOT NULL',
+            [script_paths_list]
+        )
+        for (cfg_row,) in cursor.fetchall():
+            cfg = cfg_row or {}
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            if cfg.get('text_analysis'):
+                ai_config['text_analysis'] = True
+            if cfg.get('visual_analysis'):
+                ai_config['visual_analysis'] = True
+
+    run_config = json.dumps({'ai_config': ai_config})
+
+    # Create run
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO test_runs (id, status, trigger_type, suite_id, environment_id, config, notes, queued_at, created_by_id)
+               VALUES (gen_random_uuid(), 'running', 'scheduled', %s, %s, %s::jsonb, %s, now(), %s) RETURNING id""",
+            [suite_id, str(environment_id) if environment_id else None, run_config,
+             f"Scheduled: {suite_name}", created_by_id]
+        )
+        run_id = cursor.fetchone()[0]
+        for entry in suite_entries:
+            cursor.execute(
+                """INSERT INTO test_run_scripts (id, run_id, script_path, browser, viewport, status)
+                   VALUES (gen_random_uuid(), %s, %s, %s, %s, 'queued')""",
+                [str(run_id), entry['script_path'], entry['browser'], entry['viewport']]
+            )
+
+    print(f'[Scheduled] Created run {str(run_id)[:8]} for suite {suite_id[:8]} ({suite_name})')
+
+    # Execute
+    try:
+        execute_suite_run(str(run_id))
+    except Exception as e:
+        print(f'[Scheduled] Execution error for run {str(run_id)[:8]}: {e}')
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE test_runs SET status='failed', completed_at=now() WHERE id=%s",
+                [str(run_id)]
+            )
+
+
 def execute_single_script(run_id, script_path):
     """django-q task: ad-hoc single script run."""
     from executor.runner import execute_run

@@ -40,7 +40,7 @@
         {% for suite in suites %}
         <tr>
           <td>
-            <a href="/suites/{{ suite.id }}/">{{ suite.name }}</a>
+            <a href="/suites/{{ suite.id }}/">{{ suite.name }}</a>{% if suite.schedule_enabled %} <i class="bi bi-clock text-primary" title="Scheduled"></i>{% endif %}
             {% if suite.description %}<div class="text-muted small">{{ suite.description|truncatechars:60 }}</div>{% endif %}
           </td>
           <td>{{ suite.environment_name|default:"—" }}</td>

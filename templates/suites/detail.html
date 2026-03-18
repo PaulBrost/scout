@@ -84,7 +84,113 @@
   </div>
 </div>
 
-<!-- 3. Save / Create -->
+{% if suite %}
+<!-- 3. Schedule -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+    Schedule
+    <div class="form-check form-switch mb-0">
+      <input type="checkbox" class="form-check-input" id="scheduleEnabled"
+        {% if schedule.enabled %}checked{% endif %}
+        onchange="onScheduleToggle(this.checked)">
+      <label class="form-check-label small" for="scheduleEnabled">Enabled</label>
+    </div>
+  </div>
+  <div class="card-body" id="scheduleBody" {% if not schedule.enabled %}style="display:none"{% endif %}>
+    <div class="row g-3">
+      <!-- Pattern -->
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Recurrence</label>
+        <select id="schedPattern" class="form-select form-select-sm" onchange="onPatternChange()">
+          <option value="once">Once</option>
+          <option value="hourly">Every X Hours</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+
+      <!-- Time -->
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Time</label>
+        <input type="time" id="schedTime" class="form-control form-control-sm" value="{{ schedule.time|default:'09:00' }}">
+      </div>
+
+      <!-- Timezone -->
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Timezone</label>
+        <input type="text" id="schedTimezone" class="form-control form-control-sm" value="{{ schedule.timezone|default:user_timezone }}" readonly>
+        <div class="form-text">From your user settings</div>
+      </div>
+
+      <!-- Once: date picker -->
+      <div class="col-md-4 sched-field" id="schedOnceWrap" style="display:none">
+        <label class="form-label small fw-semibold">Date</label>
+        <input type="date" id="schedOnceDate" class="form-control form-control-sm" value="{{ schedule.once_date|default:'' }}">
+      </div>
+
+      <!-- Hourly: interval -->
+      <div class="col-md-4 sched-field" id="schedHourlyWrap" style="display:none">
+        <label class="form-label small fw-semibold">Every</label>
+        <select id="schedIntervalHours" class="form-select form-select-sm">
+          <option value="1">1 hour</option>
+          <option value="2">2 hours</option>
+          <option value="4">4 hours</option>
+          <option value="6">6 hours</option>
+          <option value="8">8 hours</option>
+          <option value="12">12 hours</option>
+        </select>
+      </div>
+
+      <!-- Weekly: day checkboxes -->
+      <div class="col-12 sched-field" id="schedWeeklyWrap" style="display:none">
+        <label class="form-label small fw-semibold">Days</label>
+        <div class="d-flex gap-2">
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="0" autocomplete="off"> Mon</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="1" autocomplete="off"> Tue</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="2" autocomplete="off"> Wed</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="3" autocomplete="off"> Thu</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="4" autocomplete="off"> Fri</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="5" autocomplete="off"> Sat</label>
+          <label class="btn btn-sm btn-outline-secondary sched-day-btn"><input type="checkbox" class="sched-day" value="6" autocomplete="off"> Sun</label>
+        </div>
+      </div>
+
+      <!-- Monthly: day of month -->
+      <div class="col-md-4 sched-field" id="schedMonthlyWrap" style="display:none">
+        <label class="form-label small fw-semibold">Day of Month</label>
+        <select id="schedDayOfMonth" class="form-select form-select-sm">
+          {% for d in "0123456789012345678901234567" %}<option value="{{ forloop.counter }}">{{ forloop.counter }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <!-- End date -->
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">End Date <span class="text-muted fw-normal">(optional)</span></label>
+        <input type="date" id="schedEndDate" class="form-control form-control-sm" value="{{ schedule.end_date|default:'' }}">
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="mt-3 p-2 rounded small" style="background:#f0f4ff" id="schedSummaryBox">
+      <i class="bi bi-clock me-1 text-primary"></i>
+      <span id="schedSummary">—</span>
+      <span class="ms-2 text-muted" id="schedNextRun"></span>
+    </div>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+    <span id="schedStatus" class="small text-muted"></span>
+    <div class="d-flex gap-2">
+      {% if schedule.enabled %}
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteSchedule()">Remove Schedule</button>
+      {% endif %}
+      <button class="btn btn-sm btn-primary" onclick="saveSchedule()">Save Schedule</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- {% if suite %}4{% else %}3{% endif %}. Save / Create -->
 <div class="d-flex align-items-center gap-3 mb-4">
   <button class="btn btn-primary btn-lg" onclick="saveSuite()">
     <i class="bi bi-save me-1"></i> {% if suite %}Save Changes{% else %}Create Suite{% endif %}
@@ -457,5 +563,162 @@ function getCsrf() {
       });
   }
 })();
+
+// ── Schedule Management ──
+{% if suite %}
+var schedData = {{ schedule_json|safe }};
+var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function initScheduleUI() {
+  var pattern = schedData.pattern || 'daily';
+  document.getElementById('schedPattern').value = pattern;
+  if (schedData.time) document.getElementById('schedTime').value = schedData.time;
+  if (schedData.once_date) document.getElementById('schedOnceDate').value = schedData.once_date;
+  if (schedData.interval_hours) document.getElementById('schedIntervalHours').value = schedData.interval_hours;
+  if (schedData.day_of_month) document.getElementById('schedDayOfMonth').value = schedData.day_of_month;
+  if (schedData.end_date) document.getElementById('schedEndDate').value = schedData.end_date;
+  // Weekly days
+  if (schedData.days_of_week) {
+    var checks = document.querySelectorAll('.sched-day');
+    checks.forEach(function(cb) {
+      cb.checked = schedData.days_of_week.indexOf(parseInt(cb.value)) !== -1;
+      updateDayBtnStyle(cb);
+    });
+  }
+  onPatternChange();
+  updateScheduleSummary();
+}
+
+function updateDayBtnStyle(cb) {
+  var label = cb.parentElement;
+  if (cb.checked) {
+    label.classList.remove('btn-outline-secondary');
+    label.classList.add('btn-primary');
+  } else {
+    label.classList.remove('btn-primary');
+    label.classList.add('btn-outline-secondary');
+  }
+}
+
+// Toggle day button styling on click
+document.querySelectorAll('.sched-day').forEach(function(cb) {
+  cb.addEventListener('change', function() {
+    updateDayBtnStyle(cb);
+    updateScheduleSummary();
+  });
+});
+
+function onScheduleToggle(enabled) {
+  document.getElementById('scheduleBody').style.display = enabled ? '' : 'none';
+}
+
+function onPatternChange() {
+  var pattern = document.getElementById('schedPattern').value;
+  document.querySelectorAll('.sched-field').forEach(function(el) { el.style.display = 'none'; });
+  if (pattern === 'once') document.getElementById('schedOnceWrap').style.display = '';
+  if (pattern === 'hourly') document.getElementById('schedHourlyWrap').style.display = '';
+  if (pattern === 'weekly') document.getElementById('schedWeeklyWrap').style.display = '';
+  if (pattern === 'monthly') document.getElementById('schedMonthlyWrap').style.display = '';
+  updateScheduleSummary();
+}
+
+function getScheduleData() {
+  var pattern = document.getElementById('schedPattern').value;
+  var data = {
+    enabled: document.getElementById('scheduleEnabled').checked,
+    pattern: pattern,
+    time: document.getElementById('schedTime').value || '09:00',
+    timezone: document.getElementById('schedTimezone').value,
+    end_date: document.getElementById('schedEndDate').value || null,
+  };
+  if (pattern === 'once') data.once_date = document.getElementById('schedOnceDate').value;
+  if (pattern === 'hourly') data.interval_hours = parseInt(document.getElementById('schedIntervalHours').value);
+  if (pattern === 'weekly') {
+    var days = [];
+    document.querySelectorAll('.sched-day:checked').forEach(function(cb) { days.push(parseInt(cb.value)); });
+    data.days_of_week = days;
+  }
+  if (pattern === 'monthly') data.day_of_month = parseInt(document.getElementById('schedDayOfMonth').value);
+  return data;
+}
+
+function updateScheduleSummary() {
+  var d = getScheduleData();
+  var tz = d.timezone;
+  var time = d.time || '09:00';
+  var summary = '';
+  if (d.pattern === 'once') {
+    summary = 'Once on ' + (d.once_date || 'TBD') + ' at ' + time;
+  } else if (d.pattern === 'hourly') {
+    summary = 'Every ' + (d.interval_hours || 4) + ' hours starting at ' + time;
+  } else if (d.pattern === 'daily') {
+    summary = 'Daily at ' + time;
+  } else if (d.pattern === 'weekly') {
+    var dayLabels = (d.days_of_week || []).sort().map(function(i) { return DAY_NAMES[i]; });
+    summary = dayLabels.length ? 'Every ' + dayLabels.join(', ') + ' at ' + time : 'Weekly (select days) at ' + time;
+  } else if (d.pattern === 'monthly') {
+    summary = 'Monthly on day ' + (d.day_of_month || 1) + ' at ' + time;
+  }
+  if (d.end_date) summary += ' until ' + d.end_date;
+  document.getElementById('schedSummary').textContent = summary;
+}
+
+// Update summary on any input change
+['schedPattern','schedTime','schedOnceDate','schedIntervalHours','schedDayOfMonth','schedEndDate'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', updateScheduleSummary);
+});
+
+function saveSchedule() {
+  var data = getScheduleData();
+  if (data.pattern === 'weekly' && (!data.days_of_week || !data.days_of_week.length)) {
+    alert('Please select at least one day of the week.');
+    return;
+  }
+  if (data.pattern === 'once' && !data.once_date) {
+    alert('Please select a date.');
+    return;
+  }
+  var status = document.getElementById('schedStatus');
+  status.textContent = 'Saving...';
+  status.className = 'small text-muted';
+  fetch('/suites/{{ suite.id }}/schedule/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify(data)
+  }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      if (res.ok) {
+        status.textContent = 'Schedule saved.';
+        status.className = 'small text-success';
+        if (res.data.next_run) {
+          var dt = new Date(res.data.next_run);
+          document.getElementById('schedNextRun').textContent = 'Next run: ' + dt.toLocaleString();
+        }
+      } else {
+        status.textContent = res.data.error || 'Save failed.';
+        status.className = 'small text-danger';
+      }
+    }).catch(function() {
+      status.textContent = 'Network error.';
+      status.className = 'small text-danger';
+    });
+}
+
+function deleteSchedule() {
+  if (!confirm('Remove the schedule for this suite?')) return;
+  fetch('/suites/{{ suite.id }}/schedule/delete/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: '{}'
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) window.location.reload();
+      else alert('Error: ' + (d.error || 'Unknown'));
+    });
+}
+
+initScheduleUI();
+{% endif %}
 </script>
 {% endblock %}

@@ -1,10 +1,13 @@
 import json
+from datetime import datetime, date, time, timedelta
+import zoneinfo
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
+from django.utils import timezone
 from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record
 
 
@@ -80,7 +83,8 @@ def index(request):
             SELECT s.*,
                    (SELECT COUNT(*) FROM test_suite_scripts ss WHERE ss.suite_id = s.id) AS script_count,
                    tr.started_at AS last_run_at, tr.status AS last_run_status,
-                   e.name AS environment_name
+                   e.name AS environment_name,
+                   COALESCE((s.schedule->>'enabled')::boolean, false) AS schedule_enabled
             FROM test_suites s
             LEFT JOIN environments e ON s.environment_id = e.id
             LEFT JOIN LATERAL (
@@ -194,10 +198,28 @@ def suite_detail(request, suite_id):
     else:
         environments = list(Environment.objects.filter(id__in=env_ids).values('id', 'name').order_by('name'))
 
+    # Parse schedule for template
+    schedule = suite.get('schedule') or {}
+    if isinstance(schedule, str):
+        try:
+            schedule = json.loads(schedule)
+        except Exception:
+            schedule = {}
+
+    # Get user timezone for default
+    user_tz = 'America/New_York'
+    try:
+        user_tz = request.user.settings.timezone
+    except Exception:
+        pass
+
     return render(request, 'suites/detail.html', {
         'suite': suite,
         'suite_scripts_json': json.dumps(suite_scripts, default=str),
         'environments': environments,
+        'schedule': schedule,
+        'schedule_json': json.dumps(schedule, default=str),
+        'user_timezone': user_tz,
     })
 
 
@@ -286,12 +308,27 @@ def suite_update(request, suite_id):
 def suite_delete(request, suite_id):
     try:
         with connection.cursor() as cursor:
-            cursor.execute('SELECT created_by_id FROM test_suites WHERE id = %s', [suite_id])
+            cursor.execute('SELECT created_by_id, schedule FROM test_suites WHERE id = %s', [suite_id])
             row = cursor.fetchone()
         if not row:
             return JsonResponse({'error': 'Suite not found'}, status=404)
         if not can_user_access_record(request.user, row[0]):
             return JsonResponse({'error': 'Access denied'}, status=403)
+
+        # Clean up django-q schedule if present
+        schedule = row[1] or {}
+        if isinstance(schedule, str):
+            try:
+                schedule = json.loads(schedule)
+            except Exception:
+                schedule = {}
+        dq_id = schedule.get('dq_schedule_id')
+        if dq_id:
+            try:
+                from django_q.models import Schedule as DQSchedule
+                DQSchedule.objects.filter(id=dq_id).delete()
+            except Exception:
+                pass
 
         with connection.cursor() as cursor:
             cursor.execute('DELETE FROM test_suites WHERE id = %s', [suite_id])
@@ -570,3 +607,267 @@ def api_items_by_assessment(request):
         cols = [c[0] for c in cursor.description]
         items = [dict(zip(cols, row)) for row in cursor.fetchall()]
     return JsonResponse({'items': items}, json_dumps_params={'default': str})
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Suite Scheduling
+# ═══════════════════════════════════════════════════════════════════
+
+DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+
+def _compute_next_run(schedule_data):
+    """Compute the next run datetime (timezone-aware) from schedule config."""
+    tz_name = schedule_data.get('timezone', 'America/New_York')
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = zoneinfo.ZoneInfo('America/New_York')
+
+    now = datetime.now(tz)
+    time_str = schedule_data.get('time', '09:00')
+    try:
+        hh, mm = [int(x) for x in time_str.split(':')]
+    except Exception:
+        hh, mm = 9, 0
+    run_time = time(hh, mm)
+    pattern = schedule_data.get('pattern', 'daily')
+
+    if pattern == 'once':
+        once_date = schedule_data.get('once_date')
+        if once_date:
+            try:
+                d = date.fromisoformat(once_date)
+                return datetime.combine(d, run_time, tzinfo=tz)
+            except Exception:
+                pass
+        return datetime.combine(now.date(), run_time, tzinfo=tz)
+
+    if pattern == 'hourly':
+        interval = int(schedule_data.get('interval_hours', 4))
+        # Next occurrence: round up to next interval boundary from start of day
+        candidate = datetime.combine(now.date(), run_time, tzinfo=tz)
+        while candidate <= now:
+            candidate += timedelta(hours=interval)
+        return candidate
+
+    if pattern == 'daily':
+        candidate = datetime.combine(now.date(), run_time, tzinfo=tz)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    if pattern == 'weekly':
+        days = schedule_data.get('days_of_week', [0])  # 0=Mon
+        if not days:
+            days = [0]
+        # Find next matching weekday
+        for offset in range(8):
+            candidate = datetime.combine(now.date() + timedelta(days=offset), run_time, tzinfo=tz)
+            if candidate > now and candidate.weekday() in days:
+                return candidate
+        # Fallback
+        return datetime.combine(now.date() + timedelta(days=1), run_time, tzinfo=tz)
+
+    if pattern == 'monthly':
+        day_of_month = int(schedule_data.get('day_of_month', 1))
+        day_of_month = max(1, min(28, day_of_month))
+        try:
+            candidate = datetime.combine(
+                now.date().replace(day=day_of_month), run_time, tzinfo=tz
+            )
+        except ValueError:
+            candidate = datetime.combine(now.date().replace(day=1), run_time, tzinfo=tz)
+        if candidate <= now:
+            # Next month
+            if now.month == 12:
+                candidate = candidate.replace(year=now.year + 1, month=1)
+            else:
+                candidate = candidate.replace(month=now.month + 1)
+        return candidate
+
+    return datetime.combine(now.date() + timedelta(days=1), run_time, tzinfo=tz)
+
+
+def _build_cron_expression(schedule_data):
+    """Build a cron expression for weekly schedules."""
+    time_str = schedule_data.get('time', '09:00')
+    try:
+        hh, mm = [int(x) for x in time_str.split(':')]
+    except Exception:
+        hh, mm = 9, 0
+    days = schedule_data.get('days_of_week', [0])
+    # Convert Python weekday (0=Mon) to cron weekday (1=Mon, 7=Sun)
+    cron_days = ','.join(str(d + 1) for d in sorted(days))
+    return f'{mm} {hh} * * {cron_days}'
+
+
+def _sync_dq_schedule(suite_id, schedule_data):
+    """Create or update the django-q Schedule record. Returns the schedule ID."""
+    from django_q.models import Schedule as DQSchedule
+
+    name = f'suite_schedule_{suite_id}'
+    func = 'tasks.run_tasks.execute_scheduled_suite'
+    args = f"('{suite_id}',)"
+    pattern = schedule_data.get('pattern', 'daily')
+    next_run = _compute_next_run(schedule_data)
+
+    # Check end_date for repeats
+    end_date = schedule_data.get('end_date')
+    repeats = -1  # infinite
+
+    defaults = {
+        'func': func,
+        'args': args,
+        'next_run': next_run,
+        'repeats': repeats,
+    }
+
+    if pattern == 'once':
+        defaults['schedule_type'] = DQSchedule.ONCE
+        defaults['repeats'] = 1
+    elif pattern == 'hourly':
+        defaults['schedule_type'] = DQSchedule.MINUTES
+        defaults['minutes'] = int(schedule_data.get('interval_hours', 4)) * 60
+    elif pattern == 'daily':
+        defaults['schedule_type'] = DQSchedule.DAILY
+    elif pattern == 'weekly':
+        defaults['schedule_type'] = DQSchedule.CRON
+        defaults['cron'] = _build_cron_expression(schedule_data)
+    elif pattern == 'monthly':
+        defaults['schedule_type'] = DQSchedule.MONTHLY
+    else:
+        defaults['schedule_type'] = DQSchedule.DAILY
+
+    obj, _created = DQSchedule.objects.update_or_create(name=name, defaults=defaults)
+    return obj.id
+
+
+def _build_schedule_summary(schedule_data):
+    """Build a human-readable schedule summary."""
+    pattern = schedule_data.get('pattern', 'daily')
+    time_str = schedule_data.get('time', '09:00')
+    tz_name = schedule_data.get('timezone', 'America/New_York')
+    # Short tz display
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+        tz_abbr = datetime.now(tz).strftime('%Z')
+    except Exception:
+        tz_abbr = tz_name
+
+    if pattern == 'once':
+        once_date = schedule_data.get('once_date', 'TBD')
+        return f'Once on {once_date} at {time_str} {tz_abbr}'
+    if pattern == 'hourly':
+        hours = schedule_data.get('interval_hours', 4)
+        return f'Every {hours} hours starting at {time_str} {tz_abbr}'
+    if pattern == 'daily':
+        return f'Daily at {time_str} {tz_abbr}'
+    if pattern == 'weekly':
+        days = schedule_data.get('days_of_week', [])
+        day_labels = [DAY_NAMES[d] for d in sorted(days) if d < 7]
+        return f'Every {", ".join(day_labels)} at {time_str} {tz_abbr}'
+    if pattern == 'monthly':
+        dom = schedule_data.get('day_of_month', 1)
+        return f'Monthly on day {dom} at {time_str} {tz_abbr}'
+    return 'Unknown schedule'
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def save_schedule(request, suite_id):
+    """Save or update a suite's schedule."""
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    # Verify ownership
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT created_by_id FROM test_suites WHERE id = %s', [suite_id])
+        row = cursor.fetchone()
+    if not row:
+        return JsonResponse({'error': 'Suite not found'}, status=404)
+    if not can_user_access_record(request.user, row[0]):
+        return JsonResponse({'error': 'Access denied'}, status=403)
+
+    pattern = data.get('pattern', 'daily')
+    if pattern not in ('once', 'hourly', 'daily', 'weekly', 'monthly'):
+        return JsonResponse({'error': 'Invalid pattern'}, status=400)
+
+    schedule_data = {
+        'enabled': bool(data.get('enabled', True)),
+        'pattern': pattern,
+        'time': data.get('time', '09:00'),
+        'timezone': data.get('timezone', 'America/New_York'),
+        'interval_hours': data.get('interval_hours'),
+        'days_of_week': data.get('days_of_week', []),
+        'day_of_month': data.get('day_of_month'),
+        'once_date': data.get('once_date'),
+        'end_date': data.get('end_date') or None,
+        'created_by_id': request.user.id,
+    }
+
+    if schedule_data['enabled']:
+        dq_id = _sync_dq_schedule(str(suite_id), schedule_data)
+        schedule_data['dq_schedule_id'] = dq_id
+    else:
+        # Disable: remove django-q schedule
+        from django_q.models import Schedule as DQSchedule
+        DQSchedule.objects.filter(name=f'suite_schedule_{suite_id}').delete()
+        schedule_data['dq_schedule_id'] = None
+
+    next_run = _compute_next_run(schedule_data)
+    schedule_data['next_run'] = next_run.isoformat()
+    summary = _build_schedule_summary(schedule_data)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'UPDATE test_suites SET schedule = %s::jsonb, updated_at = now() WHERE id = %s',
+            [json.dumps(schedule_data, default=str), str(suite_id)]
+        )
+
+    return JsonResponse({
+        'ok': True,
+        'schedule': schedule_data,
+        'summary': summary,
+        'next_run': next_run.isoformat(),
+    }, json_dumps_params={'default': str})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def delete_schedule(request, suite_id):
+    """Remove a suite's schedule."""
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT created_by_id, schedule FROM test_suites WHERE id = %s', [suite_id])
+        row = cursor.fetchone()
+    if not row:
+        return JsonResponse({'error': 'Suite not found'}, status=404)
+    if not can_user_access_record(request.user, row[0]):
+        return JsonResponse({'error': 'Access denied'}, status=403)
+
+    # Remove django-q schedule
+    schedule = row[1] or {}
+    if isinstance(schedule, str):
+        try:
+            schedule = json.loads(schedule)
+        except Exception:
+            schedule = {}
+    dq_id = schedule.get('dq_schedule_id')
+    if dq_id:
+        try:
+            from django_q.models import Schedule as DQSchedule
+            DQSchedule.objects.filter(id=dq_id).delete()
+        except Exception:
+            pass
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'UPDATE test_suites SET schedule = NULL, updated_at = now() WHERE id = %s',
+            [str(suite_id)]
+        )
+
+    return JsonResponse({'ok': True})
