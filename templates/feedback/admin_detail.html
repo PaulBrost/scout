@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load core_filters %}
+{% block title %}Feedback Detail{% endblock %}
+{% block page_title %}Feedback{% endblock %}
+
+{% block topbar_actions %}
+<a href="/feedback/admin/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+<button class="btn btn-sm btn-outline-danger" onclick="deleteFeedback()"><i class="bi bi-trash"></i> Delete</button>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        {% if item.feedback_type == 'issue' %}
+        <span class="badge bg-danger">Issue</span>
+        {% elif item.feedback_type == 'suggestion' %}
+        <span class="badge bg-info text-dark">Suggestion</span>
+        {% else %}
+        <span class="badge bg-secondary">Feedback</span>
+        {% endif %}
+        {{ item.subject }}
+      </div>
+      <div class="card-body">
+        <div style="white-space:pre-wrap" class="small">{{ item.message }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Details</div>
+      <div class="card-body small">
+        <div class="mb-2">
+          <span class="text-muted">Submitted by:</span><br>
+          <strong>{{ item.username|default:"Unknown" }}</strong>
+          {% if item.first_name or item.last_name %}
+          <span class="text-muted">( {{ item.first_name }} {{ item.last_name }} )</span>
+          {% endif %}
+          {% if item.email %}<div class="text-muted">{{ item.email }}</div>{% endif %}
+        </div>
+        <div class="mb-2">
+          <span class="text-muted">Submitted:</span><br>
+          {{ item.created_at|shorttime:user_timezone }}
+        </div>
+        {% if item.page_url %}
+        <div class="mb-2">
+          <span class="text-muted">Page:</span><br>
+          <a href="{{ item.page_url }}">{{ item.page_url }}</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+function deleteFeedback() {
+  if (!confirm('Delete this feedback entry?')) return;
+  fetch('/feedback/admin/delete/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ids: ['{{ item.id }}']})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) window.location.href = '/feedback/admin/';
+    else alert('Error: ' + (d.error || 'Unknown'));
+  });
+}
+</script>
+{% endblock %}

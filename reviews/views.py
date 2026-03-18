@@ -70,7 +70,7 @@ def index(request):
     assessment_filter = request.GET.get('assessment', '')
     if assessment_filter:
         params.append(assessment_filter)
-        where.append('asmt.id = %s::uuid')
+        where.append('asmt.id = %s')
 
     # RBAC scoping
     env_ids = get_user_env_ids(request.user)

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Feedback{% endblock %}
+{% block page_title %}Feedback{% endblock %}
+
+{% block content %}
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  Thank you! Your feedback has been submitted.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Submit Feedback</div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">Report an issue, suggest a change, or share general feedback about SCOUT.</p>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Type</label>
+          <select id="fbType" class="form-select form-select-sm" style="max-width:250px">
+            <option value="issue">Report an Issue</option>
+            <option value="suggestion">Suggest a Change</option>
+            <option value="feedback" selected>General Feedback</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Subject *</label>
+          <input type="text" id="fbSubject" class="form-control form-control-sm" placeholder="Brief summary of your feedback" maxlength="200">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Message *</label>
+          <textarea id="fbMessage" class="form-control form-control-sm" rows="6" placeholder="Describe the issue, suggestion, or feedback in detail..."></textarea>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Page URL <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" id="fbPageUrl" class="form-control form-control-sm" placeholder="e.g. /runs/abc123/" value="">
+          <div class="form-text">If this is about a specific page, paste the URL here.</div>
+        </div>
+
+        <div class="d-flex align-items-center">
+          <button class="btn btn-primary btn-sm" id="fbSubmitBtn" onclick="submitFeedback()">
+            <i class="bi bi-send me-1"></i> Submit Feedback
+          </button>
+          <span id="fbStatus" class="small ms-2"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">Tips</div>
+      <div class="card-body small text-muted">
+        <ul class="mb-0 ps-3">
+          <li><strong>Issues:</strong> Describe what happened, what you expected, and the steps to reproduce it.</li>
+          <li class="mt-2"><strong>Suggestions:</strong> Explain what you'd like to see changed and why it would be helpful.</li>
+          <li class="mt-2"><strong>Feedback:</strong> Share anything else — what's working well, what's confusing, or ideas for improvement.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+
+function submitFeedback() {
+  var subject = document.getElementById('fbSubject').value.trim();
+  var message = document.getElementById('fbMessage').value.trim();
+  if (!subject) { alert('Please enter a subject.'); return; }
+  if (!message) { alert('Please enter a message.'); return; }
+
+  var btn = document.getElementById('fbSubmitBtn');
+  var status = document.getElementById('fbStatus');
+  btn.disabled = true;
+  status.textContent = 'Submitting...';
+  status.className = 'small ms-2 text-muted';
+
+  fetch('/feedback/api/submit/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({
+      type: document.getElementById('fbType').value,
+      subject: subject,
+      message: message,
+      page_url: document.getElementById('fbPageUrl').value.trim() || null,
+    })
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+  .then(function(res) {
+    btn.disabled = false;
+    if (res.ok) {
+      window.location.href = '/feedback/?success=1';
+    } else {
+      status.textContent = res.data.error || 'Submission failed.';
+      status.className = 'small ms-2 text-danger';
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    status.textContent = 'Network error.';
+    status.className = 'small ms-2 text-danger';
+  });
+}
+</script>
+{% endblock %}

@@ -106,13 +106,17 @@ def builder_view(request):
         except Exception:
             pass
 
+    # Query params for new scripts (from the "New Script" modal)
+    qp_item_id = request.GET.get('item', '')
+    qp_description = request.GET.get('description', '')
+
     # Load assessment info
     assessment_id = request.GET.get('assessment') or (script_meta and script_meta.get('assessment_id'))
     if assessment_id:
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """SELECT a.id, a.name, a.subject, a.grade, e.name AS env_name
+                    """SELECT a.id, a.name, a.subject, a.grade, a.environment_id, e.name AS env_name
                        FROM assessments a LEFT JOIN environments e ON a.environment_id = e.id
                        WHERE a.id = %s""",
                     [assessment_id]
@@ -283,6 +287,8 @@ def builder_view(request):
         'eligible_datasets': eligible_datasets,
         'linked_datasets': [ds for ds in eligible_datasets if ds.get('is_linked')],
         'script_types': script_types,
+        'qp_item_id': qp_item_id,
+        'qp_description': qp_description,
     })
 
 
@@ -489,6 +495,9 @@ def api_save(request):
         data = json.loads(request.body)
         code = data.get('code')
         environment_id = data.get('environment_id')
+        assessment_id = data.get('assessment_id') or None
+        item_id = data.get('item_id') or None
+        description = data.get('description') or None
         if not code:
             return JsonResponse({'error': 'No code to save'}, status=400)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
@@ -497,23 +506,23 @@ def api_save(request):
         code = fix_helper_paths(code, filename)
         filepath = tests_dir / filename
         filepath.write_text(code, encoding='utf-8')
-        # Register in DB with environment
+        # Register in DB with environment, assessment, item, description
         rel_path = filename
         with connection.cursor() as cursor:
-            if environment_id:
-                cursor.execute(
-                    """INSERT INTO test_scripts (script_path, environment_id, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
-                       VALUES (%s, %s::uuid, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
-                       ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [rel_path, environment_id, request.user.id]
-                )
-            else:
-                cursor.execute(
-                    """INSERT INTO test_scripts (script_path, test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
-                       VALUES (%s, 'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
-                       ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
-                    [rel_path, request.user.id]
-                )
+            cursor.execute(
+                """INSERT INTO test_scripts
+                       (script_path, environment_id, assessment_id, item_id, description,
+                        test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, %s,
+                           'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
+                   ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
+                [rel_path,
+                 environment_id if environment_id else None,
+                 assessment_id,
+                 item_id,
+                 description,
+                 request.user.id]
+            )
         return JsonResponse({'path': rel_path})
     except Exception as e:
         return JsonResponse({'error': str(e)})

@@ -22,6 +22,7 @@ urlpatterns = [
     path('test-data/', include('test_data.urls')),
     path('admin-config/', include('admin_config.urls')),
     path('users/', include('users.urls')),
+    path('feedback/', include('feedback.urls')),
     path('api/', include('runs.api_urls')),
     path('api/v1/', include('api.urls')),
 ]

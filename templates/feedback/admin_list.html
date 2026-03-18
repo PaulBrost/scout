@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% load core_filters %}
+{% block title %}Feedback — Admin{% endblock %}
+{% block page_title %}Feedback{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+    </select>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('type',this.value)">
+      <option value="">All Types</option>
+      <option value="issue" {% if type_filter == 'issue' %}selected{% endif %}>Issues</option>
+      <option value="suggestion" {% if type_filter == 'suggestion' %}selected{% endif %}>Suggestions</option>
+      <option value="feedback" {% if type_filter == 'feedback' %}selected{% endif %}>Feedback</option>
+    </select>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <form method="get" class="d-flex gap-2">
+      <input type="hidden" name="page_size" value="{{ page_size }}">
+      {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
+      <input type="text" name="search" class="form-control form-control-sm" placeholder="Search..." value="{{ search }}" style="width:200px">
+      <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+      {% if search %}<a href="?page_size={{ page_size }}&type={{ type_filter }}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
+    </form>
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulk()">Go</button>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="width:40px"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this.checked)"></th>
+          <th>Type</th>
+          <th>Subject</th>
+          <th>User</th>
+          <th>Submitted</th>
+          <th style="width:80px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fb in items %}
+        <tr id="row-{{ fb.id }}">
+          <td><input type="checkbox" class="form-check-input row-check" value="{{ fb.id }}" onchange="updateSelection()"></td>
+          <td>
+            {% if fb.feedback_type == 'issue' %}
+            <span class="badge bg-danger">Issue</span>
+            {% elif fb.feedback_type == 'suggestion' %}
+            <span class="badge bg-info text-dark">Suggestion</span>
+            {% else %}
+            <span class="badge bg-secondary">Feedback</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/feedback/admin/{{ fb.id }}/">{{ fb.subject|truncatechars:60 }}</a>
+            <div class="text-muted small">{{ fb.message|truncatechars:80 }}</div>
+          </td>
+          <td class="small">{{ fb.username|default:"—" }}</td>
+          <td class="small text-muted">{{ fb.created_at|shorttime:user_timezone }}</td>
+          <td class="text-nowrap">
+            <a href="/feedback/admin/{{ fb.id }}/" class="btn btn-sm btn-outline-secondary" title="View"><i class="bi bi-eye"></i></a>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteOne('{{ fb.id }}')" title="Delete"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted text-center py-5">No feedback submitted yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
+  {% if total_pages > 1 %}
+  <nav><ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&type={{ type_filter }}&search={{ search }}">«</a></li>
+    {% for pg in page_range %}
+    {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">...</span></li>
+    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&type={{ type_filter }}&search={{ search }}">{{ pg }}</a></li>
+    {% endif %}
+    {% endfor %}
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&type={{ type_filter }}&search={{ search }}">»</a></li>
+  </ul></nav>
+  {% endif %}
+</div>
+
+<script>
+function getCsrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+function updateParam(key, val) {
+  var url = new URL(window.location);
+  url.searchParams.set(key, val);
+  url.searchParams.set('page', 1);
+  window.location = url;
+}
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = checked; });
+  updateSelection();
+}
+function updateSelection() {
+  var checked = document.querySelectorAll('.row-check:checked').length;
+  var total = document.querySelectorAll('.row-check').length;
+  var selectAll = document.getElementById('selectAll');
+  selectAll.checked = checked > 0 && checked === total;
+  selectAll.indeterminate = checked > 0 && checked < total;
+}
+function deleteIds(ids) {
+  fetch('/feedback/admin/delete/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ids: ids})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+function deleteOne(id) {
+  if (!confirm('Delete this feedback entry?')) return;
+  deleteIds([id]);
+}
+function applyBulk() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Select a bulk action.'); return; }
+  var ids = [...document.querySelectorAll('.row-check:checked')].map(function(cb) { return cb.value; });
+  if (!ids.length) { alert('No rows selected.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected item(s)?')) return;
+    deleteIds(ids);
+  }
+}
+</script>
+{% endblock %}

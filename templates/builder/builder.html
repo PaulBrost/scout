@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load core_filters %}
 {% block title %}Test Editor{% endblock %}
-{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Scripts</a> <span class="text-muted mx-1">/</span> {{ script_meta.description|default:filename|default:"New Script" }}{% endblock %}
+{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Scripts</a> <span class="text-muted mx-1">/</span> {% if file_path %}<span id="scriptNameDisplay" class="editable-name" onclick="editScriptName()" title="Click to rename">{{ script_meta.description|default:filename }}</span><input type="text" id="scriptNameInput" class="form-control form-control-sm d-none" style="display:none;width:auto;min-width:200px;font-size:inherit;font-weight:inherit;padding:0 .25rem;height:auto;line-height:inherit" onblur="saveScriptName()" onkeydown="if(event.key==='Enter'){this.blur()}else if(event.key==='Escape'){cancelScriptName()}">{% else %}{{ qp_description|default:"New Script" }}{% endif %}{% endblock %}
 
 {% block topbar_actions %}
 {% if file_path %}
@@ -16,6 +16,8 @@
 
 {% block extra_head %}
 <style>
+  .editable-name { cursor: pointer; border-bottom: 1px dashed #ccc; }
+  .editable-name:hover { border-bottom-color: #0d6efd; color: #0d6efd; }
   #summaryDisplay pre, #summaryDisplay code {
     font-size: .8rem;
   }
@@ -83,7 +85,7 @@
       <select id="envPicker" class="form-select form-select-sm" style="width:auto;max-width:180px" title="Environment (required for new tests)">
         <option value="">Environment…</option>
         {% for env in environments %}
-        <option value="{{ env.id }}">{{ env.name }}</option>
+        <option value="{{ env.id }}" {% if assessment and assessment.environment_id|stringformat:'s' == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -713,10 +715,10 @@ var currentEnvironmentId = '{{ script_meta.environment_id|default:""|escapejs }}
 var scriptContext = {
   assessmentId: '{% if script_meta.assessment_id %}{{ script_meta.assessment_id|escapejs }}{% elif assessment %}{{ assessment.id|escapejs }}{% endif %}',
   assessmentName: '{% if script_meta.assessment_name %}{{ script_meta.assessment_name|escapejs }}{% elif assessment %}{{ assessment.name|escapejs }}{% endif %}',
-  itemId: '{{ script_meta.item_id|default:""|escapejs }}',
+  itemId: '{% if script_meta.item_id %}{{ script_meta.item_id|escapejs }}{% elif qp_item_id %}{{ qp_item_id|escapejs }}{% endif %}',
   itemTitle: '{{ script_meta.item_title|default:""|escapejs }}',
   testType: '{% if script_meta.test_type %}{{ script_meta.test_type|escapejs }}{% elif test_type %}{{ test_type|escapejs }}{% endif %}',
-  description: '{{ script_meta.description|default:""|escapejs }}',
+  description: '{% if script_meta.description %}{{ script_meta.description|escapejs }}{% elif qp_description %}{{ qp_description|escapejs }}{% endif %}',
   environmentName: '{% if script_meta.environment_name %}{{ script_meta.environment_name|escapejs }}{% elif assessment %}{{ assessment.env_name|escapejs }}{% endif %}'
 };
 var isDirty = false;
@@ -724,6 +726,58 @@ var isDirty = false;
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
+}
+
+// ── Inline script name editing ──
+var _prevScriptName = '';
+function editScriptName() {
+  var display = document.getElementById('scriptNameDisplay');
+  var input = document.getElementById('scriptNameInput');
+  if (!display || !input) return;
+  _prevScriptName = display.textContent.trim();
+  input.value = _prevScriptName;
+  display.classList.add('d-none');
+  input.classList.remove('d-none');
+  input.style.display = '';
+  input.focus();
+  input.select();
+}
+function cancelScriptName() {
+  var display = document.getElementById('scriptNameDisplay');
+  var input = document.getElementById('scriptNameInput');
+  if (!display || !input) return;
+  input.classList.add('d-none');
+  input.style.display = 'none';
+  display.classList.remove('d-none');
+}
+function saveScriptName() {
+  var display = document.getElementById('scriptNameDisplay');
+  var input = document.getElementById('scriptNameInput');
+  if (!display || !input) return;
+  var newName = input.value.trim();
+  input.classList.add('d-none');
+  input.style.display = 'none';
+  display.classList.remove('d-none');
+  if (!newName || newName === _prevScriptName) return;
+  display.textContent = newName;
+  scriptContext.description = newName;
+  // Also update the Settings tab description field if it exists
+  var metaDesc = document.getElementById('metaDescription');
+  if (metaDesc) metaDesc.value = newName;
+  // Persist to DB
+  if (!currentFilePath) return;
+  var metaBrowser = document.getElementById('metaBrowser');
+  var metaViewport = document.getElementById('metaViewport');
+  fetch('/test-cases/api/associate/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      scriptPath: currentFilePath,
+      description: newName,
+      browser: metaBrowser ? metaBrowser.value : 'chromium',
+      viewport: metaViewport ? metaViewport.value : '1920x1080',
+    })
+  }).catch(function() {});
 }
 
 function markDirty() {
@@ -1103,6 +1157,9 @@ function saveFile() {
     url = '/builder/api/save/';
     payload = { code: code };
     if (envId) payload.environment_id = envId;
+    if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
+    if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
+    if (scriptContext.description) payload.description = scriptContext.description;
   }
 
   fetch(url, {
@@ -1300,6 +1357,9 @@ function _doSaveAndRun(browser, viewport, aiConfig) {
       url = '/builder/api/save/';
       payload = { code: code };
       if (envId) payload.environment_id = envId;
+      if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
+      if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
+      if (scriptContext.description) payload.description = scriptContext.description;
     }
 
     setRunStatus('Saving…', 'text-info');
@@ -1373,6 +1433,9 @@ function scheduleRun() {
       schedUrl = '/builder/api/save/';
       schedPayload = { code: code };
       if (envId) schedPayload.environment_id = envId;
+      if (scriptContext.assessmentId) schedPayload.assessment_id = scriptContext.assessmentId;
+      if (scriptContext.itemId) schedPayload.item_id = scriptContext.itemId;
+      if (scriptContext.description) schedPayload.description = scriptContext.description;
     }
 
     setRunStatus('Saving…', 'text-info');

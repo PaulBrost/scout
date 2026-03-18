@@ -646,3 +646,28 @@ class AIConversation(models.Model):
     class Meta:
         db_table = 'ai_conversations'
         ordering = ['-last_active_at']
+
+
+class Feedback(models.Model):
+    FEEDBACK_TYPE_CHOICES = [
+        ('issue', 'Report an Issue'),
+        ('suggestion', 'Suggest a Change'),
+        ('feedback', 'General Feedback'),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='feedback', db_column='user_id'
+    )
+    feedback_type = models.TextField(choices=FEEDBACK_TYPE_CHOICES, default='feedback')
+    subject = models.TextField()
+    message = models.TextField()
+    page_url = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'feedback'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.feedback_type}: {self.subject}"

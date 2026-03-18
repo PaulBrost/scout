@@ -233,6 +233,11 @@
           <i class="bi bi-database"></i> <span class="nav-label">Test Data</span>
         </a>
 
+        <div class="nav-section">Help</div>
+        <a href="/feedback/" class="{% if request.path == '/feedback/' %}active{% endif %}">
+          <i class="bi bi-chat-square-text"></i> <span class="nav-label">Feedback</span>
+        </a>
+
         {% if nav_environments %}
         <div class="nav-section">Environments</div>
         <div class="sidebar-env-list">
@@ -258,6 +263,9 @@
         </a>
         <a href="/users/" class="{% if '/users/' in request.path %}active{% endif %}">
           <i class="bi bi-people"></i> <span class="nav-label">Users</span>
+        </a>
+        <a href="/feedback/admin/" class="{% if '/feedback/admin' in request.path %}active{% endif %}">
+          <i class="bi bi-chat-square-text"></i> <span class="nav-label">Feedback</span>
         </a>
         <a href="/admin-config/archives/" class="{% if request.path == '/admin-config/archives/' %}active{% endif %}">
           <i class="bi bi-archive"></i> <span class="nav-label">Archiving</span>

@@ -291,6 +291,10 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += 'CRITICAL: The `summary` parameter of `update_code` must be a COMPLETE description of what the ENTIRE test does — not just the latest change. '
     prompt += 'Review the full code you are submitting and write a summary that covers every major step and behavior of the test. '
     prompt += 'This summary is displayed to users as the test description, so it must accurately reflect the whole script.\n\n'
+    prompt += '## Summary Updates\n'
+    prompt += 'When the user asks to generate, update, or change the test summary (without changing code), use the `update_summary` tool instead of `update_code`. '
+    prompt += 'This updates the Script Summary panel directly. Do NOT just describe the summary in chat — always call `update_summary` so the panel is updated.\n'
+    prompt += 'The summary should be a clear, concise description of what the test does, covering all major steps and behaviors.\n\n'
     prompt += '## Fast Path for Test Generation\n'
     prompt += 'When asked to CREATE a new test script, ALWAYS call `get_test_template` FIRST with the appropriate type '
     prompt += '(baseline, qc_checklist, functional, visual_comparison). '
@@ -314,6 +318,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
     prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
+    prompt += '- PIAAC also exports `SELECTORS` — an **object** (NOT a function) with portal selector strings: `SELECTORS.version`, `SELECTORS.country`, `SELECTORS.language`, `SELECTORS.domain`. Use them as `SELECTORS.language` — do NOT call `SELECTORS()` as it is not a function.\n'
     prompt += '- For PIAAC in-item navigation (multi-screen items), use `navigateItemScreens(itemPage, envConfig, onScreen)` from `src/helpers/piaac.js`. It reads Next/Finish/Continue selectors from the environment\'s `launcher_config.item_selectors` (configured by admins). The `onScreen` callback receives `(itemPage, screenIndex)` and is called on each screen. Example:\n'
     prompt += '  ```\n'
     prompt += '  const { navigateItemScreens } = require("../../src/helpers/piaac");\n'
@@ -823,6 +828,12 @@ def execute_tool(tool_id, args, context):
             return {'success': False, 'result': 'No code provided'}
         return {'success': True, 'result': {'code': args['code'], 'summary': args.get('summary', 'Code updated')}}
 
+    elif tool_id == 'update_summary':
+        summary_text = args.get('summary', '').strip()
+        if not summary_text:
+            return {'success': False, 'result': 'No summary text provided'}
+        return {'success': True, 'result': {'summary_only': True, 'summary': summary_text}}
+
     elif tool_id == 'read_file':
         if not args.get('path'):
             return {'success': False, 'result': 'No file path provided'}
@@ -1254,6 +1265,12 @@ def chat(message, conversation_id, current_code, filename, script_context=None, 
                 }
                 # update_code delivered code — update current_code for any further iterations
                 current_code = result['result']['code']
+            elif tc['tool'] == 'update_summary' and result['success'] and isinstance(result.get('result'), dict):
+                # Summary-only update — no code change
+                code_update = {
+                    'code': current_code,
+                    'summary': result['result']['summary'],
+                }
             elif tc['tool'] in RESEARCH_TOOLS:
                 needs_continue = True
 
