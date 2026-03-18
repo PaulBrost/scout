@@ -5,7 +5,7 @@ import uuid as _uuid
 from pathlib import Path
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
@@ -78,10 +78,12 @@ def builder_view(request):
                         script_meta['ai_config'] = {}
                     # User-level access check
                     if not can_user_access_record(request.user, script_meta.get('created_by_id')):
-                        script_meta = None
-                        file_content = None
-                        file_path = None
-                        filename = None
+                        raise Http404('Script not found.')
+                else:
+                    # file param provided but no matching script in DB
+                    raise Http404('Script not found.')
+        except Http404:
+            raise
         except Exception:
             pass
 

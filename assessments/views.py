@@ -129,16 +129,21 @@ def detail(request, numeric_id):
         cols = [c[0] for c in cursor.description]
         items = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
-    # Test scripts associated with this assessment
+    # Test scripts associated with this assessment (user-scoped)
+    script_where = 'ts.assessment_id = %s'
+    script_params = [assessment['id']]
+    if not request.user.is_staff:
+        script_where += ' AND (ts.created_by_id = %s OR ts.created_by_id IS NULL)'
+        script_params.append(request.user.id)
     with connection.cursor() as cursor:
         cursor.execute(
-            """SELECT ts.id, ts.script_path, ts.description, ts.category, ts.item_id,
+            f"""SELECT ts.id, ts.script_path, ts.description, ts.category, ts.item_id,
                       ts.updated_at, i.title AS item_title
                FROM test_scripts ts
                LEFT JOIN items i ON ts.item_id = i.item_id
-               WHERE ts.assessment_id = %s
+               WHERE {script_where}
                ORDER BY ts.script_path""",
-            [assessment['id']]
+            script_params
         )
         cols = [c[0] for c in cursor.description]
         scripts = [dict(zip(cols, r)) for r in cursor.fetchall()]

@@ -145,11 +145,16 @@ def detail(request, numeric_id):
         raise Http404
     item = dict(zip(cols, row))
 
-    # Test scripts for this item
+    # Test scripts for this item (user-scoped)
+    script_where = 'item_id = %s'
+    script_params = [item['item_id']]
+    if not request.user.is_staff:
+        script_where += ' AND (created_by_id = %s OR created_by_id IS NULL)'
+        script_params.append(request.user.id)
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT * FROM test_scripts WHERE item_id = %s ORDER BY updated_at DESC',
-            [item['item_id']]
+            f'SELECT * FROM test_scripts WHERE {script_where} ORDER BY updated_at DESC',
+            script_params
         )
         cols = [c[0] for c in cursor.description]
         scripts = [dict(zip(cols, r)) for r in cursor.fetchall()]
