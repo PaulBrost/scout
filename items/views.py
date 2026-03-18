@@ -61,7 +61,7 @@ def index(request):
                 'environments': [],
                 'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('i.environment_id = ANY(%s::uuid[])')
 
     if search:
@@ -107,7 +107,7 @@ def index(request):
     env_params = []
     if env_ids is not None:
         env_query = 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name'
-        env_params = [tuple(str(e) for e in env_ids)]
+        env_params = [list(str(e) for e in env_ids)]
     with connection.cursor() as cursor:
         cursor.execute(env_query, env_params)
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
@@ -171,7 +171,7 @@ def api_list(request):
     if env_ids is not None:
         if not env_ids:
             return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('i.environment_id = ANY(%s::uuid[])')
 
     if search:

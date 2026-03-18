@@ -56,7 +56,7 @@ def index(request):
                 'sort': sort, 'direction': direction.lower(), 'search': search,
                 'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('s.environment_id = ANY(%s::uuid[])')
 
     if search:
@@ -513,7 +513,7 @@ def api_list(request):
     if env_ids is not None:
         if not env_ids:
             return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('s.environment_id = ANY(%s::uuid[])')
 
     if search:

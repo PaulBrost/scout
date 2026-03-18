@@ -59,7 +59,7 @@ def index(request):
                 'search': search, 'status_filter': status_filter,
                 'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
 
     if status_filter:
@@ -403,7 +403,7 @@ def api_list(request):
     if env_ids is not None:
         if not env_ids:
             return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
 
     if status_filter:
@@ -451,7 +451,7 @@ def api_latest(request):
     if env_ids is not None:
         if not env_ids:
             return JsonResponse({'run': None})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
     if not request.user.is_staff:
         where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
@@ -606,7 +606,7 @@ def api_runs_with_screenshots(request):
         if not env_ids:
             return JsonResponse({'runs': []})
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
 
     # User-level scoping
     if not request.user.is_staff:

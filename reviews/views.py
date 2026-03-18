@@ -87,7 +87,7 @@ def index(request):
                 'total_pages': 1, 'start_item': 0, 'end_item': 0,
                 'page_range': [],
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
 
     # User-level scoping (via test run ownership)
@@ -254,7 +254,7 @@ def api_list(request):
     if env_ids is not None:
         if not env_ids:
             return JsonResponse({'rows': [], 'total': 0, 'page': page, 'pageSize': page_size}, json_dumps_params={'default': str})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
     # User-level scoping
     if not request.user.is_staff:
@@ -300,7 +300,7 @@ def suppressions(request):
     if env_ids is not None:
         if not env_ids:
             return render(request, 'reviews/suppressions.html', {'suppressions': [], 'total': 0})
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('s.environment_id = ANY(%s::uuid[])')
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''

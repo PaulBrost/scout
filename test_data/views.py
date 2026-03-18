@@ -24,7 +24,7 @@ def index(request):
                 'datasets': [], 'environments': [],
                 'env_filter': env_filter, 'type_filter': type_filter,
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('td.environment_id = ANY(%s::uuid[])')
 
     if env_filter:
@@ -65,7 +65,7 @@ def index(request):
     env_params = []
     if env_ids is not None:
         env_query = 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name'
-        env_params = [tuple(str(e) for e in env_ids)]
+        env_params = [list(str(e) for e in env_ids)]
     with connection.cursor() as cursor:
         cursor.execute(env_query, env_params)
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
@@ -115,7 +115,7 @@ def detail(request, dataset_id=None):
         else:
             cursor.execute(
                 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name',
-                [tuple(str(e) for e in env_ids)]
+                [list(str(e) for e in env_ids)]
             )
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
 

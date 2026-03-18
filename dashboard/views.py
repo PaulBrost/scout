@@ -12,7 +12,7 @@ def index(request):
     params = []
     env_ids = get_user_env_ids(request.user)
     if env_ids is not None:
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
     if not request.user.is_staff:
         where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
@@ -67,7 +67,7 @@ def index(request):
         ai_params = []
         if env_ids is not None:
             ai_where_parts.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
-            ai_params.append(tuple(str(e) for e in env_ids))
+            ai_params.append(list(str(e) for e in env_ids))
         if not request.user.is_staff:
             ai_where_parts.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
             ai_params.append(request.user.id)
@@ -107,7 +107,7 @@ def api_trend(request):
     params = []
     env_ids = get_user_env_ids(request.user)
     if env_ids is not None:
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
     if not request.user.is_staff:
         where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
@@ -131,7 +131,7 @@ def api_ai_flags(request):
     env_ids = get_user_env_ids(request.user)
     if env_ids is not None:
         where_parts.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
     if not request.user.is_staff:
         where_parts.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
         params.append(request.user.id)

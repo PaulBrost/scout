@@ -143,7 +143,7 @@ def builder_view(request):
             else:
                 cursor.execute(
                     'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name',
-                    [tuple(str(e) for e in env_ids)]
+                    [list(str(e) for e in env_ids)]
                 )
             environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
     except Exception:

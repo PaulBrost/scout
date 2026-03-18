@@ -24,7 +24,7 @@ def index(request):
                 'baselines': [], 'environments': [],
                 'status_filter': status_filter, 'env_filter': env_filter,
             })
-        params.append(tuple(str(e) for e in env_ids))
+        params.append(list(str(e) for e in env_ids))
         where.append('b.environment_id = ANY(%s::uuid[])')
 
     if status_filter == 'pending':
@@ -58,7 +58,7 @@ def index(request):
     env_params = []
     if env_ids is not None:
         env_query = 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name'
-        env_params = [tuple(str(e) for e in env_ids)]
+        env_params = [list(str(e) for e in env_ids)]
     with connection.cursor() as cursor:
         cursor.execute(env_query, env_params)
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
