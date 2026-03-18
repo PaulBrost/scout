@@ -340,6 +340,15 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  ```\n'
     prompt += '  Each dataset has: `{ name, assessment_id, item_id, description, entries: [...] }` where entries is the user-defined JSON array.\n\n'
 
+    prompt += '## Parameterized Inputs\n'
+    prompt += 'When a test needs a list of values to iterate over (languages, locales, user accounts, item IDs, URLs, etc.), '
+    prompt += 'ALWAYS use Test Data datasets instead of trying to discover them dynamically from the UI. '
+    prompt += 'Dynamic discovery (e.g. reading dropdown options) is fragile and often fails due to page state changes.\n'
+    prompt += '- Use `getCustomData()` or `getInputs()` from `src/helpers/testdata.js` to load the list at runtime.\n'
+    prompt += '- If no dataset is linked yet, tell the user they need to create a Test Data dataset with the values and link it to this script from the Settings tab.\n'
+    prompt += '- Example: for a cross-locale visual comparison, the user creates a "Languages" dataset with entries like `[{"code": "fra", "country": "ZZZ"}, {"code": "deu", "country": "ZZZ"}]` and the script iterates over them.\n'
+    prompt += '- NEVER hardcode lists of languages, locales, or other variable data directly in the script. Always load from Test Data.\n\n'
+
     # QC Checklist instructions
     prompt += '## QC Checklist Tests\n'
     prompt += 'QC Checklist tests validate interactive item types against formal QA/QC checklists.\n\n'

@@ -188,9 +188,9 @@ def api_save(request, dataset_id=None):
                 return JsonResponse({'ok': True, 'id': str(dataset_id)})
             else:
                 cursor.execute("""
-                    INSERT INTO test_data_sets (name, environment_id, assessment_id,
-                                                item_id, data_type, description, data, created_by_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO test_data_sets (id, name, environment_id, assessment_id,
+                                                item_id, data_type, description, data, created_by_id, created_at, updated_at)
+                    VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
                     RETURNING id
                 """, [name, environment_id, assessment_id, item_id,
                       data_type, description, json.dumps(entries), request.user.id])
