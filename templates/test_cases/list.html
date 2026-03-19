@@ -12,7 +12,7 @@
     <div class="row g-2 align-items-end">
       <div class="col-auto">
         <label class="form-label mb-0 text-muted" style="font-size:.7rem">Environment</label>
-        <select class="form-select form-select-sm" id="filterEnv" style="width:auto" onchange="onEnvChange(this.value)">
+        <select class="form-select form-select-sm" id="filterEnv" style="width:auto" data-env-filter onchange="onEnvChange(this.value)">
           <option value="">All Environments</option>
           {% for env in environments %}
           <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>

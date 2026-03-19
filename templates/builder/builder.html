@@ -82,7 +82,7 @@
 
     {% if not file_path %}
     <div class="d-flex align-items-center mb-3">
-      <select id="envPicker" class="form-select form-select-sm" style="width:auto;max-width:180px" title="Environment (required for new tests)">
+      <select id="envPicker" class="form-select form-select-sm" style="width:auto;max-width:180px" data-env-field title="Environment (required for new tests)">
         <option value="">Environment…</option>
         {% for env in environments %}
         <option value="{{ env.id }}" {% if assessment and assessment.environment_id|stringformat:'s' == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
@@ -183,7 +183,7 @@
 
           <!-- Input area -->
           <div class="card-footer bg-white border-top p-2">
-            <textarea id="chatInput" class="form-control form-control-sm mb-2" rows="2"
+            <textarea id="chatInput" class="form-control form-control-sm mb-2" rows="4"
               placeholder="e.g. Write a visual regression test for item 1234…"
               onkeydown="handleKey(event)"></textarea>
             <div class="d-flex justify-content-between align-items-center">
@@ -975,7 +975,7 @@ function showThinking() {
     // After 5s, update hint
     var txt = document.getElementById('thinkingText');
     if (txt && elapsed >= 5 && txt.textContent === 'Working') {
-      txt.textContent = 'Gathering context & generating code';
+      txt.textContent = 'Gathering context & generating the test script';
     }
   }, 1000);
 }
@@ -1047,9 +1047,6 @@ function sendMessage() {
       });
     }
 
-    // Show final response
-    if (d.response) appendMessage('assistant', d.response);
-
     // Handle code update
     if (d.codeUpdate && d.codeUpdate.code) {
       document.getElementById('codeEditor').value = d.codeUpdate.code;
@@ -1063,13 +1060,30 @@ function sendMessage() {
           headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
           body: JSON.stringify({ filePath: currentFilePath, summary: d.codeUpdate.summary })
         }).catch(function() {});
+        appendMessage('assistant', 'Test script generated and summary updated.');
+      } else {
+        appendMessage('assistant', 'Test script updated.');
       }
+      // Auto-set AI analysis checkboxes if the AI specified ai_config
+      if (d.codeUpdate.ai_config) {
+        var txtCb = document.getElementById('aiTextAnalysis');
+        var visCb = document.getElementById('aiVisualAnalysis');
+        if (txtCb && d.codeUpdate.ai_config.text_analysis !== undefined) {
+          txtCb.checked = !!d.codeUpdate.ai_config.text_analysis;
+        }
+        if (visCb && d.codeUpdate.ai_config.visual_analysis !== undefined) {
+          visCb.checked = !!d.codeUpdate.ai_config.visual_analysis;
+        }
+      }
+    } else if (d.response) {
+      // Only show the full response when there's no code update
+      appendMessage('assistant', d.response);
     }
 
     // Build status message
     var statusParts = [];
     if (d.codeUpdate && d.codeUpdate.code) {
-      statusParts.push('Code updated' + (d.codeUpdate.summary ? ': ' + d.codeUpdate.summary : ''));
+      statusParts.push('Code updated');
     }
     if (d.toolsUsed && d.toolsUsed.length) {
       var toolNames = d.toolsUsed.map(function(t) {

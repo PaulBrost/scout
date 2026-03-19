@@ -166,7 +166,7 @@
 <body{% if request.COOKIES.sidebar_collapsed == '1' %} class="sidebar-collapsed{% if is_impersonating %} impersonating{% endif %}"{% elif is_impersonating %} class="impersonating"{% endif %}>
   <!-- Full-width brand bar -->
   <div id="brand-bar">
-    <div><img src="/static/img/scout-white.png" alt="Scout" style="height:22px;margin-right:.4rem;">SCOUT <span>v0.3</span></div>
+    <a href="/" style="text-decoration:none;color:inherit;display:flex;align-items:center;"><img src="/static/img/scout-white.png" alt="Scout" style="height:22px;margin-right:.4rem;">SCOUT <span>v0.3</span></a>
     <div class="brand-user">
       <span>{{ request.user.username }}</span>
       <a href="/settings/" title="Settings"><i class="bi bi-gear"></i></a>
@@ -191,19 +191,19 @@
       <button class="collapse-btn" id="sidebar-toggle" title="Toggle sidebar">
         <span class="collapse-icon">&laquo;</span>
       </button>
+      {% if is_admin %}
       <div class="nav-mode-toggle">
         <button id="nav-mode-main" class="active" onclick="setNavMode('main')">Main</button>
-        {% if is_admin %}
         <button id="nav-mode-admin" onclick="setNavMode('admin')">Admin</button>
-        {% endif %}
       </div>
+      {% endif %}
     </div>
     <nav>
       <!-- Main navigation -->
       <div id="nav-main">
         <div class="nav-section">Overview</div>
         <a href="/" class="{% if request.resolver_match.url_name == 'index' %}active{% endif %}">
-          <i class="bi bi-speedometer2"></i> <span class="nav-label">Dashboard</span>
+          <i class="bi bi-house"></i> <span class="nav-label">Home</span>
         </a>
 
         <div class="nav-section">Content</div>
@@ -344,6 +344,56 @@
     (function() {
       var saved = localStorage.getItem('scout_nav_mode');
       if (saved === 'admin') setNavMode('admin');
+    })();
+
+    // ── Environment session persistence ──
+    (function() {
+      var KEY = 'scout_selected_env';
+      window.getSessionEnv = function() { return localStorage.getItem(KEY) || ''; };
+      window.setSessionEnv = function(val) {
+        if (val) localStorage.setItem(KEY, val);
+        else localStorage.removeItem(KEY);
+      };
+
+      // URL-param env dropdowns: auto-redirect on load, save on change
+      // Runs immediately — redirect should happen before page finishes rendering
+      var filterSels = document.querySelectorAll('[data-env-filter]');
+      filterSels.forEach(function(sel) {
+        var currentVal = sel.value;
+        if (currentVal) {
+          setSessionEnv(currentVal);
+        } else {
+          var saved = getSessionEnv();
+          if (saved && sel.querySelector('option[value="' + saved + '"]')) {
+            var url = new URL(window.location);
+            url.searchParams.set('environment', saved);
+            url.searchParams.set('page', '1');
+            window.location = url;
+            return;
+          }
+        }
+        sel.addEventListener('change', function() { setSessionEnv(this.value); });
+      });
+
+      // Form-field env dropdowns: pre-populate on load, save on change
+      // Deferred to DOMContentLoaded so cascading handlers (onEnvChange etc.)
+      // defined in template extra_scripts are available when we dispatch change
+      document.addEventListener('DOMContentLoaded', function() {
+        var fieldSels = document.querySelectorAll('[data-env-field]');
+        fieldSels.forEach(function(sel) {
+          if (sel.value) {
+            setSessionEnv(sel.value);
+          } else {
+            var saved = getSessionEnv();
+            if (saved && sel.querySelector('option[value="' + saved + '"]')) {
+              sel.value = saved;
+              // Trigger change so cascading dropdowns (assessment/item) update
+              sel.dispatchEvent(new Event('change'));
+            }
+          }
+          sel.addEventListener('change', function() { setSessionEnv(this.value); });
+        });
+      });
     })();
   </script>
   {% block extra_scripts %}{% endblock %}

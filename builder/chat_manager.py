@@ -290,7 +290,13 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += 'CRITICAL: Only use `update_code` when the user explicitly asks to modify, create, generate, or fix code.\n'
     prompt += 'CRITICAL: The `summary` parameter of `update_code` must be a COMPLETE description of what the ENTIRE test does — not just the latest change. '
     prompt += 'Review the full code you are submitting and write a summary that covers every major step and behavior of the test. '
-    prompt += 'This summary is displayed to users as the test description, so it must accurately reflect the whole script.\n\n'
+    prompt += 'This summary is displayed to users as the test description, so it must accurately reflect the whole script.\n'
+    prompt += '`update_code` also accepts an optional `ai_config` parameter — a JSON object with `text_analysis` (boolean) and `visual_analysis` (boolean). '
+    prompt += 'Set these when the generated test requires post-run AI analysis:\n'
+    prompt += '- Set `"text_analysis": true` when the test captures text for spelling, grammar, or content analysis (e.g., uses `analyzeItemText`, `extractItemText`, or attaches `ai-text-*` artifacts).\n'
+    prompt += '- Set `"visual_analysis": true` when the test captures screenshots for AI visual inspection (e.g., uses `analyzeItemScreenshot` or attaches `ai-vision-*` artifacts).\n'
+    prompt += '- Omit `ai_config` or set both to false for tests that do not use AI analysis (plain baselines, functional tests, QC checklists).\n'
+    prompt += 'Example: `{"tool": "update_code", "args": {"code": "...", "summary": "...", "ai_config": {"text_analysis": true, "visual_analysis": false}}}`\n\n'
     prompt += '## Summary Updates\n'
     prompt += 'When the user asks to generate, update, or change the test summary (without changing code), use the `update_summary` tool instead of `update_code`. '
     prompt += 'This updates the Script Summary panel directly. Do NOT just describe the summary in chat — always call `update_summary` so the panel is updated.\n'
@@ -835,7 +841,10 @@ def execute_tool(tool_id, args, context):
     elif tool_id == 'update_code':
         if not args.get('code'):
             return {'success': False, 'result': 'No code provided'}
-        return {'success': True, 'result': {'code': args['code'], 'summary': args.get('summary', 'Code updated')}}
+        result = {'code': args['code'], 'summary': args.get('summary', 'Code updated')}
+        if args.get('ai_config') and isinstance(args['ai_config'], dict):
+            result['ai_config'] = args['ai_config']
+        return {'success': True, 'result': result}
 
     elif tool_id == 'update_summary':
         summary_text = args.get('summary', '').strip()
@@ -1272,6 +1281,8 @@ def chat(message, conversation_id, current_code, filename, script_context=None, 
                     'code': result['result']['code'],
                     'summary': result['result'].get('summary', 'Code updated'),
                 }
+                if result['result'].get('ai_config'):
+                    code_update['ai_config'] = result['result']['ai_config']
                 # update_code delivered code — update current_code for any further iterations
                 current_code = result['result']['code']
             elif tc['tool'] == 'update_summary' and result['success'] and isinstance(result.get('result'), dict):

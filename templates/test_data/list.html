@@ -9,7 +9,7 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex align-items-center gap-2">
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('environment',this.value)">
+    <select class="form-select form-select-sm" style="width:auto" data-env-filter onchange="updateParam('environment',this.value)">
       <option value="">All Environments</option>
       {% for env in environments %}
       <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>

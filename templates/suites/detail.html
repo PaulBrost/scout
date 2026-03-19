@@ -28,7 +28,7 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Environment</label>
-        <select id="suiteEnv" class="form-select" onchange="onEnvChange(this.value)">
+        <select id="suiteEnv" class="form-select" data-env-field onchange="onEnvChange(this.value)">
           <option value="">-- Select --</option>
           {% for env in environments %}
           <option value="{{ env.id }}" {% if suite and suite.environment_id == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
