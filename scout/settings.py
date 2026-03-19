@@ -147,8 +147,8 @@ OLLAMA_VISION_MODEL = config('OLLAMA_VISION_MODEL', default='gemma3:12b')
 Q_CLUSTER = {
     'name': 'scout',
     'workers': 2,
-    'timeout': 300,
-    'retry': 360,
+    'timeout': 3600,   # 1 hr — suites may run many scripts, each up to SCOUT_SCRIPT_TIMEOUT
+    'retry': 3900,     # must exceed timeout so tasks aren't retried while still running
     'queue_limit': 50,
     'bulk': 10,
     'orm': 'default',
