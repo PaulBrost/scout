@@ -207,6 +207,38 @@ def api_list(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
+def api_create_item(request):
+    """Create a single item."""
+    try:
+        data = json.loads(request.body)
+        item_id = (data.get('item_id') or '').strip()
+        environment_id = data.get('environment_id')
+        if not item_id:
+            return JsonResponse({'error': 'item_id is required'}, status=400)
+        if not environment_id:
+            return JsonResponse({'error': 'environment_id is required'}, status=400)
+
+        title = data.get('title') or None
+        assessment_id = data.get('assessment_id') or None
+        category = data.get('category') or None
+        tier = data.get('tier') or None
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO items (item_id, title, environment_id, assessment_id, category, tier, languages, metadata, created_at, updated_at)
+                   VALUES (%s, %s, %s::uuid, %s, %s, %s, '[]'::jsonb, '{}'::jsonb, now(), now())
+                   RETURNING numeric_id""",
+                [item_id, title, environment_id, assessment_id, category, tier]
+            )
+            numeric_id = cursor.fetchone()[0]
+        return JsonResponse({'ok': True, 'numeric_id': numeric_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
 def api_update_item(request):
     """Update item details."""
     try:

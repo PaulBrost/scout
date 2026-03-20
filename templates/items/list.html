@@ -67,6 +67,7 @@
         </form>
       </div>
       <div class="col-auto d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createItemModal" title="Create Item"><i class="bi bi-plus"></i></button>
         <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
           {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
         </select>
@@ -133,6 +134,58 @@
   </ul></nav>
   {% endif %}
 </div>
+<!-- Create Item Modal -->
+<div class="modal fade" id="createItemModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create Item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Item ID *</label>
+          <input type="text" id="newItemId" class="form-control form-control-sm" placeholder="e.g. VH271234">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Title</label>
+          <input type="text" id="newItemTitle" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Environment *</label>
+          <select id="newItemEnv" class="form-select form-select-sm" onchange="loadAssessmentsForItem(this.value)">
+            <option value="">Select environment...</option>
+            {% for env in environments %}
+            <option value="{{ env.id }}">{{ env.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Assessment</label>
+          <select id="newItemAssessment" class="form-select form-select-sm">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Category</label>
+          <input type="text" id="newItemCategory" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Tier</label>
+          <input type="text" id="newItemTier" class="form-control form-control-sm">
+        </div>
+        <div id="createItemError" class="text-danger small" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="createItemBtn" onclick="createItem()">
+          <i class="bi bi-plus"></i> Create
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 var currentEnvFilter = '{{ env_filter|escapejs }}';
 var currentAssessmentFilter = '{{ assessment_filter|escapejs }}';
@@ -213,6 +266,64 @@ function applyBulkAction() {
     })
     .catch(function(err) { alert('Error: ' + err.message); });
   }
+}
+
+function loadAssessmentsForItem(envId) {
+  var sel = document.getElementById('newItemAssessment');
+  sel.innerHTML = '<option value="">None</option>';
+  if (!envId) return;
+  fetch('/test-data/api/assessments/?environment_id=' + encodeURIComponent(envId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.assessments || []).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        sel.appendChild(opt);
+      });
+    });
+}
+
+function createItem() {
+  var itemId = document.getElementById('newItemId').value.trim();
+  var envId = document.getElementById('newItemEnv').value;
+  var errEl = document.getElementById('createItemError');
+  if (!itemId) { errEl.textContent = 'Item ID is required.'; errEl.style.display = ''; return; }
+  if (!envId) { errEl.textContent = 'Environment is required.'; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+  var btn = document.getElementById('createItemBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating…';
+
+  fetch('/items/api/create/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      item_id: itemId,
+      title: document.getElementById('newItemTitle').value.trim(),
+      environment_id: envId,
+      assessment_id: document.getElementById('newItemAssessment').value || null,
+      category: document.getElementById('newItemCategory').value.trim(),
+      tier: document.getElementById('newItemTier').value.trim()
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create';
+    if (d.ok) {
+      window.location = '/items/' + d.numeric_id + '/';
+    } else {
+      errEl.textContent = d.error || 'Unknown error';
+      errEl.style.display = '';
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create';
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = '';
+  });
 }
 </script>
 {% endblock %}

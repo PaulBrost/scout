@@ -10,4 +10,5 @@ urlpatterns = [
     path('api/delete-items/', views.api_delete_items_bulk, name='api_delete_items_bulk'),
     path('api/set-baseline/', views.api_set_baseline, name='api_set_baseline'),
     path('api/create-script/', views.api_create_script, name='api_create_item_script'),
+    path('api/create/', views.api_create_item, name='api_create_item'),
 ]

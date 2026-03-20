@@ -10,4 +10,7 @@ urlpatterns = [
     path('api/delete-assessment/', views.api_delete_assessment, name='api_delete_assessment'),
     path('api/delete-assessments/', views.api_delete_assessments_bulk, name='api_delete_assessments_bulk'),
     path('api/create-script/', views.api_create_script, name='api_create_script'),
+    path('api/create-assessment/', views.api_create_assessment, name='api_create_assessment'),
+    path('api/create-item/', views.api_create_item, name='api_create_item_from_assessment'),
+    path('api/bulk-import-items/', views.api_bulk_import_items, name='api_bulk_import_items'),
 ]

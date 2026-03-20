@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from django.shortcuts import render
 from django.http import JsonResponse, Http404
@@ -148,10 +149,22 @@ def detail(request, numeric_id):
         cols = [c[0] for c in cursor.description]
         scripts = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    # Load environments for modals
+    env_ids = get_user_env_ids(request.user)
+    env_query = 'SELECT id, name FROM environments ORDER BY name'
+    env_params = []
+    if env_ids is not None:
+        env_query = 'SELECT id, name FROM environments WHERE id = ANY(%s::uuid[]) ORDER BY name'
+        env_params = [list(str(e) for e in env_ids)]
+    with connection.cursor() as cursor:
+        cursor.execute(env_query, env_params)
+        environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
+
     return render(request, 'assessments/detail.html', {
         'assessment': assessment,
         'items': items,
         'scripts': scripts,
+        'environments': environments,
     })
 
 
@@ -252,6 +265,141 @@ def api_update_assessment(request):
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Assessment not found'}, status=404)
         return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_create_assessment(request):
+    """Create a new assessment."""
+    try:
+        data = json.loads(request.body)
+        name = (data.get('name') or '').strip()
+        environment_id = data.get('environment_id')
+        if not name:
+            return JsonResponse({'error': 'Name is required'}, status=400)
+        if not environment_id:
+            return JsonResponse({'error': 'Environment is required'}, status=400)
+
+        # Generate slug ID from name
+        base_id = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        assessment_id = base_id
+
+        # Ensure uniqueness
+        with connection.cursor() as cursor:
+            suffix = 0
+            while True:
+                cursor.execute('SELECT 1 FROM assessments WHERE id = %s', [assessment_id])
+                if not cursor.fetchone():
+                    break
+                suffix += 1
+                assessment_id = f'{base_id}-{suffix}'
+
+            subject = data.get('subject') or None
+            grade = data.get('grade') or None
+            year = data.get('year') or None
+            form_value = data.get('form_value') or None
+            intro_screens = int(data.get('intro_screens', 5) or 5)
+            description = data.get('description') or None
+
+            # Get next numeric_id
+            cursor.execute('SELECT COALESCE(MAX(numeric_id), 0) + 1 FROM assessments')
+            numeric_id = cursor.fetchone()[0]
+
+            cursor.execute(
+                """INSERT INTO assessments (id, numeric_id, name, environment_id, subject, grade, year, form_value, intro_screens, description, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, now(), now())""",
+                [assessment_id, numeric_id, name, environment_id, subject, grade, year, form_value, intro_screens, description]
+            )
+        return JsonResponse({'ok': True, 'id': assessment_id, 'numeric_id': numeric_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_create_item(request):
+    """Create a single item."""
+    try:
+        data = json.loads(request.body)
+        item_id = (data.get('item_id') or '').strip()
+        environment_id = data.get('environment_id')
+        if not item_id:
+            return JsonResponse({'error': 'item_id is required'}, status=400)
+        if not environment_id:
+            return JsonResponse({'error': 'environment_id is required'}, status=400)
+
+        title = data.get('title') or None
+        assessment_id = data.get('assessment_id') or None
+        category = data.get('category') or None
+        tier = data.get('tier') or None
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO items (item_id, title, environment_id, assessment_id, category, tier, languages, metadata, created_at, updated_at)
+                   VALUES (%s, %s, %s::uuid, %s, %s, %s, '[]'::jsonb, '{}'::jsonb, now(), now())
+                   RETURNING numeric_id""",
+                [item_id, title, environment_id, assessment_id, category, tier]
+            )
+            numeric_id = cursor.fetchone()[0]
+        return JsonResponse({'ok': True, 'numeric_id': numeric_id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def api_bulk_import_items(request):
+    """Bulk import/upsert items for an assessment."""
+    try:
+        data = json.loads(request.body)
+        assessment_id = data.get('assessment_id')
+        environment_id = data.get('environment_id')
+        items = data.get('items', [])
+
+        if not assessment_id:
+            return JsonResponse({'error': 'assessment_id is required'}, status=400)
+        if not environment_id:
+            return JsonResponse({'error': 'environment_id is required'}, status=400)
+        if not items:
+            return JsonResponse({'error': 'items list is empty'}, status=400)
+
+        created = 0
+        updated = 0
+        with connection.cursor() as cursor:
+            for item in items:
+                item_id = (item.get('item_id') or '').strip()
+                if not item_id:
+                    continue
+                title = item.get('title') or None
+                category = item.get('category') or None
+                tier = item.get('tier') or None
+                position = item.get('position')
+
+                cursor.execute(
+                    """INSERT INTO items (item_id, title, environment_id, assessment_id, category, tier, position, languages, metadata, created_at, updated_at)
+                       VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, '[]'::jsonb, '{}'::jsonb, now(), now())
+                       ON CONFLICT (item_id) DO UPDATE SET
+                         title = COALESCE(EXCLUDED.title, items.title),
+                         environment_id = EXCLUDED.environment_id,
+                         assessment_id = EXCLUDED.assessment_id,
+                         category = COALESCE(EXCLUDED.category, items.category),
+                         tier = COALESCE(EXCLUDED.tier, items.tier),
+                         position = COALESCE(EXCLUDED.position, items.position),
+                         updated_at = now()
+                       RETURNING (xmax = 0) AS inserted""",
+                    [item_id, title, environment_id, assessment_id, category, tier, position]
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    created += 1
+                else:
+                    updated += 1
+        return JsonResponse({'ok': True, 'created': created, 'updated': updated})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

@@ -60,6 +60,7 @@
         </form>
       </div>
       <div class="col-auto d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createAssessmentModal" title="Create Assessment"><i class="bi bi-plus"></i></button>
         <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
           {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
         </select>
@@ -120,6 +121,65 @@
   </ul></nav>
   {% endif %}
 </div>
+<!-- Create Assessment Modal -->
+<div class="modal fade" id="createAssessmentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create Assessment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Name *</label>
+          <input type="text" id="newAssessmentName" class="form-control form-control-sm" placeholder="e.g. Math Grade 4 2026">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Environment *</label>
+          <select id="newAssessmentEnv" class="form-select form-select-sm">
+            <option value="">Select environment...</option>
+            {% for env in environments %}
+            <option value="{{ env.id }}">{{ env.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Subject</label>
+          <input type="text" id="newAssessmentSubject" class="form-control form-control-sm" placeholder="e.g. Mathematics">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Grade</label>
+          <input type="text" id="newAssessmentGrade" class="form-control form-control-sm" placeholder="e.g. 4">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Year</label>
+          <input type="text" id="newAssessmentYear" class="form-control form-control-sm" placeholder="e.g. 2026">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Form Value</label>
+          <input type="text" id="newAssessmentFormValue" class="form-control form-control-sm">
+          <div class="form-text">The value used in the launcher dropdown to select this form.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Intro Screens</label>
+          <input type="number" id="newAssessmentIntro" class="form-control form-control-sm" value="5">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Description</label>
+          <textarea id="newAssessmentDesc" class="form-control form-control-sm" rows="2"></textarea>
+        </div>
+        <div id="createAssessmentError" class="text-danger small" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="createAssessmentBtn" onclick="createAssessment()">
+          <i class="bi bi-plus"></i> Create
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
@@ -161,6 +221,50 @@ function applyBulkAction() {
     })
     .catch(function(err) { alert('Error: ' + err.message); });
   }
+}
+
+function createAssessment() {
+  var name = document.getElementById('newAssessmentName').value.trim();
+  var envId = document.getElementById('newAssessmentEnv').value;
+  var errEl = document.getElementById('createAssessmentError');
+  if (!name) { errEl.textContent = 'Name is required.'; errEl.style.display = ''; return; }
+  if (!envId) { errEl.textContent = 'Environment is required.'; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+  var btn = document.getElementById('createAssessmentBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating…';
+
+  fetch('/assessments/api/create-assessment/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      environment_id: envId,
+      subject: document.getElementById('newAssessmentSubject').value.trim(),
+      grade: document.getElementById('newAssessmentGrade').value.trim(),
+      year: document.getElementById('newAssessmentYear').value.trim(),
+      form_value: document.getElementById('newAssessmentFormValue').value.trim(),
+      intro_screens: parseInt(document.getElementById('newAssessmentIntro').value) || 5,
+      description: document.getElementById('newAssessmentDesc').value.trim()
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create';
+    if (d.ok) {
+      window.location = '/assessments/' + d.numeric_id + '/';
+    } else {
+      errEl.textContent = d.error || 'Unknown error';
+      errEl.style.display = '';
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Create';
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = '';
+  });
 }
 </script>
 {% endblock %}

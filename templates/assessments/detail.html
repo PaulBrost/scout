@@ -75,6 +75,10 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
     Items ({{ items|length }})
+    <div class="d-flex gap-1">
+      <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addItemModal"><i class="bi bi-plus"></i> Add Item</button>
+      <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importItemsModal"><i class="bi bi-upload"></i> Import Items</button>
+    </div>
   </div>
   <div class="card-body p-0">
     <table class="table table-hover align-middle mb-0">
@@ -151,6 +155,73 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Item ID *</label>
+          <input type="text" id="addItemId" class="form-control form-control-sm" placeholder="e.g. VH271234">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Title</label>
+          <input type="text" id="addItemTitle" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Category</label>
+          <input type="text" id="addItemCategory" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted">Tier</label>
+          <input type="text" id="addItemTier" class="form-control form-control-sm">
+        </div>
+        <div id="addItemError" class="text-danger small" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="addItemBtn" onclick="addItem()">
+          <i class="bi bi-plus"></i> Add
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Items Modal -->
+<div class="modal fade" id="importItemsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Items</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Paste JSON Array</label>
+          <textarea id="importItemsJson" class="form-control form-control-sm font-monospace" rows="8" placeholder='[{"item_id": "VH271234", "title": "...", "category": "...", "tier": "...", "position": 1}]'></textarea>
+          <div class="form-text">
+            Each object must have <code>item_id</code> (required). Optional fields: <code>title</code>, <code>category</code>, <code>tier</code>, <code>position</code>.
+            Existing items with the same item_id will be updated.
+          </div>
+        </div>
+        <div id="importPreview" class="small text-muted mb-2"></div>
+        <div id="importItemsError" class="text-danger small" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="importItemsBtn" onclick="importItems()">
+          <i class="bi bi-upload"></i> Import
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -285,6 +356,100 @@ function deleteItem(numericId, itemId) {
     }
   })
   .catch(err => alert('Error: ' + err.message));
+}
+
+function addItem() {
+  var itemId = document.getElementById('addItemId').value.trim();
+  var errEl = document.getElementById('addItemError');
+  if (!itemId) { errEl.textContent = 'Item ID is required.'; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+  var btn = document.getElementById('addItemBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding…';
+
+  fetch('/assessments/api/create-item/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      item_id: itemId,
+      title: document.getElementById('addItemTitle').value.trim(),
+      category: document.getElementById('addItemCategory').value.trim(),
+      tier: document.getElementById('addItemTier').value.trim(),
+      environment_id: '{{ assessment.environment_id|default:""|escapejs }}',
+      assessment_id: '{{ assessment.id|escapejs }}'
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Add';
+    if (d.ok) {
+      location.reload();
+    } else {
+      errEl.textContent = d.error || 'Unknown error';
+      errEl.style.display = '';
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus"></i> Add';
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = '';
+  });
+}
+
+document.getElementById('importItemsJson').addEventListener('input', function() {
+  var preview = document.getElementById('importPreview');
+  try {
+    var items = JSON.parse(this.value);
+    if (Array.isArray(items)) {
+      preview.textContent = items.length + ' item' + (items.length === 1 ? '' : 's') + ' will be imported.';
+    } else {
+      preview.textContent = 'JSON must be an array.';
+    }
+  } catch(e) {
+    preview.textContent = '';
+  }
+});
+
+function importItems() {
+  var errEl = document.getElementById('importItemsError');
+  var raw = document.getElementById('importItemsJson').value.trim();
+  if (!raw) { errEl.textContent = 'Paste a JSON array.'; errEl.style.display = ''; return; }
+  var items;
+  try { items = JSON.parse(raw); } catch(e) { errEl.textContent = 'Invalid JSON: ' + e.message; errEl.style.display = ''; return; }
+  if (!Array.isArray(items) || items.length === 0) { errEl.textContent = 'JSON must be a non-empty array.'; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+  var btn = document.getElementById('importItemsBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing…';
+
+  fetch('/assessments/api/bulk-import-items/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      assessment_id: '{{ assessment.id|escapejs }}',
+      environment_id: '{{ assessment.environment_id|default:""|escapejs }}',
+      items: items
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-upload"></i> Import';
+    if (d.ok) {
+      location.reload();
+    } else {
+      errEl.textContent = d.error || 'Unknown error';
+      errEl.style.display = '';
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-upload"></i> Import';
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = '';
+  });
 }
 
 var newScriptModal;
