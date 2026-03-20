@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
 from django.utils import timezone
-from core.mixins import get_user_env_ids, can_user_access_record
+from core.mixins import get_user_env_ids, can_user_access_record, get_owner_filter, get_owner_choices
 
 
 def build_page_range(page, total_pages):
@@ -96,10 +96,11 @@ def index(request):
         params.append(list(str(e) for e in env_ids))
         where.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
 
-    # User-level scoping (via test run ownership)
-    if not request.user.is_staff:
+    # Owner scoping — admins default to own, non-admins always own
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(tr.created_by_id = %s OR tr.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -138,11 +139,13 @@ def index(request):
                    rs.flagged, rs.flag_notes, rs.run_id AS ss_run_id,
                    COALESCE(aa.run_id, rs.run_id) AS run_id,
                    trs.script_path,
+                   tr.created_by_id, ou.username AS owner_name,
                    e.name AS environment_name,
                    asmt.name AS assessment_name, asmt.id AS assessment_id,
                    itm.title AS item_title, COALESCE(aa.item_id, ts.item_id) AS resolved_item_id
             {base_query}
             LEFT JOIN environments e ON tr.environment_id = e.id
+            LEFT JOIN auth_user ou ON tr.created_by_id = ou.id
             {where_clause}
             ORDER BY {order_col} {direction}
             LIMIT %s OFFSET %s
@@ -166,7 +169,7 @@ def index(request):
     start_item = (page - 1) * page_size + 1 if total > 0 else 0
     end_item = min(page * page_size, total)
 
-    return render(request, 'reviews/list.html', {
+    ctx = {
         'reviews': reviews, 'total': total, 'page': page, 'page_size': page_size,
         'page_size_options': [10, 25, 50, 100], 'sort': sort,
         'direction': 'asc' if direction == 'ASC' else 'desc',
@@ -176,7 +179,11 @@ def index(request):
         'assessments': assessments,
         'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
-    })
+    }
+    if request.user.is_staff:
+        ctx['owner_filter'] = str(owner_id) if owner_id else 'all'
+        ctx['owner_choices'] = get_owner_choices(request.user.id)
+    return render(request, 'reviews/list.html', ctx)
 
 
 @csrf_exempt

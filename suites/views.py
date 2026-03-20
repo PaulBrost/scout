@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
 from django.utils import timezone
-from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record
+from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record, get_owner_filter, get_owner_choices
 
 
 def build_page_range(page, total_pages):
@@ -64,10 +64,11 @@ def index(request):
         params.append(f'%{search.lower()}%')
         where.append('(LOWER(s.name) LIKE %s OR LOWER(s.description) LIKE %s)')
 
-    # User-level scoping
-    if not request.user.is_staff:
+    # Owner scoping — admins default to own, non-admins always own
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(s.created_by_id = %s OR s.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -84,9 +85,11 @@ def index(request):
                    (SELECT COUNT(*) FROM test_suite_scripts ss WHERE ss.suite_id = s.id) AS script_count,
                    tr.started_at AS last_run_at, tr.status AS last_run_status,
                    e.name AS environment_name,
-                   COALESCE((s.schedule->>'enabled')::boolean, false) AS schedule_enabled
+                   COALESCE((s.schedule->>'enabled')::boolean, false) AS schedule_enabled,
+                   ou.username AS owner_name
             FROM test_suites s
             LEFT JOIN environments e ON s.environment_id = e.id
+            LEFT JOIN auth_user ou ON s.created_by_id = ou.id
             LEFT JOIN LATERAL (
                 SELECT started_at, status FROM test_runs WHERE suite_id = s.id
                 ORDER BY started_at DESC LIMIT 1
@@ -102,7 +105,7 @@ def index(request):
     start_item = (page - 1) * page_size + 1 if total > 0 else 0
     end_item = min(page * page_size, total)
 
-    return render(request, 'suites/list.html', {
+    ctx = {
         'suites': suites,
         'total': total,
         'page': page,
@@ -115,7 +118,11 @@ def index(request):
         'start_item': start_item,
         'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
-    })
+    }
+    if request.user.is_staff:
+        ctx['owner_filter'] = str(owner_id) if owner_id else 'all'
+        ctx['owner_choices'] = get_owner_choices(request.user.id)
+    return render(request, 'suites/list.html', ctx)
 
 
 def _get_scripts_for_environment(env_id, assessment_id=None, item_id=None, user=None):

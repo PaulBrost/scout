@@ -9,7 +9,7 @@ from django.db import connection
 from django.conf import settings
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_POST
-from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record
+from core.mixins import get_user_env_ids, build_user_scope_sql, can_user_access_record, get_owner_filter, get_owner_choices
 
 
 def build_page_range(page, total_pages):
@@ -70,10 +70,11 @@ def index(request):
         where.append('(LOWER(r.notes) LIKE %s OR LOWER(s.name) LIKE %s)')
         params.append(f'%{search.lower()}%')
 
-    # User-level scoping
-    if not request.user.is_staff:
+    # Owner scoping — admins default to own, non-admins always own
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -93,9 +94,11 @@ def index(request):
                    (SELECT COALESCE(ts.description, trs.script_path)
                     FROM test_run_scripts trs
                     LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
-                    WHERE trs.run_id = r.id LIMIT 1) AS first_script_name
+                    WHERE trs.run_id = r.id LIMIT 1) AS first_script_name,
+                   ou.username AS owner_name
             FROM test_runs r
             LEFT JOIN test_suites s ON r.suite_id = s.id
+            LEFT JOIN auth_user ou ON r.created_by_id = ou.id
             {where_clause}
             ORDER BY {order_col} {direction}
             LIMIT %s OFFSET %s
@@ -115,7 +118,7 @@ def index(request):
     start_item = (page - 1) * page_size + 1 if total > 0 else 0
     end_item = min(page * page_size, total)
 
-    return render(request, 'runs/list.html', {
+    ctx = {
         'runs': runs,
         'total': total,
         'page': page,
@@ -129,7 +132,11 @@ def index(request):
         'start_item': start_item,
         'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
-    })
+    }
+    if request.user.is_staff:
+        ctx['owner_filter'] = str(owner_id) if owner_id else 'all'
+        ctx['owner_choices'] = get_owner_choices(request.user.id)
+    return render(request, 'runs/list.html', ctx)
 
 
 @login_required(login_url='/login/')

@@ -91,6 +91,45 @@ def get_env_filter(request):
     return request.COOKIES.get('scout_env', '')
 
 
+def get_owner_filter(request):
+    """Return (owner_id, owner_username) for the current owner filter.
+
+    Admins: defaults to self (from cookie or current user), supports ?owner=all.
+    Non-admins: always returns (user.id, username) — they only see their own data.
+    Returns (None, 'All Users') when showing all.
+    """
+    if not request.user.is_staff:
+        return (request.user.id, request.user.username)
+    owner_param = request.GET.get('owner')
+    if owner_param is not None:
+        if owner_param == 'all':
+            return (None, 'All Users')
+        try:
+            return (int(owner_param), None)  # username resolved by caller if needed
+        except (ValueError, TypeError):
+            pass
+    # Check cookie, default to self
+    cookie_val = request.COOKIES.get('scout_owner', '')
+    if cookie_val == 'all':
+        return (None, 'All Users')
+    if cookie_val:
+        try:
+            return (int(cookie_val), None)
+        except (ValueError, TypeError):
+            pass
+    return (request.user.id, request.user.username)
+
+
+def get_owner_choices(current_user_id):
+    """Return list of {id, username} for the owner filter dropdown."""
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, username FROM auth_user WHERE is_active = true ORDER BY username"
+        )
+        return [{'id': r[0], 'username': r[1]} for r in cursor.fetchall()]
+
+
 def can_user_access_record(user, created_by_id):
     """True for admins, matching user_id, or NULL (system records)."""
     if user.is_staff:

@@ -14,6 +14,14 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    {% if owner_choices %}
+    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
+      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
+      {% for u in owner_choices %}
+      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   <form method="get" class="d-flex gap-2">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -33,6 +41,7 @@
           <th><a href="?sort=scripts&dir={% if sort == 'scripts' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Test Plans {% if sort == 'scripts' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Last Run</th>
           <th>Last Status</th>
+          {% if owner_choices %}<th>Owner</th>{% endif %}
           <th>Actions</th>
         </tr>
       </thead>
@@ -51,6 +60,7 @@
             <span class="status-badge status-{{ suite.last_run_status }}">{{ suite.last_run_status }}</span>
             {% else %}—{% endif %}
           </td>
+          {% if owner_choices %}<td class="small text-muted">{{ suite.owner_name|default:"System" }}</td>{% endif %}
           <td class="text-nowrap">
             <a href="/suites/{{ suite.id }}/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
             <button class="btn btn-sm btn-success" onclick="runSuite('{{ suite.id }}', '{{ suite.name|escapejs }}')">
@@ -87,6 +97,10 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function setOwner(val) {
+  document.cookie = 'scout_owner=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+  updateParam('owner', val);
 }
 function runSuite(id, name) {
   if (!confirm('Run suite: ' + name + '?')) return;

@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
-from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter
+from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter, get_owner_filter, get_owner_choices
 
 
 def build_page_range(page, total_pages):
@@ -72,10 +72,11 @@ def index(request):
         params.append(item_filter)
         where.append('ts.item_id = %s')
 
-    # User-level scoping
-    if not request.user.is_staff:
+    # Owner scoping — admins default to own, non-admins always own
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(ts.created_by_id = %s OR ts.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -94,11 +95,13 @@ def index(request):
                    i.title AS item_title, i.numeric_id AS item_numeric_id,
                    e.name AS environment_name,
                    a.name AS assessment_name,
-                   a.numeric_id AS assessment_numeric_id
+                   a.numeric_id AS assessment_numeric_id,
+                   ou.username AS owner_name
             FROM test_scripts ts
             LEFT JOIN items i ON ts.item_id = i.item_id
             LEFT JOIN environments e ON ts.environment_id = e.id
             LEFT JOIN assessments a ON ts.assessment_id = a.id
+            LEFT JOIN auth_user ou ON ts.created_by_id = ou.id
             {where_clause}
             ORDER BY ts.updated_at DESC NULLS LAST
             LIMIT %s OFFSET %s
@@ -149,7 +152,7 @@ def index(request):
     for sc in scripts:
         sc['test_type_label'] = type_label_map.get(sc.get('test_type'), '')
 
-    return render(request, 'test_cases/list.html', {
+    ctx = {
         'scripts': scripts, 'total': total, 'page': page, 'page_size': page_size,
         'page_size_options': [10, 25, 50, 100], 'search': search,
         'test_type_filter': test_type_filter,
@@ -158,7 +161,11 @@ def index(request):
         'test_types': test_types,
         'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
         'page_range': build_page_range(page, total_pages),
-    })
+    }
+    if request.user.is_staff:
+        ctx['owner_filter'] = str(owner_id) if owner_id else 'all'
+        ctx['owner_choices'] = get_owner_choices(request.user.id)
+    return render(request, 'test_cases/list.html', ctx)
 
 
 @csrf_exempt

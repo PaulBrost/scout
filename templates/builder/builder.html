@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load core_filters %}
 {% block title %}Test Editor{% endblock %}
-{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Scripts</a> <span class="text-muted mx-1">/</span> {% if file_path %}<span id="scriptNameDisplay" class="editable-name" onclick="editScriptName()" title="Click to rename">{{ script_meta.description|default:filename }}</span><input type="text" id="scriptNameInput" class="form-control form-control-sm d-none" style="display:none;width:auto;min-width:200px;font-size:inherit;font-weight:inherit;padding:0 .25rem;height:auto;line-height:inherit" onblur="saveScriptName()" onkeydown="if(event.key==='Enter'){this.blur()}else if(event.key==='Escape'){cancelScriptName()}">{% else %}{{ qp_description|default:"New Script" }}{% endif %}{% endblock %}
+{% block page_title %}<a href="/test-cases/" class="text-decoration-none text-muted">Test Plans</a> <span class="text-muted mx-1">/</span> {% if file_path %}<span id="scriptNameDisplay" class="editable-name" onclick="editScriptName()" title="Click to rename">{{ script_meta.description|default:filename }}</span><input type="text" id="scriptNameInput" class="form-control form-control-sm d-none" style="display:none;width:auto;min-width:200px;font-size:inherit;font-weight:inherit;padding:0 .25rem;height:auto;line-height:inherit" onblur="saveScriptName()" onkeydown="if(event.key==='Enter'){this.blur()}else if(event.key==='Escape'){cancelScriptName()}">{% else %}{{ qp_description|default:"New Test Plan" }}{% endif %}{% endblock %}
 
 {% block topbar_actions %}
 {% if file_path %}
@@ -195,13 +195,13 @@
         </div>
       </div>
 
-      <!-- Right: Script Summary panel -->
+      <!-- Right: Test Plan Summary panel -->
       <div class="col-lg-5 d-flex flex-column">
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
           <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
             <div>
               <i class="bi bi-file-text me-2 text-success"></i>
-              <span class="fw-semibold small">Script Summary</span>
+              <span class="fw-semibold small">Test Plan Summary</span>
             </div>
             <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="editSummary()" id="editSummaryBtn" style="font-size:.75rem">
               <i class="bi bi-pencil"></i> Edit
@@ -258,7 +258,7 @@
         <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
           <div>
             <i class="bi bi-code-slash me-2"></i>
-            <span class="fw-semibold small">Script Editor</span>
+            <span class="fw-semibold small">Test Plan Editor</span>
             <span class="text-muted small ms-2">{{ filename|default:"untitled.spec.js" }}</span>
           </div>
           <span id="dirtyIndicator" class="text-warning small" style="display:none">● unsaved</span>

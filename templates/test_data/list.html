@@ -22,6 +22,14 @@
       <option value="items" {% if type_filter == 'items' %}selected{% endif %}>Item List</option>
       <option value="custom" {% if type_filter == 'custom' %}selected{% endif %}>Custom</option>
     </select>
+    {% if owner_choices %}
+    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
+      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
+      {% for u in owner_choices %}
+      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   <span class="text-muted small">{{ datasets|length }} data set{{ datasets|length|pluralize }}</span>
 </div>
@@ -38,6 +46,7 @@
           <th>Type</th>
           <th>Entries</th>
           <th>Description</th>
+          {% if owner_choices %}<th>Owner</th>{% endif %}
           <th>Actions</th>
         </tr>
       </thead>
@@ -69,6 +78,7 @@
           </td>
           <td class="small text-muted">{{ ds.entry_count }}</td>
           <td class="small text-muted">{{ ds.description|default:"—"|truncatechars:50 }}</td>
+          {% if owner_choices %}<td class="small text-muted">{{ ds.owner_name|default:"System" }}</td>{% endif %}
           <td class="text-nowrap">
             <a href="/test-data/{{ ds.id }}/" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-pencil-square"></i>
@@ -88,6 +98,10 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); window.location = url;
+}
+function setOwner(val) {
+  document.cookie = 'scout_owner=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+  updateParam('owner', val);
 }
 </script>
 {% endblock %}

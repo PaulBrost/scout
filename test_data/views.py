@@ -5,7 +5,7 @@ from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
-from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter
+from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter, get_owner_filter, get_owner_choices
 
 
 @login_required(login_url='/login/')
@@ -35,10 +35,11 @@ def index(request):
         params.append(type_filter)
         where.append('td.data_type = %s')
 
-    # User-level scoping
-    if not request.user.is_staff:
+    # Owner scoping — admins default to own, non-admins always own
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(td.created_by_id = %s OR td.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
@@ -49,11 +50,13 @@ def index(request):
                    td.environment_id, e.name AS environment_name,
                    td.assessment_id, a.name AS assessment_name,
                    td.item_id, i.title AS item_title,
-                   jsonb_array_length(CASE WHEN jsonb_typeof(td.data) = 'array' THEN td.data ELSE '[]'::jsonb END) AS entry_count
+                   jsonb_array_length(CASE WHEN jsonb_typeof(td.data) = 'array' THEN td.data ELSE '[]'::jsonb END) AS entry_count,
+                   ou.username AS owner_name
             FROM test_data_sets td
             LEFT JOIN environments e ON td.environment_id = e.id
             LEFT JOIN assessments a ON td.assessment_id = a.id
             LEFT JOIN items i ON td.item_id = i.item_id
+            LEFT JOIN auth_user ou ON td.created_by_id = ou.id
             {where_clause}
             ORDER BY td.name
         """, params)
@@ -70,12 +73,16 @@ def index(request):
         cursor.execute(env_query, env_params)
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
 
-    return render(request, 'test_data/list.html', {
+    ctx = {
         'datasets': datasets,
         'environments': environments,
         'env_filter': env_filter,
         'type_filter': type_filter,
-    })
+    }
+    if request.user.is_staff:
+        ctx['owner_filter'] = str(owner_id) if owner_id else 'all'
+        ctx['owner_choices'] = get_owner_choices(request.user.id)
+    return render(request, 'test_data/list.html', ctx)
 
 
 @login_required(login_url='/login/')

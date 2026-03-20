@@ -35,6 +35,15 @@
       {% endfor %}
     </select>
     {% endif %}
+    {% if owner_choices %}
+    <span class="border-start mx-1"></span>
+    <select class="form-select form-select-sm" style="width:auto;display:inline-block" onchange="setOwner(this.value)">
+      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
+      {% for u in owner_choices %}
+      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
 </div>
@@ -60,6 +69,7 @@
           <th>Run</th>
           <th>Issues</th>
           <th>Status</th>
+          {% if owner_choices %}<th>Owner</th>{% endif %}
           <th>Created</th>
           <th>Actions</th>
         </tr>
@@ -117,6 +127,7 @@
             {% endif %}
           </td>
           <td><span class="status-badge status-{{ rv.status }}" id="status-badge-{{ rv.id }}">{{ rv.status }}</span></td>
+          {% if owner_choices %}<td class="small text-muted">{{ rv.owner_name|default:"System" }}</td>{% endif %}
           <td class="text-muted small">{{ rv.created_at|default:"—" }}</td>
           <td class="text-nowrap" onclick="event.stopPropagation()">
             <div class="dropdown">
@@ -320,6 +331,14 @@ function updateActionDropdown(id, status) {
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
+}
+
+function setOwner(val) {
+  document.cookie = 'scout_owner=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+  var url = new URL(window.location);
+  url.searchParams.set('owner', val);
+  url.searchParams.set('page', '1');
+  window.location = url;
 }
 
 function toggleStatus(val) {

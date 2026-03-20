@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, get_owner_filter
 
 
 @login_required(login_url='/login/')
@@ -14,9 +14,10 @@ def index(request):
     if env_ids is not None:
         params.append(list(str(e) for e in env_ids))
         where.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
-    if not request.user.is_staff:
+    owner_id, _ = get_owner_filter(request)
+    if owner_id is not None:
         where.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
-        params.append(request.user.id)
+        params.append(owner_id)
     run_where = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
@@ -68,9 +69,9 @@ def index(request):
         if env_ids is not None:
             ai_where_parts.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
             ai_params.append(list(str(e) for e in env_ids))
-        if not request.user.is_staff:
+        if owner_id is not None:
             ai_where_parts.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
-            ai_params.append(request.user.id)
+            ai_params.append(owner_id)
         cursor.execute(f"""
             SELECT COUNT(*) FROM ai_analyses aa
             JOIN test_runs r ON aa.run_id = r.id

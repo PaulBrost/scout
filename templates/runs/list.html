@@ -16,6 +16,14 @@
       <option value="delete">Delete</option>
     </select>
     <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
+    {% if owner_choices %}
+    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
+      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
+      {% for u in owner_choices %}
+      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   <form method="get" class="d-flex gap-2 align-items-center">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -48,6 +56,7 @@
           <th>Scripts</th>
           <th>Duration</th>
           <th>Results</th>
+          {% if owner_choices %}<th>Owner</th>{% endif %}
           <th class="text-end">Actions</th>
         </tr>
       </thead>
@@ -74,6 +83,7 @@
             {% if run.summary.issues %}<span class="text-muted">/</span> <span class="text-warning">{{ run.summary.issues }}i</span>{% endif %}
             {% else %}—{% endif %}
           </td>
+          {% if owner_choices %}<td class="small text-muted">{{ run.owner_name|default:"System" }}</td>{% endif %}
           <td class="text-end text-nowrap">
             <button class="btn btn-sm btn-outline-danger" onclick="deleteRun('{{ run.id }}')" title="Delete run">
               <i class="bi bi-trash"></i>
@@ -105,6 +115,10 @@
 <script>
 function updateParam(key, val) {
   var url = new URL(window.location); url.searchParams.set(key, val); url.searchParams.set('page', 1); window.location = url;
+}
+function setOwner(val) {
+  document.cookie = 'scout_owner=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+  updateParam('owner', val);
 }
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
