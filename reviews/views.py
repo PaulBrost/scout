@@ -45,14 +45,20 @@ def index(request):
     where = []
     params = []
 
+    # Status supports comma-separated multi-select (e.g. "pending,issue")
+    valid_statuses = {'pending', 'confirmed', 'resolved', 'dismissed'}
     if status_filter and status_filter != 'all':
-        params.append(status_filter)
-        where.append('rv.status = %s')
+        statuses = [s.strip() for s in status_filter.split(',') if s.strip() in valid_statuses]
+        if statuses:
+            params.append(statuses)
+            where.append('rv.status = ANY(%s)')
+        else:
+            status_filter = 'all'
     elif not status_filter:
-        # Default view (no param) shows pending
-        status_filter = 'pending'
-        params.append('pending')
-        where.append('rv.status = %s')
+        # Default view: pending + confirmed
+        status_filter = 'pending,confirmed'
+        params.append(['pending', 'confirmed'])
+        where.append('rv.status = ANY(%s)')
 
     if source_filter and source_filter != 'all':
         params.append(source_filter)
@@ -183,7 +189,7 @@ def review_action(request):
         action = data.get('action')  # issue, suppress, resolve, pending
         notes = data.get('notes', '')
 
-        if not review_id or action not in ('issue', 'suppress', 'resolve', 'pending'):
+        if not review_id or action not in ('confirm', 'dismiss', 'resolve', 'pending'):
             return JsonResponse({'error': 'Invalid request'}, status=400)
 
         # Ownership check via review's test run
@@ -199,7 +205,7 @@ def review_action(request):
         if owner_row and not can_user_access_record(request.user, owner_row[0]):
             return JsonResponse({'error': 'Access denied'}, status=403)
 
-        status_map = {'issue': 'issue', 'suppress': 'suppressed', 'resolve': 'resolved', 'pending': 'pending'}
+        status_map = {'confirm': 'confirmed', 'dismiss': 'dismissed', 'resolve': 'resolved', 'pending': 'pending'}
         new_status = status_map[action]
 
         with connection.cursor() as cursor:
@@ -209,9 +215,9 @@ def review_action(request):
                 [new_status, notes or None, request.user.id, review_id]
             )
 
-            # If suppressing, create a ReviewSuppression record so future runs
-            # auto-suppress the same screenshot+script+environment combo
-            if action == 'suppress':
+            # If dismissing, create a ReviewSuppression record so future runs
+            # auto-dismiss the same screenshot+script+environment combo
+            if action == 'dismiss':
                 # Get the screenshot details to build the suppression key
                 cursor.execute("""
                     SELECT rs.name, trs.script_path, tr.environment_id
@@ -233,6 +239,57 @@ def review_action(request):
                           request.user.id, notes or None])
 
         return JsonResponse({'ok': True, 'status': new_status})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required(login_url='/login/')
+def bulk_action(request):
+    """Bulk update or delete reviews."""
+    try:
+        data = json.loads(request.body)
+        ids = data.get('ids', [])
+        action = data.get('action')
+
+        if not ids or action not in ('confirm', 'dismiss', 'resolve', 'pending', 'delete'):
+            return JsonResponse({'error': 'Invalid request'}, status=400)
+
+        # Filter to only reviews the user owns
+        with connection.cursor() as cursor:
+            if request.user.is_staff:
+                accessible_ids = ids
+            else:
+                placeholders = ','.join(['%s'] * len(ids))
+                cursor.execute(f"""
+                    SELECT rv.id::text FROM reviews rv
+                    LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
+                    LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+                    LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
+                    WHERE rv.id::text IN ({placeholders})
+                      AND (tr.created_by_id = %s OR tr.created_by_id IS NULL)
+                """, ids + [request.user.id])
+                accessible_ids = [r[0] for r in cursor.fetchall()]
+
+            if not accessible_ids:
+                return JsonResponse({'error': 'No accessible reviews'}, status=403)
+
+            if action == 'delete':
+                cursor.execute(
+                    "DELETE FROM reviews WHERE id::text = ANY(%s)",
+                    [accessible_ids]
+                )
+                return JsonResponse({'ok': True, 'deleted': len(accessible_ids)})
+
+            status_map = {'confirm': 'confirmed', 'dismiss': 'dismissed', 'resolve': 'resolved', 'pending': 'pending'}
+            new_status = status_map[action]
+            cursor.execute(
+                "UPDATE reviews SET status = %s, reviewer_id = %s, reviewed_at = now() WHERE id::text = ANY(%s)",
+                [new_status, request.user.id, accessible_ids]
+            )
+            updated = [{'id': rid, 'status': new_status} for rid in accessible_ids]
+            return JsonResponse({'ok': True, 'updated': updated})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

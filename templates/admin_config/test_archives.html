@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Test Archives{% endblock %}
-{% block page_title %}Test Archives{% endblock %}
+{% block title %}Archived Test Plans{% endblock %}
+{% block page_title %}Archived Test Plans{% endblock %}
 
 {% block content %}
 {% if success == 'restored' %}
 <div class="alert alert-success alert-dismissible fade show" role="alert">
-  Test restored successfully.
+  Test plan restored successfully.
   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% elif success == 'deleted' %}
@@ -23,25 +23,45 @@
 {% if not archiving_enabled %}
 <div class="alert alert-warning mb-4">
   <i class="bi bi-exclamation-triangle me-1"></i>
-  Test archiving is currently <strong>disabled</strong>. Deleted tests are permanently removed.
+  Test plan archiving is currently <strong>disabled</strong>. Deleted test plans are permanently removed.
   <a href="/admin-config/general/" class="alert-link">Enable archiving in General Settings</a>.
 </div>
 {% endif %}
 
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-    <span>Archived Tests ({{ archives|length }})</span>
+<div id="bulkBar" class="d-flex align-items-center gap-2 mb-2" style="display:none !important">
+  <span class="small text-muted" id="bulkCount">0 selected</span>
+  <button class="btn btn-sm btn-outline-success" onclick="bulkRestore()"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button>
+  <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()"><i class="bi bi-trash me-1"></i>Permanently Delete</button>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" id="pageSizeSelect" onchange="changePageSize()">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <span class="text-muted small">entries</span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
     {% if archives %}
     <button class="btn btn-sm btn-outline-warning" onclick="runCleanup()">
       <i class="bi bi-trash3"></i> Run Cleanup
     </button>
     {% endif %}
+    <span class="text-muted small" id="totalCount">{{ archives|length }} archived</span>
   </div>
+</div>
+
+<div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th>Test Name</th>
+          <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)"></th>
+          <th>Test Plan</th>
           <th>Environment</th>
           <th>Type</th>
           <th>Archived</th>
@@ -52,7 +72,8 @@
       </thead>
       <tbody id="archivesBody">
         {% for a in archives %}
-        <tr id="archive-row-{{ a.id }}">
+        <tr class="archive-row" data-id="{{ a.id }}">
+          <td><input type="checkbox" class="archive-cb" value="{{ a.id }}" onchange="updateBulkBar()"></td>
           <td class="small">{{ a.description|default:a.script_path }}</td>
           <td class="small">{{ a.environment_name|default:"—" }}</td>
           <td><span class="badge bg-light text-dark">{{ a.test_type|default:"—" }}</span></td>
@@ -60,8 +81,8 @@
           <td class="small text-muted">{{ a.expires_at|date:"M j, Y" }}</td>
           <td class="small">{{ a.archived_by_name|default:"—" }}</td>
           <td class="text-end text-nowrap">
-            <button class="btn btn-sm btn-outline-success" onclick="restoreArchive({{ a.id }})" title="Restore test">
-              <i class="bi bi-arrow-counterclockwise"></i> Restore
+            <button class="btn btn-sm btn-outline-success" onclick="restoreArchive({{ a.id }})" title="Restore">
+              <i class="bi bi-arrow-counterclockwise"></i>
             </button>
             <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteArchive({{ a.id }})" title="Permanently delete">
               <i class="bi bi-trash"></i>
@@ -69,55 +90,136 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted text-center py-4">No archived tests.</td></tr>
+        <tr class="empty-row"><td colspan="8" class="text-muted text-center py-4">No archived test plans.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small" id="pageInfo"></div>
+  <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+</div>
+
 <script>
+var currentPage = 1;
+var pageSize = 25;
+var allRows = Array.from(document.querySelectorAll('.archive-row'));
+var emptyRow = document.querySelector('.empty-row');
+
+function renderPage() {
+  var total = allRows.length;
+  var totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+  var start = (currentPage - 1) * pageSize;
+  var end = Math.min(start + pageSize, total);
+
+  allRows.forEach(function(row, i) {
+    row.style.display = (i >= start && i < end) ? '' : 'none';
+  });
+  if (emptyRow) emptyRow.style.display = total > 0 ? 'none' : '';
+
+  document.getElementById('pageInfo').textContent = total > 0
+    ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total
+    : '';
+
+  var pag = document.getElementById('pagination');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+  var html = '<li class="page-item ' + (currentPage <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="goPage(1);return false;">«</a></li>';
+  for (var p = 1; p <= totalPages; p++) {
+    html += '<li class="page-item ' + (p === currentPage ? 'active' : '') + '"><a class="page-link" href="#" onclick="goPage(' + p + ');return false;">' + p + '</a></li>';
+  }
+  html += '<li class="page-item ' + (currentPage >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="goPage(' + totalPages + ');return false;">»</a></li>';
+  pag.innerHTML = html;
+}
+
+function goPage(p) { currentPage = p; renderPage(); }
+function changePageSize() { pageSize = parseInt(document.getElementById('pageSizeSelect').value); currentPage = 1; renderPage(); }
+
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
 }
 
+function getSelectedIds() {
+  return Array.from(document.querySelectorAll('.archive-cb:checked')).map(function(cb) { return parseInt(cb.value); });
+}
+
+function updateBulkBar() {
+  var ids = getSelectedIds();
+  var bar = document.getElementById('bulkBar');
+  bar.style.cssText = ids.length > 0 ? '' : 'display:none !important';
+  document.getElementById('bulkCount').textContent = ids.length + ' selected';
+  document.getElementById('selectAll').checked = ids.length > 0 && ids.length === document.querySelectorAll('.archive-cb').length;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.archive-cb').forEach(function(cb) {
+    if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+  });
+  updateBulkBar();
+}
+
+function removeRow(id) {
+  var row = document.querySelector('.archive-row[data-id="' + id + '"]');
+  if (row) { allRows = allRows.filter(function(r) { return r !== row; }); row.remove(); }
+  document.getElementById('totalCount').textContent = allRows.length + ' archived';
+  renderPage();
+}
+
 function restoreArchive(id) {
-  if (!confirm('Restore this test? It will be re-added to the active tests list.')) return;
+  if (!confirm('Restore this test plan? It will be re-added to the active test plans list.')) return;
   fetch('/admin-config/archives/restore/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({id: id})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.ok) {
-      var row = document.getElementById('archive-row-' + id);
-      if (row) row.remove();
-    } else {
-      alert('Error: ' + (d.error || 'Unknown error'));
-    }
-  })
-  .catch(function(e) { alert('Error: ' + e.message); });
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { removeRow(id); updateBulkBar(); }
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  }).catch(function(e) { alert('Error: ' + e.message); });
 }
 
 function deleteArchive(id) {
-  if (!confirm('Permanently delete this archived test and all associated run history? This cannot be undone.')) return;
+  if (!confirm('Permanently delete this archived test plan and all associated run history? This cannot be undone.')) return;
   fetch('/admin-config/archives/delete/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({id: id})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.ok) {
-      var row = document.getElementById('archive-row-' + id);
-      if (row) row.remove();
-    } else {
-      alert('Error: ' + (d.error || 'Unknown error'));
-    }
-  })
-  .catch(function(e) { alert('Error: ' + e.message); });
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { removeRow(id); updateBulkBar(); }
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  }).catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function bulkRestore() {
+  var ids = getSelectedIds();
+  if (!ids.length) return;
+  if (!confirm('Restore ' + ids.length + ' selected test plan(s)?')) return;
+  Promise.all(ids.map(function(id) {
+    return fetch('/admin-config/archives/restore/', {
+      method: 'POST', headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    }).then(function(r) { return r.json().then(function(d) { return {id: id, ok: d.ok}; }); });
+  })).then(function(results) {
+    results.forEach(function(r) { if (r.ok) removeRow(r.id); });
+    updateBulkBar();
+  });
+}
+
+function bulkDelete() {
+  var ids = getSelectedIds();
+  if (!ids.length) return;
+  if (!confirm('Permanently delete ' + ids.length + ' selected archive(s) and all associated run history? This cannot be undone.')) return;
+  Promise.all(ids.map(function(id) {
+    return fetch('/admin-config/archives/delete/', {
+      method: 'POST', headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    }).then(function(r) { return r.json().then(function(d) { return {id: id, ok: d.ok}; }); });
+  })).then(function(results) {
+    results.forEach(function(r) { if (r.ok) removeRow(r.id); });
+    updateBulkBar();
+  });
 }
 
 function runCleanup() {
@@ -126,17 +228,12 @@ function runCleanup() {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.ok) {
-      alert('Cleanup complete: ' + d.deleted + ' expired archive(s) removed.');
-      window.location.reload();
-    } else {
-      alert('Error: ' + (d.error || 'Unknown error'));
-    }
-  })
-  .catch(function(e) { alert('Error: ' + e.message); });
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { alert('Cleanup complete: ' + d.deleted + ' expired archive(s) removed.'); window.location.reload(); }
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  }).catch(function(e) { alert('Error: ' + e.message); });
 }
+
+renderPage();
 </script>
 {% endblock %}

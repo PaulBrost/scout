@@ -7,11 +7,30 @@
 {% endblock %}
 
 {% block content %}
+<div id="bulkBar" class="d-flex align-items-center gap-2 mb-2" style="display:none !important">
+  <span class="small text-muted" id="bulkCount">0 selected</span>
+  <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteUsers()"><i class="bi bi-trash me-1"></i>Delete</button>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Show</label>
+    <select class="form-select form-select-sm" style="width:auto" id="pageSizeSelect" onchange="changePageSize()">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+    </select>
+    <span class="text-muted small">entries</span>
+  </div>
+  <span class="text-muted small">{{ users|length }} user{{ users|length|pluralize }}</span>
+</div>
+
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)"></th>
           <th>Username</th>
           <th>Name</th>
           <th>Email</th>
@@ -24,7 +43,12 @@
       </thead>
       <tbody>
         {% for u in users %}
-        <tr>
+        <tr class="data-row" data-user-id="{{ u.id }}">
+          <td>
+            {% if u.id != request.user.id %}
+            <input type="checkbox" class="row-cb" value="{{ u.id }}" onchange="updateBulkBar()">
+            {% endif %}
+          </td>
           <td><strong>{{ u.username }}</strong></td>
           <td>{{ u.first_name }} {{ u.last_name }}</td>
           <td class="text-muted small">{{ u.email|default:"—" }}</td>
@@ -74,10 +98,79 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted text-center py-5">No users found.</td></tr>
+        <tr class="empty-row"><td colspan="9" class="text-muted text-center py-5">No users found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<div class="d-flex align-items-center justify-content-between mt-3">
+  <div class="text-muted small" id="pageInfo"></div>
+  <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+var currentPage = 1;
+var pageSize = 25;
+var allRows = Array.from(document.querySelectorAll('.data-row'));
+
+function renderPage() {
+  var total = allRows.length;
+  var totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+  var start = (currentPage - 1) * pageSize;
+  var end = Math.min(start + pageSize, total);
+  allRows.forEach(function(row, i) { row.style.display = (i >= start && i < end) ? '' : 'none'; });
+  document.getElementById('pageInfo').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : '';
+  var pag = document.getElementById('pagination');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+  var html = '<li class="page-item ' + (currentPage <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="goPage(1);return false;">«</a></li>';
+  for (var p = 1; p <= totalPages; p++) html += '<li class="page-item ' + (p === currentPage ? 'active' : '') + '"><a class="page-link" href="#" onclick="goPage(' + p + ');return false;">' + p + '</a></li>';
+  html += '<li class="page-item ' + (currentPage >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="goPage(' + totalPages + ');return false;">»</a></li>';
+  pag.innerHTML = html;
+}
+
+function goPage(p) { currentPage = p; renderPage(); }
+function changePageSize() { pageSize = parseInt(document.getElementById('pageSizeSelect').value); currentPage = 1; renderPage(); }
+
+function getSelectedIds() {
+  return Array.from(document.querySelectorAll('.row-cb:checked')).map(function(cb) { return cb.value; });
+}
+
+function updateBulkBar() {
+  var ids = getSelectedIds();
+  var bar = document.getElementById('bulkBar');
+  bar.style.cssText = ids.length > 0 ? '' : 'display:none !important';
+  document.getElementById('bulkCount').textContent = ids.length + ' selected';
+  var allCbs = document.querySelectorAll('.row-cb');
+  document.getElementById('selectAll').checked = ids.length > 0 && ids.length === allCbs.length;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.row-cb').forEach(function(cb) {
+    if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
+  });
+  updateBulkBar();
+}
+
+function bulkDeleteUsers() {
+  var ids = getSelectedIds();
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' selected user(s)? This cannot be undone.')) return;
+  var csrf = document.querySelector('meta[name="csrf-token"]').content;
+  Promise.all(ids.map(function(id) {
+    return fetch('/users/' + id + '/delete/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'csrfmiddlewaretoken=' + encodeURIComponent(csrf),
+      redirect: 'manual'
+    }).then(function() { return {id: id, ok: true}; }).catch(function() { return {id: id, ok: false}; });
+  })).then(function() { window.location.reload(); });
+}
+
+renderPage();
+</script>
 {% endblock %}

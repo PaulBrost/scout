@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db import connection
-from core.mixins import get_user_env_ids, can_user_access_record
+from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter
 
 
 def build_page_range(page, total_pages):
@@ -33,7 +33,7 @@ def index(request):
     page_size = min(500, max(1, int(request.GET.get('page_size', 25))))
     search = request.GET.get('search', '').strip()
     test_type_filter = request.GET.get('test_type', '')
-    env_filter = request.GET.get('environment', '')
+    env_filter = get_env_filter(request)
     assessment_filter = request.GET.get('assessment', '')
     item_filter = request.GET.get('item', '')
 

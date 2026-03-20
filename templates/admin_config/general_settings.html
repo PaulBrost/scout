@@ -18,18 +18,18 @@
         <div class="card-header bg-white fw-semibold">Archiving</div>
         <div class="card-body">
           <p class="small text-muted mb-3">
-            When archiving is enabled, deleting a test script preserves it in an archive for a configurable
-            number of days. Archived tests can be restored or permanently deleted from the
-            <a href="/admin-config/archives/">Test Archives</a> page. Run history is preserved while archived.
+            When archiving is enabled, deleting a test plan preserves it in an archive for a configurable
+            number of days. Archived test plans can be restored or permanently deleted from the
+            <a href="/admin-config/archives/">Archived Test Plans</a> page. Run history is preserved while archived.
           </p>
           <div class="mb-3 form-check form-switch">
             <input type="checkbox" name="archiving_enabled" id="archivingEnabled"
               class="form-check-input" value="true"
               {% if archiving_enabled %}checked{% endif %}>
-            <label class="form-check-label fw-semibold" for="archivingEnabled">Enable test archiving</label>
+            <label class="form-check-label fw-semibold" for="archivingEnabled">Enable test plan archiving</label>
             <div class="form-text">
-              When enabled, deleted tests are archived instead of permanently removed.
-              When disabled, tests are permanently deleted along with their associated run history.
+              When enabled, deleted test plans are archived instead of permanently removed.
+              When disabled, test plans are permanently deleted along with their associated run history.
             </div>
           </div>
           <div class="mb-3">
@@ -37,9 +37,12 @@
             <input type="number" name="archiving_retention_days" class="form-control form-control-sm" style="max-width:120px"
               value="{{ retention_days }}" min="1" max="365">
             <div class="form-text">
-              Number of days to keep archived tests before automatic cleanup. Default: 30.
+              Number of days to keep archived test plans before automatic cleanup. Default: 30.
             </div>
           </div>
+        </div>
+        <div class="card-footer bg-white text-end">
+          <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
         </div>
       </div>
     </div>
@@ -49,27 +52,25 @@
         <div class="card-header bg-white fw-semibold">How It Works</div>
         <div class="card-body small text-muted">
           <ul class="mb-0 ps-3">
-            <li><strong>Archiving ON:</strong> Deleted tests are moved to an archive table with their file contents preserved. Run history is kept intact for potential restoration.</li>
-            <li class="mt-2"><strong>Archiving OFF:</strong> Tests are permanently deleted along with all associated runs, screenshots, baselines, and AI analyses.</li>
+            <li><strong>Archiving ON:</strong> Deleted test plans are moved to an archive table with their file contents preserved. Run history is kept intact for potential restoration.</li>
+            <li class="mt-2"><strong>Archiving OFF:</strong> Test plans are permanently deleted along with all associated runs, screenshots, baselines, and AI analyses.</li>
             <li class="mt-2"><strong>Auto-cleanup:</strong> Expired archives are automatically removed when their retention period ends.</li>
-            <li class="mt-2"><strong>Restore:</strong> Archived tests can be restored from the <a href="/admin-config/archives/">Test Archives</a> page.</li>
+            <li class="mt-2"><strong>Restore:</strong> Archived test plans can be restored from the <a href="/admin-config/archives/">Archived Test Plans</a> page.</li>
           </ul>
         </div>
       </div>
     </div>
   </div>
-
-  <div class="mt-3">
-    <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
-  </div>
 </form>
 
-<!-- Script Types -->
-<div class="row g-4 mt-2">
+<hr class="my-4">
+
+<!-- Test Plan Types -->
+<div class="row g-4">
   <div class="col-lg-8">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-        Script Types
+        Test Plan Types
         <button type="button" class="btn btn-sm btn-outline-primary" onclick="addScriptType()">
           <i class="bi bi-plus"></i> Add
         </button>
@@ -88,16 +89,16 @@
       </div>
       <div class="card-footer bg-white d-flex justify-content-between align-items-center">
         <div id="script-types-status" class="small text-muted"></div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="saveScriptTypes()">Save Script Types</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveScriptTypes()">Save Test Plan Types</button>
       </div>
     </div>
   </div>
   <div class="col-lg-4">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold">About Script Types</div>
+      <div class="card-header bg-white fw-semibold">About Test Plan Types</div>
       <div class="card-body small text-muted">
-        <p>Script types categorize your test scripts in the Scripts list and Builder. The <strong>value</strong> is stored in the database and the <strong>label</strong> is what users see.</p>
-        <p class="mb-0">These are purely for organization &mdash; no script type triggers special behavior. Baseline comparison runs automatically for any script that has stored baselines, regardless of type.</p>
+        <p>Test plan types categorize your test plans in the Test Plans list and Builder. The <strong>value</strong> is stored in the database and the <strong>label</strong> is what users see.</p>
+        <p class="mb-0">These are purely for organization &mdash; no type triggers special behavior. Baseline comparison runs automatically for any test plan that has stored baselines, regardless of type.</p>
       </div>
     </div>
   </div>
@@ -116,7 +117,7 @@ var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('
 function renderScriptTypes() {
   var tbody = document.getElementById('script-types-body');
   if (!scriptTypes.length) {
-    tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-3">No script types defined.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-3">No test plan types defined.</td></tr>';
     return;
   }
   tbody.innerHTML = scriptTypes.map(function(t, i) {
@@ -165,7 +166,7 @@ function editScriptType(idx) {
 
 function removeScriptType(idx) {
   var t = scriptTypes[idx];
-  if (!confirm('Remove script type "' + t.label + '"? Existing scripts with this type will keep their current value.')) return;
+  if (!confirm('Remove type "' + t.label + '"? Existing test plans with this type will keep their current value.')) return;
   scriptTypes.splice(idx, 1);
   renderScriptTypes();
 }

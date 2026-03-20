@@ -51,14 +51,14 @@
   </div>
 </div>
 
-<!-- 2. Configured Suite Scripts -->
+<!-- 2. Configured Suite Test Plans -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-    Suite Scripts
+    Suite Test Plans
     <div class="d-flex align-items-center gap-2">
       <span id="scriptCount" class="badge bg-secondary">0</span>
       <button class="btn btn-sm btn-outline-primary" onclick="openAddModal()">
-        <i class="bi bi-plus-lg me-1"></i>Add Scripts
+        <i class="bi bi-plus-lg me-1"></i>Add Test Plans
       </button>
     </div>
   </div>
@@ -79,7 +79,7 @@
       </table>
     </div>
     <div id="noScriptsMsg" class="text-muted text-center py-4 small" style="display:none">
-      No scripts added yet. Click "Add Scripts" to get started.
+      No test plans added yet. Click "Add Test Plans" to get started.
     </div>
   </div>
 </div>
@@ -203,7 +203,7 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Add Scripts to Suite</h5>
+        <h5 class="modal-title">Add Test Plans to Suite</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -231,7 +231,7 @@
         </div>
         <!-- Search -->
         <div class="mb-2">
-          <input type="text" id="modalSearch" class="form-control form-control-sm" placeholder="Filter scripts..." oninput="filterModalScripts(this.value)">
+          <input type="text" id="modalSearch" class="form-control form-control-sm" placeholder="Filter test plans..." oninput="filterModalScripts(this.value)">
         </div>
         <!-- Select all -->
         <div class="d-flex align-items-center gap-2 mb-2 px-1">

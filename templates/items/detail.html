@@ -69,12 +69,12 @@
   </button>
 </div>
 
-<!-- Test Scripts -->
+<!-- Test Plans -->
 <div class="card border-0 shadow-sm">
   <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-    Test Scripts ({{ scripts|length }})
+    Test Plans ({{ scripts|length }})
     <button class="btn btn-sm btn-primary" onclick="showNewScriptModal()">
-      <i class="bi bi-plus"></i> New Test Script
+      <i class="bi bi-plus"></i> New Test Plan
     </button>
   </div>
   <div class="card-body p-0">
@@ -100,7 +100,7 @@
         </tr>
         {% empty %}
         <tr id="noScriptsRow"><td colspan="3" class="text-muted text-center py-4">
-          No test scripts linked to this item.
+          No test plans linked to this item.
         </td></tr>
         {% endfor %}
       </tbody>
@@ -113,7 +113,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">New Test Script</h5>
+        <h5 class="modal-title">New Test Plan</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">

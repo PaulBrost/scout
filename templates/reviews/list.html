@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Reviews{% endblock %}
-{% block page_title %}Review Queue{% endblock %}
+{% block title %}Review Issues{% endblock %}
+{% block page_title %}Review Issues{% endblock %}
 
 {% block topbar_actions %}
 <a href="/reviews/suppressions/" class="btn btn-sm btn-outline-secondary">
@@ -11,21 +11,11 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex gap-2">
-    <a href="?status=pending&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'pending' %}active{% endif %}">
-      Pending
-    </a>
-    <a href="?status=issue&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'issue' %}active{% endif %}">
-      Issues
-    </a>
-    <a href="?status=resolved&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'resolved' %}active{% endif %}">
-      Resolved
-    </a>
-    <a href="?status=suppressed&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'suppressed' %}active{% endif %}">
-      Suppressed
-    </a>
-    <a href="?status=all&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}">
-      All
-    </a>
+    <button class="btn btn-sm filter-btn {% if 'pending' in status_filter %}active{% endif %}" onclick="toggleStatus('pending')">Pending</button>
+    <button class="btn btn-sm filter-btn {% if 'confirmed' in status_filter %}active{% endif %}" onclick="toggleStatus('confirmed')">Confirmed</button>
+    <button class="btn btn-sm filter-btn {% if 'resolved' in status_filter %}active{% endif %}" onclick="toggleStatus('resolved')">Resolved</button>
+    <button class="btn btn-sm filter-btn {% if 'dismissed' in status_filter %}active{% endif %}" onclick="toggleStatus('dismissed')">Dismissed</button>
+    <button class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}" onclick="setAllStatuses()">All</button>
     <span class="border-start mx-1"></span>
     <a href="?status={{ status_filter }}&source=all&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if not source_filter or source_filter == 'all' %}active{% endif %}" title="All sources">
       All Types
@@ -49,11 +39,21 @@
   <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
 </div>
 
+<div id="bulkBar" class="d-flex align-items-center gap-2 mb-2" style="display:none !important">
+  <span class="small text-muted" id="bulkCount">0 selected</span>
+  <button class="btn btn-sm btn-outline-warning" onclick="bulkAction('pending')">Pending</button>
+  <button class="btn btn-sm btn-outline-danger" onclick="bulkAction('confirm')">Confirmed</button>
+  <button class="btn btn-sm btn-outline-success" onclick="bulkAction('resolve')">Resolved</button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('dismiss')">Dismissed</button>
+  <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()"><i class="bi bi-trash me-1"></i>Delete</button>
+</div>
+
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th style="width:30px" onclick="event.stopPropagation()"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)"></th>
           <th>Assessment / Item</th>
           <th>Type</th>
           <th>Details</th>
@@ -67,6 +67,7 @@
       <tbody>
         {% for rv in reviews %}
         <tr id="review-{{ rv.id }}" class="review-row" style="cursor:pointer" onclick="toggleDetail('{{ rv.id }}')">
+          <td onclick="event.stopPropagation()"><input type="checkbox" class="review-cb" value="{{ rv.id }}" onchange="updateBulkBar()"></td>
           <td>
             {% if rv.assessment_name %}
             <span class="small">{{ rv.assessment_name }}</span>
@@ -123,14 +124,14 @@
                 <i class="bi bi-three-dots"></i>
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
-                {% if rv.status != 'issue' %}
-                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'issue'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Mark as Issue</a></li>
+                {% if rv.status != 'confirmed' %}
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'confirm'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Confirm Issue</a></li>
                 {% endif %}
                 {% if rv.status != 'resolved' %}
                 <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'resolve'); return false;"><i class="bi bi-check-circle text-success me-2"></i>Mark Resolved</a></li>
                 {% endif %}
-                {% if rv.status != 'suppressed' %}
-                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'suppress'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Suppress</a></li>
+                {% if rv.status != 'dismissed' %}
+                <li><a class="dropdown-item" href="#" onclick="reviewAction('{{ rv.id }}', 'dismiss'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Dismiss</a></li>
                 {% endif %}
                 {% if rv.status != 'pending' %}
                 <li><hr class="dropdown-divider"></li>
@@ -142,7 +143,7 @@
         </tr>
         <!-- Expandable detail row -->
         <tr id="detail-{{ rv.id }}" class="detail-row" style="display:none">
-          <td colspan="8" class="bg-light p-0">
+          <td colspan="9" class="bg-light p-0">
             <div class="p-3">
               <div class="row">
                 {% if rv.screenshot_path %}
@@ -216,7 +217,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
+        <tr><td colspan="9" class="text-muted text-center py-5">No reviews in this queue.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -256,9 +257,9 @@
 <script>
 var statusClasses = {
   pending: 'status-pending',
-  issue: 'status-issue',
+  confirmed: 'status-confirmed',
   resolved: 'status-resolved',
-  suppressed: 'status-suppressed'
+  dismissed: 'status-dismissed'
 };
 
 function toggleDetail(id) {
@@ -274,7 +275,7 @@ function showScreenshotModal(src, name) {
 }
 
 function reviewAction(id, action) {
-  if (action === 'suppress' && !confirm('Suppress this item? Future runs with the same screenshot, script, and environment will be auto-suppressed.')) return;
+  if (action === 'dismiss' && !confirm('Dismiss this item? Future runs with the same screenshot, script, and environment will be auto-dismissed.')) return;
 
   fetch('/reviews/action/', {
     method: 'POST',
@@ -303,12 +304,12 @@ function updateActionDropdown(id, status) {
   if (!menu) return;
 
   var items = [];
-  if (status !== 'issue')
-    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'issue\'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Mark as Issue</a></li>');
+  if (status !== 'confirmed')
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'confirm\'); return false;"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Confirm Issue</a></li>');
   if (status !== 'resolved')
     items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'resolve\'); return false;"><i class="bi bi-check-circle text-success me-2"></i>Mark Resolved</a></li>');
-  if (status !== 'suppressed')
-    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'suppress\'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Suppress</a></li>');
+  if (status !== 'dismissed')
+    items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'dismiss\'); return false;"><i class="bi bi-shield-x text-secondary me-2"></i>Dismiss</a></li>');
   if (status !== 'pending') {
     items.push('<li><hr class="dropdown-divider"></li>');
     items.push('<li><a class="dropdown-item" href="#" onclick="reviewAction(\'' + id + '\', \'pending\'); return false;"><i class="bi bi-arrow-counterclockwise text-primary me-2"></i>Reopen (Pending)</a></li>');
@@ -320,6 +321,79 @@ function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : '';
 }
+
+function toggleStatus(val) {
+  var current = '{{ status_filter }}';
+  var statuses = current === 'all' ? [] : current.split(',').filter(Boolean);
+  var idx = statuses.indexOf(val);
+  if (idx >= 0) {
+    statuses.splice(idx, 1);
+  } else {
+    statuses.push(val);
+  }
+  var newStatus = statuses.length ? statuses.join(',') : 'all';
+  window.location = '?status=' + newStatus + '&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}';
+}
+
+function setAllStatuses() {
+  window.location = '?status=all&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}';
+}
+
+function getSelectedIds() {
+  return Array.from(document.querySelectorAll('.review-cb:checked')).map(function(cb) { return cb.value; });
+}
+
+function updateBulkBar() {
+  var ids = getSelectedIds();
+  var bar = document.getElementById('bulkBar');
+  if (ids.length > 0) {
+    bar.style.cssText = '';
+    document.getElementById('bulkCount').textContent = ids.length + ' selected';
+  } else {
+    bar.style.cssText = 'display:none !important';
+  }
+  document.getElementById('selectAll').checked = ids.length > 0 && ids.length === document.querySelectorAll('.review-cb').length;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.review-cb').forEach(function(cb) { cb.checked = checked; });
+  updateBulkBar();
+}
+
+function bulkAction(action) {
+  var ids = getSelectedIds();
+  if (!ids.length) return;
+  fetch('/reviews/bulk-action/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: ids, action: action})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      d.updated.forEach(function(item) {
+        var badge = document.getElementById('status-badge-' + item.id);
+        if (badge) { badge.textContent = item.status; badge.className = 'status-badge status-' + item.status; }
+        updateActionDropdown(item.id, item.status);
+        var cb = document.querySelector('.review-cb[value="' + item.id + '"]');
+        if (cb) cb.checked = false;
+      });
+      updateBulkBar();
+    } else { alert('Error: ' + (d.error || 'Unknown error')); }
+  });
+}
+
+function bulkDelete() {
+  var ids = getSelectedIds();
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' selected review(s)? This cannot be undone.')) return;
+  fetch('/reviews/bulk-action/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: ids, action: 'delete'})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { location.reload(); }
+    else { alert('Error: ' + (d.error || 'Unknown error')); }
+  });
+}
 </script>
 
 <style>
@@ -327,9 +401,9 @@ function getCsrf() {
 .filter-btn:hover { background: #f0f6ff; color: #4da3ff; border-color: #4da3ff; }
 .filter-btn.active { background: #4da3ff; color: #fff; border-color: #4da3ff; }
 .status-pending { background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
-.status-issue { background: #f8d7da; color: #842029; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.status-confirmed { background: #f8d7da; color: #842029; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
 .status-resolved { background: #d1e7dd; color: #0f5132; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
-.status-suppressed { background: #e2e3e5; color: #41464b; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+.status-dismissed { background: #e2e3e5; color: #41464b; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
 .detail-row td { border-top: none !important; }
 .review-row:hover { background: #f8f9fa; }
 </style>

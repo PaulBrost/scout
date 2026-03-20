@@ -312,7 +312,9 @@
         </thead>
         <tbody>
           {% for a in analyses %}
-          <tr data-screenshot="{{ a.screenshot_name|default:"" }}"
+          <tr class="analysis-row" style="cursor:pointer"
+              onclick="toggleAnalysisDetail('analysis-detail-{{ forloop.counter0 }}')"
+              data-screenshot="{{ a.screenshot_name|default:"" }}"
               data-created="{{ a.created_at|date:'Y-m-d H:i:s' }}"
               data-type="{{ a.analysis_type }}"
               data-model="{{ a.model_used|default:"" }}"
@@ -337,20 +339,54 @@
             <td class="small text-muted">{{ a.model_used|default:"—" }}</td>
             <td class="small text-muted">{% if a.duration_ms %}{{ a.duration_ms }}ms{% else %}—{% endif %}</td>
             <td>
-              <div class="d-flex align-items-center gap-1">
-                {% if a.issues_found %}
-                <a href="#" class="text-danger text-decoration-none" onclick="showAnalysisIssues({{ forloop.counter0 }}); return false;">
-                  {{ a.issues|length }} issue{{ a.issues|length|pluralize }}
-                </a>
-                {% else %}
-                <span class="text-success small">Clean</span>
-                {% endif %}
-                <button class="btn btn-sm p-0 ms-1 text-info" onclick="showAnalysisSummary({{ forloop.counter0 }})" title="View analysis summary">
-                  <i class="bi bi-info-circle"></i>
-                </button>
-              </div>
+              {% if a.issues_found %}
+              <span class="text-danger">{{ a.issues|length }} issue{{ a.issues|length|pluralize }}</span>
+              {% else %}
+              <span class="text-success small">Clean</span>
+              {% endif %}
             </td>
             <td><span class="status-badge status-{{ a.status }}">{{ a.status }}</span></td>
+          </tr>
+          <tr id="analysis-detail-{{ forloop.counter0 }}" class="analysis-detail-row" style="display:none">
+            <td colspan="7" class="bg-light p-0">
+              <div class="p-3">
+                {% if a.summary %}
+                <div class="mb-2">
+                  <strong class="small text-muted">Summary</strong>
+                  <div class="small">{{ a.summary }}</div>
+                </div>
+                {% endif %}
+                {% if a.issues_found and a.issues %}
+                <strong class="small text-muted">Issues Found</strong>
+                <div class="mt-1">
+                  {% for issue in a.issues %}
+                  <div class="border rounded p-2 mb-2 bg-white">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      {% if issue.severity %}
+                      <span class="badge {% if issue.severity == 'high' %}bg-danger{% elif issue.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                        {{ issue.severity }}
+                      </span>
+                      {% endif %}
+                      {% if issue.type %}<span class="badge bg-light text-dark">{{ issue.type }}</span>{% endif %}
+                    </div>
+                    {% if issue.message %}<div class="small">{{ issue.message }}</div>{% endif %}
+                    {% if issue.detail %}<div class="small">{{ issue.detail }}</div>{% endif %}
+                    {% if issue.text %}
+                    <div class="small"><strong>Text:</strong> <code>{{ issue.text }}</code>
+                      {% if issue.suggestion %} <i class="bi bi-arrow-right"></i> <code>{{ issue.suggestion }}</code>{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if issue.context %}
+                    <div class="small text-muted mt-1">"...{{ issue.context }}..."</div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% elif not a.issues_found %}
+                <div class="small text-success"><i class="bi bi-check-circle me-1"></i>No issues found.</div>
+                {% endif %}
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -1339,31 +1375,10 @@ function pollAnalysisResults() {
   }, 300000);
 }
 
-function showAnalysisIssues(index) {
-  var analyses = analysesData;
-  if (!analyses || !analyses[index]) return;
-  var issues = analyses[index].issues || [];
-  var text = issues.map(function(i, idx) {
-    var parts = ['Issue ' + (idx + 1) + ':'];
-    if (i.type) parts.push('Type: ' + i.type);
-    if (i.severity) parts.push('Severity: ' + i.severity);
-    if (i.message) parts.push(i.message);
-    if (i.detail) parts.push(i.detail);
-    if (i.text) parts.push('Text: "' + i.text + '"');
-    if (i.suggestion) parts.push('Suggestion: ' + i.suggestion);
-    if (i.context) parts.push('Context: ' + i.context);
-    return parts.join('\n  ');
-  }).join('\n\n');
-  document.getElementById('logContent').textContent = text || 'No issue details available.';
-  new bootstrap.Modal(document.getElementById('logModal')).show();
-}
-
-function showAnalysisSummary(index) {
-  var analyses = analysesData;
-  if (!analyses || !analyses[index]) return;
-  var summary = analyses[index].summary || 'No summary available. Clear and re-run the analysis to generate summaries.';
-  document.getElementById('logContent').textContent = summary;
-  new bootstrap.Modal(document.getElementById('logModal')).show();
+function toggleAnalysisDetail(id) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
 function clearAnalyses() {
@@ -1400,4 +1415,8 @@ function rerunTest() {
   .catch(function(err) { alert('Error: ' + err.message); });
 }
 </script>
+<style>
+.analysis-row:hover { background: #f8f9fa; }
+.analysis-detail-row td { border-top: none !important; }
+</style>
 {% endblock %}

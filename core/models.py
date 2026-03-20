@@ -278,9 +278,9 @@ class AIAnalysis(models.Model):
 class Review(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('issue', 'Issue'),
+        ('confirmed', 'Confirmed'),
         ('resolved', 'Resolved'),
-        ('suppressed', 'Suppressed'),
+        ('dismissed', 'Dismissed'),
     ]
     SOURCE_TYPE_CHOICES = [
         ('ai_analysis', 'AI Analysis'),

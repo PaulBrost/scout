@@ -797,8 +797,8 @@ def execute_run(run_id, script_paths, options=None):
                     with connection.cursor() as cursor:
                         cursor.execute(
                             """INSERT INTO reviews (id, screenshot_id, source_type, status, notes, created_at)
-                               VALUES (gen_random_uuid(), %s, 'screenshot', 'suppressed', %s, now())""",
-                            [screenshot_id, 'Auto-suppressed by existing suppression rule']
+                               VALUES (gen_random_uuid(), %s, 'screenshot', 'dismissed', %s, now())""",
+                            [screenshot_id, 'Auto-dismissed by existing suppression rule']
                         )
 
             # Count issues: screenshot mismatches + QC failures

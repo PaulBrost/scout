@@ -30,7 +30,7 @@
         <tr>
           <th><a href="?sort=name&dir={% if sort == 'name' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Name {% if sort == 'name' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Environment</th>
-          <th><a href="?sort=scripts&dir={% if sort == 'scripts' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Scripts {% if sort == 'scripts' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
+          <th><a href="?sort=scripts&dir={% if sort == 'scripts' and direction == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ page_size }}">Test Plans {% if sort == 'scripts' %}<i class="bi bi-caret-{% if direction == 'asc' %}up{% else %}down{% endif %}-fill sort-icon"></i>{% endif %}</a></th>
           <th>Last Run</th>
           <th>Last Status</th>
           <th>Actions</th>

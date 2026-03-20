@@ -150,7 +150,9 @@
     .status-dismissed { background: #e2e3e5; color: #383d41; }
     .status-bug_filed { background: #f8d7da; color: #721c24; }
     .status-issue { background: #f8d7da; color: #721c24; }
+    .status-confirmed { background: #f8d7da; color: #721c24; }
     .status-suppressed { background: #e2e3e5; color: #383d41; }
+    .status-dismissed { background: #e2e3e5; color: #383d41; }
     .status-cancelled { background: #f5c6cb; color: #721c24; }
     /* ── Table styles ── */
     .table { font-size: .875rem; }
@@ -216,16 +218,16 @@
 
         <div class="nav-section">Testing</div>
         <a href="/test-cases/" class="{% if 'test-cases' in request.path and 'builder' not in request.path %}active{% endif %}">
-          <i class="bi bi-file-code"></i> <span class="nav-label">Scripts</span>
+          <i class="bi bi-file-code"></i> <span class="nav-label">Test Plans</span>
         </a>
         <a href="/suites/" class="{% if 'suites' in request.path %}active{% endif %}">
           <i class="bi bi-collection"></i> <span class="nav-label">Suites</span>
         </a>
         <a href="/runs/" class="{% if 'runs' in request.path %}active{% endif %}">
-          <i class="bi bi-play-circle"></i> <span class="nav-label">Tests</span>
+          <i class="bi bi-play-circle"></i> <span class="nav-label">Test Results</span>
         </a>
         <a href="/reviews/" class="{% if 'reviews' in request.path %}active{% endif %}">
-          <i class="bi bi-flag"></i> <span class="nav-label">Reviews</span>
+          <i class="bi bi-flag"></i> <span class="nav-label">Review Issues</span>
         </a>
 
         <div class="nav-section">Data</div>
@@ -268,7 +270,7 @@
           <i class="bi bi-chat-square-text"></i> <span class="nav-label">Feedback</span>
         </a>
         <a href="/admin-config/archives/" class="{% if request.path == '/admin-config/archives/' %}active{% endif %}">
-          <i class="bi bi-archive"></i> <span class="nav-label">Archiving</span>
+          <i class="bi bi-archive"></i> <span class="nav-label">Archived Test Plans</span>
         </a>
         <a href="/admin-config/api/" class="{% if '/admin-config/api' in request.path %}active{% endif %}">
           <i class="bi bi-plug"></i> <span class="nav-label">API</span>
@@ -347,35 +349,30 @@
     })();
 
     // ── Environment session persistence ──
+    // Saves selection to a cookie so the server can apply it on next page load
+    // (no client-side redirect / flash).
     (function() {
-      var KEY = 'scout_selected_env';
-      window.getSessionEnv = function() { return localStorage.getItem(KEY) || ''; };
       window.setSessionEnv = function(val) {
-        if (val) localStorage.setItem(KEY, val);
-        else localStorage.removeItem(KEY);
+        if (val) {
+          document.cookie = 'scout_env=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+        } else {
+          document.cookie = 'scout_env=;path=/;max-age=0';
+        }
+      };
+      window.getSessionEnv = function() {
+        var m = document.cookie.match('(?:^|; )scout_env=([^;]*)');
+        return m ? decodeURIComponent(m[1]) : '';
       };
 
-      // URL-param env dropdowns: auto-redirect on load, save on change
-      // Runs immediately — redirect should happen before page finishes rendering
+      // URL-param env dropdowns: save selection to cookie on change
+      // (server reads the cookie as default — no redirect needed)
       var filterSels = document.querySelectorAll('[data-env-filter]');
       filterSels.forEach(function(sel) {
-        var currentVal = sel.value;
-        if (currentVal) {
-          setSessionEnv(currentVal);
-        } else {
-          var saved = getSessionEnv();
-          if (saved && sel.querySelector('option[value="' + saved + '"]')) {
-            var url = new URL(window.location);
-            url.searchParams.set('environment', saved);
-            url.searchParams.set('page', '1');
-            window.location = url;
-            return;
-          }
-        }
+        if (sel.value) setSessionEnv(sel.value);
         sel.addEventListener('change', function() { setSessionEnv(this.value); });
       });
 
-      // Form-field env dropdowns: pre-populate on load, save on change
+      // Form-field env dropdowns: pre-populate from cookie on load, save on change
       // Deferred to DOMContentLoaded so cascading handlers (onEnvChange etc.)
       // defined in template extra_scripts are available when we dispatch change
       document.addEventListener('DOMContentLoaded', function() {

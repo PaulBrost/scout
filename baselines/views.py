@@ -5,13 +5,13 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import connection
-from core.mixins import get_user_env_ids
+from core.mixins import get_user_env_ids, get_env_filter
 
 
 @login_required(login_url='/login/')
 def index(request):
     status_filter = request.GET.get('status', '')
-    env_filter = request.GET.get('environment', '')
+    env_filter = get_env_filter(request)
 
     where = []
     params = []

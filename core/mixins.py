@@ -77,6 +77,20 @@ def build_user_scope_sql(user, table_alias, column='created_by_id'):
     return (f' AND ({table_alias}.{column} = %s OR {table_alias}.{column} IS NULL)', [user.id])
 
 
+def get_env_filter(request):
+    """Return the environment filter value from the URL param or cookie.
+
+    Returns the env UUID string if one is selected, or '' for all.
+    Uses the URL ?environment= param if present; otherwise falls back
+    to the scout_env cookie so navigation preserves the user's choice
+    without a client-side redirect.
+    """
+    env_param = request.GET.get('environment')
+    if env_param is not None:
+        return env_param
+    return request.COOKIES.get('scout_env', '')
+
+
 def can_user_access_record(user, created_by_id):
     """True for admins, matching user_id, or NULL (system records)."""
     if user.is_staff:
