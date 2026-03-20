@@ -3,10 +3,35 @@
 {% block page_title %}Test Suites{% endblock %}
 
 {% block topbar_actions %}
-<a href="/suites/new/" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> New Suite</a>
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
 {% endblock %}
 
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Test Suites</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>A test suite groups multiple <a href="/test-cases/">test plans</a> together so they can be run as a batch.</p>
+        <p><strong>Key features:</strong></p>
+        <ul>
+          <li><strong>Batch execution</strong> — run all test plans in a suite with a single click</li>
+          <li><strong>Scheduling</strong> — set suites to run automatically on a recurring schedule</li>
+          <li><strong>Per-plan config</strong> — each test plan in a suite can have its own browser and viewport</li>
+        </ul>
+        <p><strong>Getting started:</strong> Click the <strong>+</strong> button to create a new suite, select an environment, add test plans, and save.</p>
+        <p>Results from suite runs appear on the <a href="/runs/">Test Results</a> page.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex align-items-center gap-2">
     <label class="text-muted small mb-0">Show</label>
@@ -28,6 +53,7 @@
     <input type="text" name="search" class="form-control form-control-sm" placeholder="Search…" value="{{ search }}" style="width:220px">
     <button class="btn btn-sm btn-outline-secondary">Search</button>
     {% if search %}<a href="?page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
+    <a href="/suites/new/" class="btn btn-sm btn-primary" title="New Suite"><i class="bi bi-plus"></i></a>
   </form>
 </div>
 

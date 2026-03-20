@@ -3,10 +3,41 @@
 {% block page_title %}Test Plans{% endblock %}
 
 {% block topbar_actions %}
-<button class="btn btn-sm btn-primary" onclick="openNewScriptModal()"><i class="bi bi-plus"></i> New Test Plan</button>
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
 {% endblock %}
 
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Test Plans</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>Test plans are automated Playwright scripts that run against assessment environments. Each test plan targets a specific environment and optionally an assessment or item.</p>
+        <p><strong>Types of tests:</strong></p>
+        <ul>
+          <li><strong>Baseline Screenshots</strong> — capture reference screenshots for every screen in an assessment</li>
+          <li><strong>Visual Regression</strong> — compare current screenshots against baselines to detect layout changes</li>
+          <li><strong>Spelling &amp; Grammar</strong> — extract on-screen text and run AI analysis for language errors</li>
+          <li><strong>QC Checklist</strong> — automatically verify interactive elements (radio buttons, checkboxes, dropdowns, etc.)</li>
+        </ul>
+        <p><strong>Creating a test plan:</strong></p>
+        <ol>
+          <li>Click <strong>New Test Plan</strong> and select an environment, then an assessment or item.</li>
+          <li>The AI-powered editor opens where you can describe what you want to test in plain language.</li>
+          <li>Review the generated script, save, and run it directly from the editor.</li>
+        </ol>
+        <p><strong>Running:</strong> Test plans can be run individually from the editor, or grouped into <a href="/suites/">Suites</a> for batch execution and scheduling.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2 px-3">
     <div class="row g-2 align-items-end">
@@ -72,6 +103,7 @@
           <option value="delete">Delete</option>
         </select>
         <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Go</button>
+        <button class="btn btn-sm btn-primary" onclick="openNewScriptModal()" title="New Test Plan"><i class="bi bi-plus"></i></button>
       </div>
     </div>
   </div>

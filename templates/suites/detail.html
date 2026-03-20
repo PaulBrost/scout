@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% load core_filters %}
 {% block title %}{% if suite %}{{ suite.name }}{% else %}New Suite{% endif %}{% endblock %}
-{% block page_title %}{% if suite %}Edit Suite{% else %}New Suite{% endif %}{% endblock %}
+{% block page_title %}<a href="/suites/" class="text-decoration-none text-muted">Suites</a> <span class="text-muted mx-1">/</span> {% if suite %}Edit Suite{% else %}New Suite{% endif %}{% endblock %}
 
 {% block topbar_actions %}
-<a href="/suites/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
 {% if suite %}
 <button class="btn btn-sm btn-success" onclick="runSuite()"><i class="bi bi-play-fill"></i> Run Now</button>
 <button class="btn btn-sm btn-outline-danger" onclick="deleteSuite()"><i class="bi bi-trash"></i></button>
@@ -12,6 +14,31 @@
 {% endblock %}
 
 {% block content %}
+
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Suites</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>A suite groups one or more test plans together so they can be run as a batch — manually or on a schedule.</p>
+        <p><strong>Creating a Suite:</strong></p>
+        <ol>
+          <li>Give the suite a <strong>Name</strong> and optional description.</li>
+          <li>Select an <strong>Environment</strong> — this filters the available test plans to that environment.</li>
+          <li>Optionally narrow further with the <strong>Assessment</strong> and <strong>Item</strong> dropdowns to filter test plans.</li>
+          <li>Click <strong>Add Test Plans</strong> to open the picker, check the test plans you want, and confirm.</li>
+          <li>Click <strong>Save</strong> at the bottom of the page.</li>
+        </ol>
+        <p><strong>Running:</strong> After saving, use <strong>Run Now</strong> to execute immediately, or enable <strong>Schedule</strong> to run on a recurring basis.</p>
+        <p><strong>Browser &amp; Viewport:</strong> Each test plan in the suite can have its own browser and viewport, configured in the suite test plans table or when adding.</p>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- 1. Suite Details -->
 <div class="card border-0 shadow-sm mb-4">
@@ -36,13 +63,13 @@
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Assessment <span class="text-muted small">(for filtering scripts)</span></label>
+        <label class="form-label">Assessment <span class="text-muted small">(for filtering test plans)</span></label>
         <select id="suiteAssessment" class="form-select" onchange="onAssessmentChange(this.value)" disabled>
           <option value="">-- All --</option>
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Item <span class="text-muted small">(for filtering scripts)</span></label>
+        <label class="form-label">Item <span class="text-muted small">(for filtering test plans)</span></label>
         <select id="suiteItem" class="form-select" disabled>
           <option value="">-- All --</option>
         </select>
@@ -57,9 +84,12 @@
     Suite Test Plans
     <div class="d-flex align-items-center gap-2">
       <span id="scriptCount" class="badge bg-secondary">0</span>
-      <button class="btn btn-sm btn-outline-primary" onclick="openAddModal()">
-        <i class="bi bi-plus-lg me-1"></i>Add Test Plans
-      </button>
+      <span id="addTestPlansWrap" {% if not suite %}title="Select an environment first" data-bs-toggle="tooltip"{% endif %}>
+        <button class="btn btn-sm btn-outline-primary" id="addTestPlansBtn" onclick="openAddModal()"
+          {% if not suite %}disabled style="pointer-events:none"{% endif %}>
+          <i class="bi bi-plus-lg me-1"></i>Add Test Plans
+        </button>
+      </span>
     </div>
   </div>
   <div class="card-body p-0">
@@ -67,7 +97,7 @@
       <table class="table table-sm table-hover mb-0" id="suiteScriptsTable">
         <thead class="table-light">
           <tr>
-            <th class="ps-3" style="min-width:300px">Script</th>
+            <th class="ps-3" style="min-width:300px">Test Plan</th>
             <th style="width:140px">Browser</th>
             <th style="width:160px">Viewport</th>
             <th style="width:50px"></th>
@@ -80,6 +110,10 @@
     </div>
     <div id="noScriptsMsg" class="text-muted text-center py-4 small" style="display:none">
       No test plans added yet. Click "Add Test Plans" to get started.
+    </div>
+    <div id="selectEnvMsg" class="text-center py-4" {% if suite %}style="display:none"{% endif %}>
+      <i class="bi bi-info-circle text-primary me-1"></i>
+      <span class="text-muted small">Select an <strong>Environment</strong> above to get started. The suite will run all its test plans against that environment. You can optionally filter by Assessment and Item.</span>
     </div>
   </div>
 </div>
@@ -439,13 +473,37 @@ function addSelectedScripts() {
 }
 
 // --- Cascading Dropdowns ---
+var _previousEnvId = document.getElementById('suiteEnv') ? document.getElementById('suiteEnv').value : '';
+
 function onEnvChange(envId) {
+  // If scripts exist and environment is changing, confirm first
+  if (suiteScripts.length > 0 && _previousEnvId && envId !== _previousEnvId) {
+    if (!confirm('Changing the environment will remove the ' + suiteScripts.length + ' test plan(s) currently in this suite. Continue?')) {
+      document.getElementById('suiteEnv').value = _previousEnvId;
+      return;
+    }
+    suiteScripts = [];
+    renderScriptsTable();
+  }
+  _previousEnvId = envId;
+
   var assessSel = document.getElementById('suiteAssessment');
   var itemSel = document.getElementById('suiteItem');
+  var addBtn = document.getElementById('addTestPlansBtn');
+  var addWrap = document.getElementById('addTestPlansWrap');
   assessSel.innerHTML = '<option value="">-- All --</option>';
   assessSel.disabled = !envId;
   itemSel.innerHTML = '<option value="">-- All --</option>';
   itemSel.disabled = true;
+  if (addBtn) {
+    addBtn.disabled = !envId;
+    addBtn.style.pointerEvents = envId ? '' : 'none';
+  }
+  if (addWrap) {
+    addWrap.title = envId ? '' : 'Select an environment first';
+  }
+  var envMsg = document.getElementById('selectEnvMsg');
+  if (envMsg) envMsg.style.display = envId ? 'none' : '';
   if (envId) {
     fetch('/suites/api/assessments/?environment_id=' + encodeURIComponent(envId))
       .then(function(r) { return r.json(); })

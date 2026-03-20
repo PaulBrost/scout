@@ -1,9 +1,38 @@
 {% extends "base.html" %}
 {% load core_filters %}
-{% block title %}Tests{% endblock %}
-{% block page_title %}Tests{% endblock %}
+{% block title %}Test Results{% endblock %}
+{% block page_title %}Test Results{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
+{% endblock %}
 
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Test Results</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>This page shows the results of all test plan and suite executions. Each row represents a single run — either a standalone test plan or a suite of test plans executed together.</p>
+        <p><strong>Statuses:</strong></p>
+        <ul>
+          <li><strong>Running</strong> — the test is currently executing</li>
+          <li><strong>Completed</strong> — the test finished successfully (may still have flagged issues)</li>
+          <li><strong>Failed</strong> — the test encountered an error or timed out</li>
+        </ul>
+        <p><strong>Running Tests:</strong></p>
+        <p>To run a test, go to <a href="/test-cases/">Test Plans</a> and open a test plan in the editor, or go to <a href="/suites/">Suites</a> and run an entire suite. Results will appear here automatically.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div class="d-flex align-items-center gap-2">
     <label class="text-muted small mb-0">Show</label>
@@ -11,6 +40,12 @@
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
     <span class="text-muted small">entries</span>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('status',this.value)">
+      <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+      <option value="running" {% if status_filter == 'running' %}selected{% endif %}>Running</option>
+      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+    </select>
     <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
       <option value="">Bulk actions</option>
       <option value="delete">Delete</option>
@@ -34,13 +69,6 @@
     <button class="btn btn-sm btn-outline-secondary">Search</button>
     {% if search %}<a href="?page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
   </form>
-</div>
-
-<div class="mb-2 d-flex gap-2">
-  <a href="?status=&page_size={{ page_size }}" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
-  <a href="?status=running&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'running' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Running</a>
-  <a href="?status=completed&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'completed' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Completed</a>
-  <a href="?status=failed&page_size={{ page_size }}" class="btn btn-sm {% if status_filter == 'failed' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Failed</a>
 </div>
 
 <div class="card border-0 shadow-sm">
