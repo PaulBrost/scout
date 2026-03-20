@@ -76,20 +76,34 @@
 
           <hr>
           <h6 class="fw-semibold mb-3">Item Navigation Selectors</h6>
-          <p class="text-muted small mb-3">CSS selectors for navigating within assessment items. Used by the <code>navigateItemScreens()</code> helper. Leave blank if the environment doesn't need in-item navigation.</p>
+          <p class="text-muted small mb-3">CSS selectors for navigating between screens. Used by all navigation helpers (<code>clickNext</code>, <code>navigateAllScreens</code>, <code>navigateItemScreens</code>). Leave blank to use NAEP defaults (<code>#nextButton</code>, <code>#backButton</code>, <code>#item</code>).</p>
 
           <div class="row mb-3">
             <div class="col-md-6">
               <label class="form-label">Next Button</label>
               <input type="text" name="item_next_button" class="form-control form-control-sm"
-                value="{{ launcher_config.item_selectors.next_button|default:'' }}" placeholder="button:has-text(&quot;Next&quot;)">
-              <div class="form-text">Advances to the next screen within an item.</div>
+                value="{{ launcher_config.item_selectors.next_button|default:'' }}" placeholder="#nextButton">
+              <div class="form-text">Advances to the next screen. Default: <code>#nextButton</code></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Back Button</label>
+              <input type="text" name="item_back_button" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.back_button|default:'' }}" placeholder="#backButton">
+              <div class="form-text">Goes to the previous screen. Default: <code>#backButton</code></div>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Item Container</label>
+              <input type="text" name="item_container" class="form-control form-control-sm"
+                value="{{ launcher_config.item_selectors.item_container|default:'' }}" placeholder="#item">
+              <div class="form-text">Main content area for text extraction and change detection. Default: <code>#item</code></div>
             </div>
             <div class="col-md-6">
               <label class="form-label">Finish Button</label>
               <input type="text" name="item_finish_button" class="form-control form-control-sm"
                 value="{{ launcher_config.item_selectors.finish_button|default:'' }}" placeholder="button:has-text(&quot;Finish&quot;)">
-              <div class="form-text">Ends the item (last screen).</div>
+              <div class="form-text">Ends the item (last screen). Used by PIAAC in-item navigation.</div>
             </div>
           </div>
           <div class="row mb-3">

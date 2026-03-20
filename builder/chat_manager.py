@@ -133,7 +133,7 @@ test('Spelling & grammar check — CRA Form 1', async ({ page }) => {
   const TOTAL_ITEMS = 25;
   for (let i = 1; i <= TOTAL_ITEMS; i++) {
     await page.waitForLoadState('networkidle');
-    const text = await extractItemText(page);
+    const text = await extractItemText(page, `Item ${i}`, envConfig);
     if (text && text.trim().length >= 10) {
       const result = await analyzeItemText(text, 'English');
       if (result.issuesFound) {
@@ -144,7 +144,7 @@ test('Spelling & grammar check — CRA Form 1', async ({ page }) => {
         contentType: 'application/json',
       });
     }
-    if (i < TOTAL_ITEMS) await clickNext(page);
+    if (i < TOTAL_ITEMS) await clickNext(page, envConfig);
   }
 });
 ```
@@ -179,7 +179,7 @@ test('AI visual inspection — CRA Form 1', async ({ page }) => {
       body: JSON.stringify(result, null, 2),
       contentType: 'application/json',
     });
-    if (i < TOTAL_ITEMS) await clickNext(page);
+    if (i < TOTAL_ITEMS) await clickNext(page, envConfig);
   }
 });
 ```
@@ -321,7 +321,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '- Use `page.screenshot({ path: `test-results/name.png`, fullPage: true })` to capture screenshots. SCOUT handles baseline comparison — do NOT use Playwright\'s `toHaveScreenshot()` assertion.\n'
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
-    prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext()` and `forceClickNext()` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts.\n'
+    prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext(page, envConfig)` and `forceClickNext(page, envConfig)` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts. ALWAYS pass `envConfig` so the correct button selectors are used.\n'
     prompt += '- The `answerAndAdvance(page)` helper is available if you need to explicitly handle a "must answer" screen.\n'
     prompt += '- For PIAAC tests, use `src/helpers/piaac.js` helpers: `selectFilters(page, {version, country, language, domain})` for cascading dropdowns, `getItemLinks(page)` to wait for and get item links after filtering (it polls up to 15s for links to appear), and `openItem(portalPage, itemId)` to open an item in its popup.\n'
     prompt += '- PIAAC also exports `SELECTORS` — a plain **object** (NOT a function) with CSS selector strings: `SELECTORS.version` → `"#VerSelect"`, `SELECTORS.country` → `"#CountrySelect"`, `SELECTORS.language` → `"#LangSelect"`, `SELECTORS.domain` → `"#DomainSelect"`. Access properties directly like `SELECTORS.language`. NEVER write `SELECTORS()` — it will throw "SELECTORS is not a function".\n'

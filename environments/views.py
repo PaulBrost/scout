@@ -66,6 +66,8 @@ def _build_launcher_config(post):
 
     item_selectors = {}
     for field, key in [('item_next_button', 'next_button'),
+                       ('item_back_button', 'back_button'),
+                       ('item_container', 'item_container'),
                        ('item_finish_button', 'finish_button'),
                        ('item_close_button', 'close_button'),
                        ('item_continue_button', 'continue_button'),
