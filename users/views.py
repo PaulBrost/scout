@@ -243,9 +243,11 @@ def user_impersonate(request, user_id):
     if target.is_staff or target.is_superuser:
         return HttpResponseForbidden('Cannot impersonate an admin user.')
 
-    # Store the real admin's ID before switching
-    request.session['_impersonate_admin_id'] = request.user.pk
+    # Store the real admin's ID — must be set AFTER login() because
+    # login() flushes the session and creates a new one.
+    admin_id = request.user.pk
     login(request, target, backend='django.contrib.auth.backends.ModelBackend')
+    request.session['_impersonate_admin_id'] = admin_id
     return redirect('/')
 
 
