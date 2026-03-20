@@ -24,7 +24,11 @@ def index(request):
         # Latest run
         cursor.execute(f"""
             SELECT r.id, r.started_at, r.completed_at, r.status, r.trigger_type, r.summary,
-                   s.name AS suite_name
+                   s.name AS suite_name,
+                   (SELECT COALESCE(ts.description, trs.script_path)
+                    FROM test_run_scripts trs
+                    LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+                    WHERE trs.run_id = r.id LIMIT 1) AS first_script_name
             FROM test_runs r
             LEFT JOIN test_suites s ON r.suite_id = s.id
             {run_where}
@@ -63,20 +67,22 @@ def index(request):
         cols = [c[0] for c in cursor.description]
         trend = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
-        # Pending AI flags
-        ai_where_parts = ["aa.status = 'pending'", "aa.issues_found = true"]
-        ai_params = []
+        # Pending review issues (from AI analysis or screenshots)
+        rv_where_parts = ["rv.status = 'pending'"]
+        rv_params = []
         if env_ids is not None:
-            ai_where_parts.append('(r.environment_id = ANY(%s::uuid[]) OR r.environment_id IS NULL)')
-            ai_params.append(list(str(e) for e in env_ids))
+            rv_where_parts.append('(tr.environment_id = ANY(%s::uuid[]) OR tr.environment_id IS NULL)')
+            rv_params.append(list(str(e) for e in env_ids))
         if owner_id is not None:
-            ai_where_parts.append('(r.created_by_id = %s OR r.created_by_id IS NULL)')
-            ai_params.append(owner_id)
+            rv_where_parts.append('(tr.created_by_id = %s OR tr.created_by_id IS NULL)')
+            rv_params.append(owner_id)
         cursor.execute(f"""
-            SELECT COUNT(*) FROM ai_analyses aa
-            JOIN test_runs r ON aa.run_id = r.id
-            WHERE {' AND '.join(ai_where_parts)}
-        """, ai_params)
+            SELECT COUNT(*) FROM reviews rv
+            LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
+            LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+            LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
+            WHERE {' AND '.join(rv_where_parts)}
+        """, rv_params)
         ai_flag_count = cursor.fetchone()[0]
 
     import json

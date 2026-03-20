@@ -90,32 +90,34 @@
 
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <div class="text-muted small mb-1">Latest Run</div>
         {% if latest_run %}
-        <div class="fw-bold">
-          <span class="status-badge status-{{ latest_run.status }}">{{ latest_run.status }}</span>
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="fw-bold small">{{ latest_run.first_script_name|default:latest_run.suite_name|default:"Ad-hoc" }}</span>
+          <span class="status-badge status-{{ latest_run.status }} ms-2">{{ latest_run.status }}</span>
         </div>
-        <div class="text-muted small mt-1">{{ latest_run.suite_name|default:"Ad-hoc" }}</div>
         {% else %}
-        <div class="text-muted">No runs yet</div>
+        <div class="text-muted">No test results</div>
         {% endif %}
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
-        <div class="text-muted small mb-1">AI Flags</div>
-        <div class="fw-bold fs-4">{{ ai_flag_count }}</div>
-        <div class="text-muted small">pending review</div>
+        <div class="text-muted small mb-1">Pending Reviews</div>
+        <div class="d-flex align-items-baseline gap-2">
+          <span class="fw-bold fs-4">{{ ai_flag_count }}</span>
+          <span class="text-muted small">pending review</span>
+        </div>
       </div>
     </div>
   </div>
   {% if latest_run and latest_run.summary %}
   <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <div class="text-muted small mb-1">Passed</div>
         <div class="fw-bold fs-4 text-success">{{ latest_run.summary.passed|default:0 }}</div>
@@ -123,7 +125,7 @@
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body">
         <div class="text-muted small mb-1">Failed</div>
         <div class="fw-bold fs-4 text-danger">{{ latest_run.summary.failed|default:0 }}</div>
@@ -163,7 +165,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted text-center py-4">No runs yet. <a href="/suites/">Create a suite</a> to get started.</td></tr>
+        <tr><td colspan="6" class="text-muted text-center py-4">No test results. Select an <a href="/assessments/">Assessment</a> or <a href="/items/">Item</a> to test to get started.</td></tr>
         {% endfor %}
       </tbody>
     </table>
