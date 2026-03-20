@@ -1,25 +1,50 @@
 {% extends "base.html" %}
 {% load core_filters %}
 {% block title %}Test Results{% endblock %}
-{% block page_title %}Test Results{% endblock %}
+{% block page_title %}<a href="/runs/" class="text-decoration-none text-muted">Test Results</a> <span class="text-muted mx-1">/</span> {% if run.suite_id %}Suite <span class="text-muted mx-1">/</span> <a href="/suites/{{ run.suite_id }}/" class="text-decoration-none">{{ run.suite_name }}</a>{% elif script_results.0.script_path %}Test Plan <span class="text-muted mx-1">/</span> <a href="/builder/?file={{ script_results.0.script_path }}" class="text-decoration-none">{{ run.test_name|default:run.notes|default:"Run" }}</a>{% else %}{{ run.test_name|default:run.notes|default:"Run" }}{% endif %}{% endblock %}
 
 {% block topbar_actions %}
 {% if run.status == 'running' or run.status == 'scheduled' %}
-<button class="btn btn-sm btn-outline-warning me-2" id="retryRunBtn" onclick="retryRun()" style="display:none" title="Re-trigger execution for this stuck run">
-  <i class="bi bi-arrow-clockwise"></i> Retry
-</button>
 <button class="btn btn-sm btn-outline-danger me-2" id="cancelRunBtn" onclick="cancelRun()">
   <i class="bi bi-x-circle"></i> Cancel Run
 </button>
-{% elif run.status == 'failed' or run.status == 'cancelled' %}
-<button class="btn btn-sm btn-outline-warning me-2" id="retryRunBtn" onclick="retryRun()">
-  <i class="bi bi-arrow-clockwise"></i> Retry
-</button>
 {% endif %}
-<a href="/runs/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+<button class="btn btn-sm btn-outline-primary me-2" onclick="rerunTest()"><i class="bi bi-arrow-repeat"></i> Rerun</button>
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
 {% endblock %}
 
 {% block content %}
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Test Results Detail</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>This page shows the full details of a single test run — either an individual test plan or a suite of test plans executed together.</p>
+        <p><strong>Sections:</strong></p>
+        <ul>
+          <li><strong>Summary</strong> — run status, timing, trigger type, and pass/fail counts</li>
+          <li><strong>Scripts</strong> — each test plan in the run with its status, duration, and execution log (click to expand)</li>
+          <li><strong>Screenshots</strong> — captured screenshots and any baseline comparison diffs. Flagged screenshots are highlighted for review.</li>
+          <li><strong>AI Analysis</strong> — results from AI-powered text and visual analysis. Click a row to expand and see individual issues with severity, details, and suggestions.</li>
+        </ul>
+        <p><strong>Actions:</strong></p>
+        <ul>
+          <li><strong>Rerun Test</strong> — re-execute this run with the same configuration</li>
+          <li><strong>Analyze</strong> — trigger AI text or visual analysis on the run results</li>
+          <li><strong>Delete</strong> — permanently remove this run and its artifacts</li>
+        </ul>
+        <p>To create new runs, go to <a href="/test-cases/">Test Plans</a> or <a href="/suites/">Suites</a>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Stuck run alert (shown by JS if run appears stuck) -->
 <div class="alert alert-warning py-2 align-items-center gap-2 d-none" id="stuckRunAlert">
   <i class="bi bi-exclamation-triangle-fill"></i>
@@ -29,8 +54,7 @@
 <!-- Details -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
-    <span>{% if run.suite_id %}Suite: <a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% elif run.test_name %}Script: <a href="/builder/?file={{ script_results.0.script_path }}">{{ run.test_name }}</a>{% else %}{{ run.notes|default:"—" }}{% endif %}</span>
-    <button class="btn btn-sm btn-outline-primary" onclick="rerunTest()"><i class="bi bi-arrow-repeat"></i> Rerun Test</button>
+    <span>Run Details</span>
   </div>
   <div class="card-body">
     <div class="row g-3 small">
@@ -41,10 +65,6 @@
       <div class="col-md-4">
         <span class="text-muted">Type:</span>
         {% if run.suite_id %}Suite{% else %}Ad-hoc{% endif %}
-      </div>
-      <div class="col-md-4">
-        <span class="text-muted">{% if run.suite_id %}Suite:{% else %}Script:{% endif %}</span>
-        {% if run.suite_id %}<a href="/suites/{{ run.suite_id }}/">{{ run.suite_name }}</a>{% else %}{{ run.test_name|default:run.notes|default:"—" }}{% endif %}
       </div>
       <div class="col-md-4">
         <span class="text-muted">Trigger:</span> {{ run.trigger_type }}
@@ -1005,8 +1025,7 @@ function checkIfStuck(data) {
     var alertEl = document.getElementById('stuckRunAlert');
     alertEl.classList.remove('d-none');
     alertEl.classList.add('d-flex');
-    var retryBtn = document.getElementById('retryRunBtn');
-    if (retryBtn) retryBtn.style.display = '';
+    // Stuck run — alert is shown, user can rerun via "Rerun Test" button
   }
 }
 
