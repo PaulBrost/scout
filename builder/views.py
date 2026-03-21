@@ -499,6 +499,8 @@ def api_save(request):
         item_id = data.get('item_id') or None
         description = data.get('description') or None
         ai_config = data.get('ai_config') or {}
+        test_summary = data.get('test_summary') or None
+        conversation_id = data.get('conversation_id') or None
         if not code:
             return JsonResponse({'error': 'No code to save'}, status=400)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
@@ -514,9 +516,11 @@ def api_save(request):
             cursor.execute(
                 """INSERT INTO test_scripts
                        (script_path, environment_id, assessment_id, item_id, description,
-                        test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
+                        test_type, tags, ai_config, browser, viewport, created_by_id,
+                        test_summary, chat_conversation_id, created_at, updated_at)
                    VALUES (%s, %s, %s, %s, %s,
-                           'functional', '[]'::jsonb, %s::jsonb, 'chromium', '1920x1080', %s, now(), now())
+                           'functional', '[]'::jsonb, %s::jsonb, 'chromium', '1920x1080', %s,
+                           %s, %s, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                 [rel_path,
                  environment_id if environment_id else None,
@@ -524,7 +528,9 @@ def api_save(request):
                  item_id,
                  description,
                  ai_config_json,
-                 request.user.id]
+                 request.user.id,
+                 test_summary,
+                 conversation_id]
             )
         return JsonResponse({'path': rel_path})
     except Exception as e:

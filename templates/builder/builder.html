@@ -723,6 +723,8 @@ var scriptContext = {
 };
 var isDirty = false;
 var pendingAiConfig = null;  // AI-suggested config stored until first save
+var pendingSummary = null;   // Summary stored until first save
+var pendingConversationId = null;  // Chat conversation ID stored until first save
 
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1032,6 +1034,11 @@ function sendMessage() {
     }
     conversationId = d.conversationId || conversationId;
 
+    // Store conversation ID for new scripts (will be saved on first save)
+    if (conversationId && !currentFilePath) {
+      pendingConversationId = conversationId;
+    }
+
     // Link conversation to this script (fire-and-forget)
     if (conversationId && currentFilePath) {
       fetch('/builder/api/link-conversation/', {
@@ -1055,12 +1062,17 @@ function sendMessage() {
       // Auto-update summary from the code update summary
       if (d.codeUpdate.summary) {
         updateSummaryDisplay(d.codeUpdate.summary);
-        // Persist summary to DB
-        fetch('/builder/api/update-summary/', {
-          method: 'POST',
-          headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
-          body: JSON.stringify({ filePath: currentFilePath, summary: d.codeUpdate.summary })
-        }).catch(function() {});
+        if (currentFilePath) {
+          // Persist summary to DB for existing scripts
+          fetch('/builder/api/update-summary/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({ filePath: currentFilePath, summary: d.codeUpdate.summary })
+          }).catch(function() {});
+        } else {
+          // Store for first save
+          pendingSummary = d.codeUpdate.summary;
+        }
         appendMessage('assistant', 'Test script generated and summary updated.');
       } else {
         appendMessage('assistant', 'Test script updated.');
@@ -1177,6 +1189,8 @@ function saveFile() {
     if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
     if (scriptContext.description) payload.description = scriptContext.description;
     if (pendingAiConfig) payload.ai_config = pendingAiConfig;
+    if (pendingSummary) payload.test_summary = pendingSummary;
+    if (pendingConversationId) payload.conversation_id = pendingConversationId;
   }
 
   fetch(url, {
@@ -1384,6 +1398,8 @@ function _doSaveAndRun(browser, viewport, aiConfig) {
       if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
       if (scriptContext.description) payload.description = scriptContext.description;
       if (pendingAiConfig) payload.ai_config = pendingAiConfig;
+      if (pendingSummary) payload.test_summary = pendingSummary;
+      if (pendingConversationId) payload.conversation_id = pendingConversationId;
     }
 
     setRunStatus('Saving…', 'text-info');
