@@ -157,8 +157,24 @@
 
 <div class="card border-0 shadow-sm">
   <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
-    Test Plans Executed
-    <span class="badge bg-secondary">{{ script_results|length }}</span>
+    <div class="d-flex align-items-center gap-2">
+      Test Plans Executed
+      <span class="badge bg-secondary">{{ script_results|length }}</span>
+    </div>
+    {% if run.status != 'running' and run.status != 'scheduled' %}
+    <div class="d-flex gap-2">
+      {% if vision_analysis_enabled and screenshots %}
+      <button class="btn btn-sm btn-info text-white" onclick="runAnalysis('visual')" id="analyzeVisualBtn">
+        <i class="bi bi-eye me-1"></i> Analyze All Screenshots
+      </button>
+      {% endif %}
+      {% if text_analysis_enabled and has_extracted_text %}
+      <button class="btn btn-sm btn-warning" onclick="runAnalysis('text')" id="analyzeTextBtn">
+        <i class="bi bi-spellcheck me-1"></i> Analyze All Text
+      </button>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
   <div class="card-body p-0">
     <table class="table table-hover align-middle mb-0">
@@ -202,11 +218,23 @@
           <td class="script-actions text-nowrap">
             {% if sr.execution_log %}
             <button class="btn btn-sm btn-outline-secondary log-btn me-1" onclick="showLog('{{ sr.id }}')">
-              <i class="bi bi-terminal"></i> Execution Log
+              <i class="bi bi-terminal"></i> Log
             </button>
             {% endif %}
-            <a href="/builder/?file={{ sr.script_path }}" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-pencil"></i> Edit Plan
+            {% if run.status != 'running' and run.status != 'scheduled' and sr.status != 'queued' %}
+            {% if vision_analysis_enabled and sr.id|stringformat:'s' in scripts_with_screenshots %}
+            <button class="btn btn-sm btn-outline-info me-1" onclick="analyzeScript('{{ sr.id }}', 'visual', this)" title="Analyze screenshots for this test plan">
+              <i class="bi bi-eye"></i>
+            </button>
+            {% endif %}
+            {% if text_analysis_enabled and sr.id|stringformat:'s' in scripts_with_text %}
+            <button class="btn btn-sm btn-outline-warning me-1" onclick="analyzeScript('{{ sr.id }}', 'text', this)" title="Analyze text for this test plan">
+              <i class="bi bi-spellcheck"></i>
+            </button>
+            {% endif %}
+            {% endif %}
+            <a href="/builder/?file={{ sr.script_path }}" class="btn btn-sm btn-outline-primary" title="Edit test plan">
+              <i class="bi bi-pencil"></i>
             </a>
           </td>
         </tr>
@@ -292,27 +320,13 @@
 <div class="card border-0 shadow-sm mt-4">
   <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
     <div class="d-flex align-items-center gap-2">
-      AI Analysis
+      AI Analysis Results
       {% if analyses %}<span class="badge bg-secondary">{{ analyses|length }}</span>{% endif %}
     </div>
-    {% if run.status != 'running' and run.status != 'scheduled' %}
-    <div class="d-flex gap-2">
-      {% if analyses %}
-      <button class="btn btn-sm btn-outline-danger" onclick="clearAnalyses()" id="clearAnalysesBtn">
-        <i class="bi bi-trash"></i> Clear
-      </button>
-      {% endif %}
-      {% if vision_analysis_enabled and screenshots %}
-      <button class="btn btn-sm btn-outline-info" onclick="runAnalysis('visual')" id="analyzeVisualBtn">
-        <i class="bi bi-eye"></i> Analyze Screenshots
-      </button>
-      {% endif %}
-      {% if text_analysis_enabled and has_extracted_text %}
-      <button class="btn btn-sm btn-outline-warning" onclick="runAnalysis('text')" id="analyzeTextBtn">
-        <i class="bi bi-spellcheck"></i> Analyze Text
-      </button>
-      {% endif %}
-    </div>
+    {% if analyses and run.status != 'running' and run.status != 'scheduled' %}
+    <button class="btn btn-sm btn-outline-danger" onclick="clearAnalyses()" id="clearAnalysesBtn">
+      <i class="bi bi-trash"></i> Clear
+    </button>
     {% endif %}
   </div>
   <div class="card-body" id="analysisResults">
@@ -1345,6 +1359,35 @@ function runAnalysis(type) {
     // Show status and poll for results
     var resultsEl = document.getElementById('analysisResults');
     resultsEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span><span class="text-muted small">AI analysis queued. Results will appear shortly...</span></div>';
+    pollAnalysisResults();
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    alert('Error: ' + err.message);
+  });
+}
+
+function analyzeScript(runScriptId, type, btn) {
+  var origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  fetch('/runs/' + runId + '/analyze-script/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrf()},
+    body: JSON.stringify({ run_script_id: runScriptId, type: type }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Server returned ' + r.status);
+    return r.json();
+  })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    if (d.error) { alert('Error: ' + d.error); return; }
+    var resultsEl = document.getElementById('analysisResults');
+    resultsEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span><span class="text-muted small">AI analysis queued for this test plan. Results will appear shortly...</span></div>';
     pollAnalysisResults();
   })
   .catch(function(err) {

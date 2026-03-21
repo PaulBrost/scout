@@ -50,6 +50,116 @@ def run_analysis_on_demand(run_id, analysis_type='both'):
             print(f'[PostExec] On-demand text analysis error: {e}')
 
 
+def analyze_script_on_demand(run_id, run_script_id, analysis_type='both'):
+    """Manually triggered AI analysis on a single test plan's artifacts."""
+    print(f'[PostExec] Per-script analysis for run {str(run_id)[:8]} script {str(run_script_id)[:8]}, type={analysis_type}')
+
+    if analysis_type in ('visual', 'both'):
+        try:
+            analyze_script_screenshots(run_id, run_script_id)
+        except Exception as e:
+            print(f'[PostExec] Per-script visual analysis error: {e}')
+
+    if analysis_type in ('text', 'both'):
+        try:
+            analyze_script_text(run_id, run_script_id)
+        except Exception as e:
+            print(f'[PostExec] Per-script text analysis error: {e}')
+
+
+def analyze_script_screenshots(run_id, run_script_id):
+    """Run AI visual analysis on screenshots for a single test plan in a run."""
+    from ai.provider import get_provider_for_feature
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT rs.id, rs.name, rs.file_path, rs.run_script_id,
+                   ts.item_id
+            FROM run_screenshots rs
+            JOIN test_run_scripts trs ON trs.id = rs.run_script_id
+            LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE rs.run_id = %s AND rs.run_script_id = %s
+        """, [run_id, run_script_id])
+        cols = [c[0] for c in cursor.description]
+        screenshots = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if not screenshots:
+        print(f'[PostExec] No screenshots for script {str(run_script_id)[:8]}')
+        return
+
+    provider = get_provider_for_feature('vision')
+    custom_prompt = _get_custom_prompt('vision_analysis_prompt')
+
+    for ss in screenshots:
+        full_path = _resolve_artifact_path(ss['file_path'])
+        if not full_path.exists():
+            continue
+        try:
+            import base64
+            b64 = base64.b64encode(full_path.read_bytes()).decode()
+            context = f"Screenshot: {ss['name']}"
+            analysis = provider.analyze_screenshot(b64, context, custom_prompt=custom_prompt)
+            issues = analysis.get('issues', [])
+            _create_analysis_and_review(
+                run_id, ss.get('item_id'), None, 'visual_layout', issues,
+                raw_response=analysis.get('raw', ''),
+                model_used=analysis.get('model', ''),
+                duration_ms=analysis.get('durationMs', 0),
+                screenshot_name=ss['name'],
+                summary=analysis.get('summary', ''),
+            )
+        except Exception as e:
+            print(f'[PostExec] Per-script visual error for {ss["name"]}: {e}')
+
+
+def analyze_script_text(run_id, run_script_id):
+    """Run AI text analysis on extracted text for a single test plan in a run."""
+    from ai.provider import get_provider_for_feature
+    from executor.runner import parse_text_content
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT trs.id, trs.script_path, trs.execution_log,
+                   ts.item_id
+            FROM test_run_scripts trs
+            LEFT JOIN test_scripts ts ON ts.script_path = trs.script_path
+            WHERE trs.run_id = %s AND trs.id = %s AND trs.execution_log IS NOT NULL
+        """, [run_id, run_script_id])
+        cols = [c[0] for c in cursor.description]
+        scripts = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if not scripts:
+        return
+
+    provider = get_provider_for_feature('text')
+    custom_prompt = _get_custom_prompt('text_analysis_prompt')
+
+    for script in scripts:
+        execution_log = script.get('execution_log') or ''
+        if not execution_log.strip():
+            continue
+        text_items = parse_text_content(execution_log)
+        if not text_items:
+            continue
+        for item in text_items:
+            text = item.get('text', '').strip()
+            if not text or len(text) < 10:
+                continue
+            try:
+                analysis = provider.analyze_text(text, custom_prompt=custom_prompt)
+                issues = analysis.get('issues', [])
+                _create_analysis_and_review(
+                    run_id, script.get('item_id'), None, 'text_content', issues,
+                    raw_response=analysis.get('raw', ''),
+                    model_used=analysis.get('model', ''),
+                    duration_ms=analysis.get('durationMs', 0),
+                    screenshot_name=item.get('label', ''),
+                    summary=analysis.get('summary', ''),
+                )
+            except Exception as e:
+                print(f'[PostExec] Per-script text error: {e}')
+
+
 def dispatch_post_execution(run_id):
     """Dispatch post-execution handlers based on run-level ai_config and script test_types."""
     # Read run-level config (ai_config stored at run creation time)

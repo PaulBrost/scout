@@ -306,6 +306,16 @@ def detail(request, run_id):
         """, [run_id])
         has_extracted_text = cursor.fetchone() is not None
 
+    # Build per-script capability sets for the template
+    scripts_with_screenshots = {str(s['run_script_id']) for s in screenshots if s.get('run_script_id')}
+    scripts_with_text = set()
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT id::text FROM test_run_scripts
+            WHERE run_id = %s AND execution_log LIKE '%%[SCOUT_TEXT]%%'
+        """, [run_id])
+        scripts_with_text = {r[0] for r in cursor.fetchall()}
+
     return render(request, 'runs/detail.html', {
         'run': run,
         'script_results': script_results,
@@ -323,6 +333,8 @@ def detail(request, run_id):
         'text_analysis_enabled': text_analysis_enabled,
         'vision_analysis_enabled': vision_analysis_enabled,
         'has_extracted_text': has_extracted_text,
+        'scripts_with_screenshots': scripts_with_screenshots,
+        'scripts_with_text': scripts_with_text,
         'run_assessment': run_assessment,
         'run_item': run_item,
         'run_environment': run_environment,
@@ -730,6 +742,50 @@ def api_run_analyze(request, run_id):
     spawn_background_task(_run_analysis)
 
     return JsonResponse({'ok': True, 'type': analysis_type})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url='/login/')
+def api_run_analyze_script(request, run_id):
+    """Trigger AI analysis on a single test plan's artifacts within a run."""
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    run_script_id = data.get('run_script_id', '')
+    analysis_type = data.get('type', 'both')
+
+    if not run_script_id:
+        return JsonResponse({'error': 'run_script_id is required'}, status=400)
+
+    # Ownership check
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT created_by_id FROM test_runs WHERE id = %s', [str(run_id)])
+        owner_row = cursor.fetchone()
+    if owner_row and not can_user_access_record(request.user, owner_row[0]):
+        return JsonResponse({'error': 'Access denied'}, status=403)
+
+    # Verify run_script belongs to this run
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT id FROM test_run_scripts WHERE id = %s AND run_id = %s',
+                       [run_script_id, str(run_id)])
+        if not cursor.fetchone():
+            return JsonResponse({'error': 'Script not found in this run'}, status=404)
+
+    from core.utils import spawn_background_task
+
+    def _run_script_analysis(rid=str(run_id), rsid=run_script_id, atype=analysis_type):
+        try:
+            from tasks.post_execution import analyze_script_on_demand
+            analyze_script_on_demand(rid, rsid, atype)
+        except Exception as e:
+            print(f'[Analysis] per-script error: {e}')
+
+    spawn_background_task(_run_script_analysis)
+
+    return JsonResponse({'ok': True, 'run_script_id': run_script_id, 'type': analysis_type})
 
 
 @csrf_exempt

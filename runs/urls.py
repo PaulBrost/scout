@@ -8,6 +8,7 @@ urlpatterns = [
     path('<uuid:run_id>/script/<uuid:script_id>/', views.script_detail, name='script_detail'),
     path('<uuid:run_id>/screenshots/', views.api_run_screenshots, name='api_run_screenshots'),
     path('<uuid:run_id>/analyze/', views.api_run_analyze, name='api_run_analyze'),
+    path('<uuid:run_id>/analyze-script/', views.api_run_analyze_script, name='api_run_analyze_script'),
     path('<uuid:run_id>/clear-analyses/', views.api_clear_analyses, name='api_clear_analyses'),
     path('<uuid:run_id>/analyses/', views.api_run_analyses, name='api_run_analyses'),
     path('<uuid:run_id>/retry/', views.api_retry_run, name='api_retry_run'),
