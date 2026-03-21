@@ -725,6 +725,7 @@ var isDirty = false;
 var pendingAiConfig = null;  // AI-suggested config stored until first save
 var pendingSummary = null;   // Summary stored until first save
 var pendingConversationId = null;  // Chat conversation ID stored until first save
+var linkedDatasetCount = {{ linked_datasets|length|default:"0" }};
 
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1349,6 +1350,10 @@ function doRunScript(scheduledAt, browser, viewport, aiConfig) {
 function saveAndRun() {
   var code = document.getElementById('codeEditor').value;
   if (!code.trim()) { alert('No code to save.'); return; }
+  // Warn if code uses test data helpers but no datasets are linked
+  if (linkedDatasetCount === 0 && /getCustomData|getCredentials|getInputs|getItemList|SCOUT_TEST_DATA/.test(code)) {
+    if (!confirm('This test plan references Test Data but no datasets are linked.\n\nThe test will run without data and may fall back to defaults.\n\nLink a dataset from the Settings tab, or continue anyway?')) return;
+  }
   // Show run config modal — actual run happens in confirmRun()
   var metaBrowser = document.getElementById('metaBrowser');
   var metaViewport = document.getElementById('metaViewport');

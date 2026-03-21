@@ -568,12 +568,21 @@ def prepare_test_data(run_id, script_path):
         dt = row['data_type']
         if dt not in test_data:
             test_data[dt] = []
+        # Parse data — may be a list (auto-parsed JSONB) or a JSON string
+        data = row['data']
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except (json.JSONDecodeError, TypeError):
+                data = []
+        if not isinstance(data, list):
+            data = []
         test_data[dt].append({
             'name': row['name'],
             'assessment_id': row['assessment_id'],
             'item_id': row['item_id'],
             'description': row['description'],
-            'entries': row['data'] if isinstance(row['data'], list) else [],
+            'entries': data,
         })
 
     # Write to temp file
