@@ -3,6 +3,7 @@ psycopg2-binary
 django-q2
 python-decouple
 requests
+PyJWT[crypto]
 whitenoise
 dj-database-url
 gunicorn

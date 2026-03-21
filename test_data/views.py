@@ -8,8 +8,20 @@ from django.db import connection
 from core.mixins import get_user_env_ids, can_user_access_record, get_env_filter, get_owner_filter, get_owner_choices
 
 
+def build_page_range(page, total_pages, window=2):
+    pages = []
+    for p in range(1, total_pages + 1):
+        if p == 1 or p == total_pages or abs(p - page) <= window:
+            pages.append(p)
+        elif pages and pages[-1] != '...':
+            pages.append('...')
+    return pages
+
+
 @login_required(login_url='/login/')
 def index(request):
+    page = max(1, int(request.GET.get('page', 1)))
+    page_size = min(500, max(1, int(request.GET.get('page_size', 25))))
     env_filter = get_env_filter(request)
     type_filter = request.GET.get('data_type', '')
 
@@ -21,8 +33,10 @@ def index(request):
     if env_ids is not None:
         if not env_ids:
             return render(request, 'test_data/list.html', {
-                'datasets': [], 'environments': [],
+                'datasets': [], 'environments': [], 'total': 0,
                 'env_filter': env_filter, 'type_filter': type_filter,
+                'page': 1, 'page_size': page_size, 'page_size_options': [10, 25, 50, 100],
+                'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
             })
         params.append(list(str(e) for e in env_ids))
         where.append('td.environment_id = ANY(%s::uuid[])')
@@ -44,6 +58,10 @@ def index(request):
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
+        cursor.execute(f'SELECT COUNT(*) FROM test_data_sets td {where_clause}', params)
+        total = cursor.fetchone()[0]
+
+        offset = (page - 1) * page_size
         cursor.execute(f"""
             SELECT td.id, td.name, td.data_type, td.description,
                    td.created_at, td.updated_at,
@@ -59,7 +77,8 @@ def index(request):
             LEFT JOIN auth_user ou ON td.created_by_id = ou.id
             {where_clause}
             ORDER BY td.name
-        """, params)
+            LIMIT %s OFFSET %s
+        """, params + [page_size, offset])
         cols = [c[0] for c in cursor.description]
         datasets = [dict(zip(cols, row)) for row in cursor.fetchall()]
 
@@ -73,11 +92,19 @@ def index(request):
         cursor.execute(env_query, env_params)
         environments = [{'id': str(r[0]), 'name': r[1]} for r in cursor.fetchall()]
 
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start_item = offset + 1 if total > 0 else 0
+    end_item = min(offset + page_size, total)
+
     ctx = {
         'datasets': datasets,
         'environments': environments,
         'env_filter': env_filter,
         'type_filter': type_filter,
+        'total': total, 'page': page, 'page_size': page_size,
+        'page_size_options': [10, 25, 50, 100],
+        'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
+        'page_range': build_page_range(page, total_pages),
     }
     if request.user.is_staff:
         ctx['owner_filter'] = str(owner_id) if owner_id else 'all'

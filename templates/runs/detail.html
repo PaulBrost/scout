@@ -202,11 +202,11 @@
           <td class="script-actions text-nowrap">
             {% if sr.execution_log %}
             <button class="btn btn-sm btn-outline-secondary log-btn me-1" onclick="showLog('{{ sr.id }}')">
-              <i class="bi bi-terminal"></i> Log
+              <i class="bi bi-terminal"></i> Execution Log
             </button>
             {% endif %}
             <a href="/builder/?file={{ sr.script_path }}" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-pencil"></i>
+              <i class="bi bi-pencil"></i> Edit Plan
             </a>
           </td>
         </tr>

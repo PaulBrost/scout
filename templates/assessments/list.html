@@ -38,39 +38,38 @@
     </div>
   </div>
 </div>
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2 px-3">
-    <div class="row g-2 align-items-end">
-      <div class="col-auto">
-        <label class="form-label mb-0 text-muted" style="font-size:.7rem">Environment</label>
-        <select class="form-select form-select-sm" style="width:auto" data-env-filter onchange="updateParam('environment',this.value)">
-          <option value="">All Environments</option>
-          {% for env in environments %}
-          <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col">
-        <form method="get" class="d-flex gap-2">
-          <input type="hidden" name="page_size" value="{{ page_size }}">
-          {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
-          <input type="text" name="search" class="form-control form-control-sm" placeholder="Search assessments…" value="{{ search }}" style="width:200px">
-          <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
-          {% if search %}<a href="?page_size={{ page_size }}{% if env_filter %}&environment={{ env_filter }}{% endif %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
-        </form>
-      </div>
-      <div class="col-auto d-flex align-items-center gap-2">
-        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createAssessmentModal" title="Create Assessment"><i class="bi bi-plus"></i></button>
-        <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
-          {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
-        </select>
-        <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
-          <option value="">Bulk</option>
-          <option value="delete">Delete</option>
-        </select>
-        <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Go</button>
-      </div>
-    </div>
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <button class="btn btn-sm btn-outline-secondary filter-toggle" id="filterToggle" onclick="toggleFilterBar()">
+      <i class="bi bi-funnel"></i> Filters <span class="badge bg-primary ms-1" id="filterCount" style="display:none">0</span>
+    </button>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
+      {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <form method="get" class="d-flex gap-2">
+      <input type="hidden" name="page_size" value="{{ page_size }}">
+      {% if env_filter %}<input type="hidden" name="environment" value="{{ env_filter }}">{% endif %}
+      <input type="text" name="search" class="form-control form-control-sm" placeholder="Search assessments…" value="{{ search }}" style="width:200px">
+      <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+      {% if search %}<a href="?page_size={{ page_size }}{% if env_filter %}&environment={{ env_filter }}{% endif %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
+    </form>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createAssessmentModal" title="Create Assessment"><i class="bi bi-plus"></i></button>
+  </div>
+</div>
+<div id="filterRow" class="filter-row d-flex flex-wrap align-items-end gap-3 mb-3 d-none">
+  <div>
+    <label class="form-label">Environment</label>
+    <select class="form-select form-select-sm" style="width:auto" data-env-filter onchange="updateParam('environment',this.value)">
+      <option value="">All Environments</option>
+      {% for env in environments %}
+      <option value="{{ env.id }}" {% if env_filter == env.id %}selected{% endif %}>{{ env.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <a href="#" onclick="clearAllFilters('?page_size={{ page_size }}');return false;" class="btn btn-sm btn-link text-muted p-0" style="font-size:.75rem">Clear all</a>
   </div>
 </div>
 
@@ -108,18 +107,29 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3">
-  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
-  {% if total_pages > 1 %}
-  <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">«</a></li>
-    {% for pg in page_range %}
-    {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">{{ pg }}</a></li>
+  {% if is_admin %}
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Go</button>
+  </div>
+  {% else %}<div></div>{% endif %}
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</span>
+    {% if total_pages > 1 %}
+    <nav><ul class="pagination pagination-sm mb-0">
+      <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">«</a></li>
+      {% for pg in page_range %}
+      {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
+      {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">{{ pg }}</a></li>
+      {% endif %}
+      {% endfor %}
+      <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">»</a></li>
+    </ul></nav>
     {% endif %}
-    {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&environment={{ env_filter }}">»</a></li>
-  </ul></nav>
-  {% endif %}
+  </div>
 </div>
 <!-- Create Assessment Modal -->
 <div class="modal fade" id="createAssessmentModal" tabindex="-1">

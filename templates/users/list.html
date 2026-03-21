@@ -7,10 +7,6 @@
 {% endblock %}
 
 {% block content %}
-<div id="bulkBar" class="d-flex align-items-center gap-2 mb-2" style="display:none !important">
-  <span class="small text-muted" id="bulkCount">0 selected</span>
-  <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteUsers()"><i class="bi bi-trash me-1"></i>Delete</button>
-</div>
 
 <div class="d-flex align-items-center justify-content-between mb-2">
   <div class="d-flex align-items-center gap-2">
@@ -106,8 +102,17 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3">
-  <div class="text-muted small" id="pageInfo"></div>
-  <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulk()">Go</button>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small" id="pageInfo"></span>
+    <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+  </div>
 </div>
 {% endblock %}
 
@@ -140,25 +145,17 @@ function getSelectedIds() {
   return Array.from(document.querySelectorAll('.row-cb:checked')).map(function(cb) { return cb.value; });
 }
 
-function updateBulkBar() {
-  var ids = getSelectedIds();
-  var bar = document.getElementById('bulkBar');
-  bar.style.cssText = ids.length > 0 ? '' : 'display:none !important';
-  document.getElementById('bulkCount').textContent = ids.length + ' selected';
-  var allCbs = document.querySelectorAll('.row-cb');
-  document.getElementById('selectAll').checked = ids.length > 0 && ids.length === allCbs.length;
-}
-
 function toggleSelectAll(checked) {
   document.querySelectorAll('.row-cb').forEach(function(cb) {
     if (cb.closest('tr').style.display !== 'none') cb.checked = checked;
   });
-  updateBulkBar();
 }
 
-function bulkDeleteUsers() {
+function applyBulk() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Select a bulk action.'); return; }
   var ids = getSelectedIds();
-  if (!ids.length) return;
+  if (!ids.length) { alert('Select at least one item.'); return; }
   if (!confirm('Delete ' + ids.length + ' selected user(s)? This cannot be undone.')) return;
   var csrf = document.querySelector('meta[name="csrf-token"]').content;
   Promise.all(ids.map(function(id) {

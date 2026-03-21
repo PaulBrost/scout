@@ -3,19 +3,92 @@
 {% block page_title %}Settings{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-6">
+{% if messages %}
+{% for msg in messages %}
+<div class="alert alert-{{ msg.tags }} alert-dismissible fade show" role="alert">
+  {{ msg }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <!-- Profile -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-person me-1"></i> Profile
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="form_type" value="profile">
+          <div class="mb-3">
+            <label class="form-label small text-muted">Username</label>
+            <input type="text" class="form-control form-control-sm" value="{{ request.user.username }}" disabled>
+            <div class="form-text">Username can only be changed by an administrator.</div>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col">
+              <label class="form-label small text-muted">First Name</label>
+              <input type="text" name="first_name" class="form-control form-control-sm" value="{{ request.user.first_name|default:'' }}">
+            </div>
+            <div class="col">
+              <label class="form-label small text-muted">Last Name</label>
+              <input type="text" name="last_name" class="form-control form-control-sm" value="{{ request.user.last_name|default:'' }}">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Email</label>
+            <input type="email" name="email" class="form-control form-control-sm" value="{{ request.user.email|default:'' }}">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Save Profile</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Change Password -->
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white fw-semibold">
-        <i class="bi bi-clock"></i> Timezone
+        <i class="bi bi-key me-1"></i> Change Password
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="form_type" value="password">
+          <div class="mb-3">
+            <label class="form-label small text-muted">Current Password</label>
+            <input type="password" name="current_password" class="form-control form-control-sm" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">New Password</label>
+            <input type="password" name="new_password" class="form-control form-control-sm" required minlength="8">
+            <div class="form-text">Must be at least 8 characters.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Confirm New Password</label>
+            <input type="password" name="confirm_password" class="form-control form-control-sm" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Change Password</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <!-- Timezone -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-clock me-1"></i> Timezone
       </div>
       <div class="card-body">
         <p class="text-muted small mb-3">All timestamps throughout SCOUT will display in your selected timezone.</p>
         <form method="post">
           {% csrf_token %}
+          <input type="hidden" name="form_type" value="timezone">
           <div class="mb-3">
-            <label for="timezone" class="form-label">Timezone</label>
-            <select name="timezone" id="timezone" class="form-select">
+            <label for="timezone" class="form-label small text-muted">Timezone</label>
+            <select name="timezone" id="timezone" class="form-select form-select-sm">
               {% for group, tzs in timezone_choices %}
               <optgroup label="{{ group }}">
                 {% for tz in tzs %}
@@ -25,10 +98,36 @@
               {% endfor %}
             </select>
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-check-lg"></i> Save
-          </button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Timezone</button>
         </form>
+      </div>
+    </div>
+
+    <!-- Account Info (read-only) -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-info-circle me-1"></i> Account Info
+      </div>
+      <div class="card-body small">
+        <div class="d-flex mb-2">
+          <span class="text-muted" style="min-width:120px">Role</span>
+          <span>{% if request.user.is_staff %}<span class="badge bg-primary">Admin</span>{% else %}<span class="badge bg-light text-dark">User</span>{% endif %}</span>
+        </div>
+        <div class="d-flex mb-2">
+          <span class="text-muted" style="min-width:120px">Status</span>
+          <span>{% if request.user.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</span>
+        </div>
+        <div class="d-flex mb-2">
+          <span class="text-muted" style="min-width:120px">Member Since</span>
+          <span>{{ request.user.date_joined|date:"M d, Y" }}</span>
+        </div>
+        <div class="d-flex">
+          <span class="text-muted" style="min-width:120px">Last Login</span>
+          <span>{% if request.user.last_login %}{{ request.user.last_login|date:"M d, Y H:i" }}{% else %}—{% endif %}</span>
+        </div>
+        <p class="text-muted mt-3 mb-0" style="font-size:.75rem">
+          Role, status, and environment access can only be changed by an administrator.
+        </p>
       </div>
     </div>
   </div>

@@ -104,6 +104,137 @@
   </div>
 </div>
 
+<hr class="my-4">
+
+<!-- Identity Providers (OIDC) -->
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+        Identity Providers (OIDC)
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="oidcOpenCreate()">
+          <i class="bi bi-plus"></i> Add Provider
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Client ID</th>
+              <th>Algorithm</th>
+              <th>Status</th>
+              <th>Callback URL</th>
+              <th style="width:100px">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="oidc-providers-body">
+            <tr><td colspan="6" class="text-muted text-center py-3">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer bg-white">
+        <div class="form-check form-switch">
+          <input type="checkbox" class="form-check-input" id="localLoginToggle"
+            {% if local_login_enabled %}checked{% endif %}
+            {% if allow_local_override %}disabled{% endif %}
+            onchange="toggleLocalLogin(this.checked)">
+          <label class="form-check-label small" for="localLoginToggle">
+            Local Login (username/password)
+          </label>
+          {% if allow_local_override %}
+          <div class="form-text text-warning">Forced on via ALLOW_LOCAL_LOGIN environment variable.</div>
+          {% else %}
+          <div class="form-text">When disabled, only OIDC login is available. Requires at least one active provider.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold">About OIDC</div>
+      <div class="card-body small text-muted">
+        <p>SCOUT supports federated login via OpenID Connect (OIDC). Any standards-compliant identity provider can be used — Authentik, Okta, Keycloak, Auth0, Google Workspace, etc.</p>
+        <p><strong>Required IdP claims:</strong></p>
+        <ul class="mb-2">
+          <li><code>cap:site_scout</code> = <code>true</code> — grants access</li>
+          <li><code>cap:admin_scout</code> = <code>true</code> — grants admin</li>
+          <li><code>email</code> — for user matching</li>
+        </ul>
+        <p class="mb-0">Users are auto-provisioned on first login. Admin status syncs from the IdP on every login.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OIDC Provider Modal -->
+<div class="modal fade" id="oidcModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="oidcModalTitle">Add Provider</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="oidcEditId" value="">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Display Name *</label>
+            <input type="text" id="oidcName" class="form-control form-control-sm" placeholder="e.g. Authentik">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Client ID *</label>
+            <input type="text" id="oidcClientId" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Client Secret *</label>
+            <input type="password" id="oidcClientSecret" class="form-control form-control-sm" placeholder="Leave blank to keep existing">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Signing Algorithm</label>
+            <select id="oidcSignAlgo" class="form-select form-select-sm">
+              <option value="RS256">RS256 (asymmetric, recommended)</option>
+              <option value="HS256">HS256 (symmetric)</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Authorization Endpoint *</label>
+            <input type="url" id="oidcAuthEndpoint" class="form-control form-control-sm" placeholder="https://auth.example.com/.../authorize/">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Token Endpoint *</label>
+            <input type="url" id="oidcTokenEndpoint" class="form-control form-control-sm" placeholder="https://auth.example.com/.../token/">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Userinfo Endpoint *</label>
+            <input type="url" id="oidcUserEndpoint" class="form-control form-control-sm" placeholder="https://auth.example.com/.../userinfo/">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">JWKS Endpoint</label>
+            <input type="url" id="oidcJwksEndpoint" class="form-control form-control-sm" placeholder="https://auth.example.com/.../jwks/ (required for RS256)">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Logout URL (optional)</label>
+            <input type="url" id="oidcLogoutUrl" class="form-control form-control-sm" placeholder="Single Logout endpoint (optional)">
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" id="oidcEnabled" checked>
+              <label class="form-check-label small" for="oidcEnabled">Enabled</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <span id="oidcModalStatus" class="small me-auto"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="oidcSaveModal()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="mt-4 text-muted small">
   Looking for a setting not listed here? Access the <a href="/django-admin/">Django Admin</a> for advanced configuration.
 </div>
@@ -113,6 +244,7 @@
 <script>
 var scriptTypes = {{ script_types_json|safe }};
 var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+var oidcProviders = {{ oidc_providers_json|safe }};
 
 function renderScriptTypes() {
   var tbody = document.getElementById('script-types-body');
@@ -197,5 +329,136 @@ function saveScriptTypes() {
 }
 
 renderScriptTypes();
+
+// ── OIDC Provider Management ──
+
+function oidcRender() {
+  var tbody = document.getElementById('oidc-providers-body');
+  if (!oidcProviders.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-3">No identity providers configured.</td></tr>';
+    return;
+  }
+  var origin = window.location.origin;
+  tbody.innerHTML = oidcProviders.map(function(p) {
+    var callbackUrl = origin + '/oidc/' + p.id + '/callback/';
+    return '<tr>' +
+      '<td class="fw-semibold small">' + esc(p.name) + '</td>' +
+      '<td class="small font-monospace">' + esc(p.client_id) + '</td>' +
+      '<td class="small">' + esc(p.sign_algo) + '</td>' +
+      '<td>' + (p.enabled ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Disabled</span>') + '</td>' +
+      '<td class="small font-monospace text-truncate" style="max-width:200px" title="' + esc(callbackUrl) + '">' + esc(callbackUrl) + '</td>' +
+      '<td class="text-nowrap">' +
+        '<button class="btn btn-sm btn-outline-secondary me-1" onclick="oidcOpenEdit(' + p.id + ')" title="Edit"><i class="bi bi-pencil"></i></button>' +
+        '<button class="btn btn-sm btn-outline-danger" onclick="oidcDelete(' + p.id + ', \'' + esc(p.name).replace(/'/g, "\\'") + '\')" title="Delete"><i class="bi bi-trash"></i></button>' +
+      '</td></tr>';
+  }).join('');
+}
+
+function oidcOpenCreate() {
+  document.getElementById('oidcEditId').value = '';
+  document.getElementById('oidcModalTitle').textContent = 'Add Provider';
+  document.getElementById('oidcName').value = '';
+  document.getElementById('oidcClientId').value = '';
+  document.getElementById('oidcClientSecret').value = '';
+  document.getElementById('oidcClientSecret').placeholder = '';
+  document.getElementById('oidcSignAlgo').value = 'RS256';
+  document.getElementById('oidcAuthEndpoint').value = '';
+  document.getElementById('oidcTokenEndpoint').value = '';
+  document.getElementById('oidcUserEndpoint').value = '';
+  document.getElementById('oidcJwksEndpoint').value = '';
+  document.getElementById('oidcLogoutUrl').value = '';
+  document.getElementById('oidcEnabled').checked = true;
+  document.getElementById('oidcModalStatus').textContent = '';
+  new bootstrap.Modal(document.getElementById('oidcModal')).show();
+}
+
+function oidcOpenEdit(id) {
+  var p = oidcProviders.find(function(x) { return x.id === id; });
+  if (!p) return;
+  document.getElementById('oidcEditId').value = id;
+  document.getElementById('oidcModalTitle').textContent = 'Edit Provider';
+  document.getElementById('oidcName').value = p.name;
+  document.getElementById('oidcClientId').value = p.client_id;
+  document.getElementById('oidcClientSecret').value = '';
+  document.getElementById('oidcClientSecret').placeholder = 'Leave blank to keep existing';
+  document.getElementById('oidcSignAlgo').value = p.sign_algo;
+  document.getElementById('oidcAuthEndpoint').value = p.authorization_endpoint || '';
+  document.getElementById('oidcTokenEndpoint').value = p.token_endpoint || '';
+  document.getElementById('oidcUserEndpoint').value = p.user_endpoint || '';
+  document.getElementById('oidcJwksEndpoint').value = p.jwks_endpoint || '';
+  document.getElementById('oidcLogoutUrl').value = p.logout_url || '';
+  document.getElementById('oidcEnabled').checked = p.enabled;
+  document.getElementById('oidcModalStatus').textContent = '';
+  new bootstrap.Modal(document.getElementById('oidcModal')).show();
+}
+
+function oidcSaveModal() {
+  var editId = document.getElementById('oidcEditId').value;
+  var url = editId ? '/admin-config/oidc/' + editId + '/update/' : '/admin-config/oidc/create/';
+  var data = {
+    name: document.getElementById('oidcName').value,
+    client_id: document.getElementById('oidcClientId').value,
+    client_secret: document.getElementById('oidcClientSecret').value,
+    sign_algo: document.getElementById('oidcSignAlgo').value,
+    authorization_endpoint: document.getElementById('oidcAuthEndpoint').value,
+    token_endpoint: document.getElementById('oidcTokenEndpoint').value,
+    user_endpoint: document.getElementById('oidcUserEndpoint').value,
+    jwks_endpoint: document.getElementById('oidcJwksEndpoint').value,
+    logout_url: document.getElementById('oidcLogoutUrl').value,
+    enabled: document.getElementById('oidcEnabled').checked,
+  };
+  var status = document.getElementById('oidcModalStatus');
+  status.textContent = 'Saving...';
+  status.className = 'small me-auto text-muted';
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+    body: JSON.stringify(data)
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok || d.id) {
+      bootstrap.Modal.getInstance(document.getElementById('oidcModal')).hide();
+      oidcLoad();
+    } else {
+      status.textContent = d.error || 'Save failed.';
+      status.className = 'small me-auto text-danger';
+    }
+  }).catch(function() {
+    status.textContent = 'Network error.';
+    status.className = 'small me-auto text-danger';
+  });
+}
+
+function oidcDelete(id, name) {
+  if (!confirm('Delete provider "' + name + '"?')) return;
+  fetch('/admin-config/oidc/' + id + '/delete/', {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) oidcLoad();
+    else alert('Error: ' + (d.error || 'Unknown error'));
+  });
+}
+
+function oidcLoad() {
+  fetch('/admin-config/oidc/').then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { oidcProviders = d.providers; oidcRender(); }
+  });
+}
+
+function toggleLocalLogin(checked) {
+  fetch('/admin-config/oidc/local-login/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+    body: JSON.stringify({enabled: checked})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.ok) {
+      alert('Error: ' + (d.error || 'Unknown error'));
+      document.getElementById('localLoginToggle').checked = !checked;
+    }
+  });
+}
+
+oidcRender();
 </script>
 {% endblock %}

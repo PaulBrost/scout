@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SCOUT — Login</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
     body { background: #1e2a3a; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
     .login-card { background: #fff; border-radius: .5rem; padding: 2.5rem; width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,.3); }
     .login-logo { text-align: center; margin-bottom: 1.5rem; font-size: 2rem; font-weight: 800; color: #1e2a3a; letter-spacing: .05em; }
     .login-logo span { color: #4da3ff; }
     .login-subtitle { text-align: center; color: #6c757d; font-size: .875rem; margin-bottom: 1.5rem; }
+    .oidc-btn { display: flex; align-items: center; justify-content: center; gap: .5rem; }
+    .divider { display: flex; align-items: center; margin: 1.25rem 0; color: #adb5bd; font-size: .8rem; }
+    .divider::before, .divider::after { content: ''; flex: 1; border-top: 1px solid #dee2e6; }
+    .divider::before { margin-right: .75rem; }
+    .divider::after { margin-left: .75rem; }
   </style>
 </head>
 <body>
@@ -20,6 +26,21 @@
     {% if error %}
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
+
+    {% if oidc_providers %}
+    <div class="mb-3">
+      {% for p in oidc_providers %}
+      <a href="/oidc/{{ p.id }}/login/" class="btn btn-outline-primary w-100 oidc-btn {% if not forloop.first %}mt-2{% endif %}">
+        <i class="bi bi-shield-lock"></i> Sign in with {{ p.name }}
+      </a>
+      {% endfor %}
+    </div>
+    {% if local_login_enabled %}
+    <div class="divider">or sign in with username</div>
+    {% endif %}
+    {% endif %}
+
+    {% if local_login_enabled %}
     <form method="post">
       {% csrf_token %}
       <div class="mb-3">
@@ -32,6 +53,11 @@
       </div>
       <button type="submit" class="btn btn-primary w-100">Sign In</button>
     </form>
+    {% endif %}
+
+    {% if not oidc_providers and not local_login_enabled %}
+    <div class="alert alert-warning mb-0">No login methods are currently available. Contact an administrator.</div>
+    {% endif %}
   </div>
 </body>
 </html>

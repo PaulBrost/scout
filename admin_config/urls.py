@@ -30,4 +30,10 @@ urlpatterns = [
     path('api/<uuid:client_id>/update/', views.api_client_update, name='admin_api_client_update'),
     path('api/<uuid:client_id>/regenerate/', views.api_client_regenerate, name='admin_api_client_regenerate'),
     path('api/<uuid:client_id>/delete/', views.api_client_delete, name='admin_api_client_delete'),
+    # OIDC provider management
+    path('oidc/', views.api_oidc_list, name='admin_oidc_list'),
+    path('oidc/create/', views.api_oidc_create, name='admin_oidc_create'),
+    path('oidc/<int:provider_id>/update/', views.api_oidc_update, name='admin_oidc_update'),
+    path('oidc/<int:provider_id>/delete/', views.api_oidc_delete, name='admin_oidc_delete'),
+    path('oidc/local-login/', views.api_toggle_local_login, name='admin_toggle_local_login'),
 ]

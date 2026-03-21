@@ -33,32 +33,14 @@
   </div>
 </div>
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+<div class="d-flex align-items-center justify-content-between mb-2">
   <div class="d-flex align-items-center gap-2">
-    <label class="text-muted small mb-0">Show</label>
+    <button class="btn btn-sm btn-outline-secondary filter-toggle" id="filterToggle" onclick="toggleFilterBar()">
+      <i class="bi bi-funnel"></i> Filters <span class="badge bg-primary ms-1" id="filterCount" style="display:none">0</span>
+    </button>
     <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('page_size',this.value)">
       {% for size in page_size_options %}<option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
     </select>
-    <span class="text-muted small">entries</span>
-    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('status',this.value)">
-      <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
-      <option value="running" {% if status_filter == 'running' %}selected{% endif %}>Running</option>
-      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
-      <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
-    </select>
-    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
-      <option value="">Bulk actions</option>
-      <option value="delete">Delete</option>
-    </select>
-    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
-    {% if owner_choices %}
-    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
-      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
-      {% for u in owner_choices %}
-      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
   </div>
   <form method="get" class="d-flex gap-2 align-items-center">
     <input type="hidden" name="page_size" value="{{ page_size }}">
@@ -69,6 +51,31 @@
     <button class="btn btn-sm btn-outline-secondary">Search</button>
     {% if search %}<a href="?page_size={{ page_size }}" class="btn btn-sm btn-outline-danger">×</a>{% endif %}
   </form>
+</div>
+<div id="filterRow" class="filter-row d-flex flex-wrap align-items-end gap-3 mb-3 d-none">
+  <div>
+    <label class="form-label">Status</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateParam('status',this.value)">
+      <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+      <option value="running" {% if status_filter == 'running' %}selected{% endif %}>Running</option>
+      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+    </select>
+  </div>
+  {% if owner_choices %}
+  <div>
+    <label class="form-label">Owner</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
+      <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
+      {% for u in owner_choices %}
+      <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div>
+    <a href="#" onclick="clearAllFilters('?page_size={{ page_size }}');return false;" class="btn btn-sm btn-link text-muted p-0" style="font-size:.75rem">Clear all</a>
+  </div>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -127,18 +134,27 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3">
-  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
-  {% if total_pages > 1 %}
-  <nav><ul class="pagination pagination-sm mb-0">
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">«</a></li>
-    {% for pg in page_range %}
-    {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
-    {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">{{ pg }}</a></li>
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulkAction()">Apply</button>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</span>
+    {% if total_pages > 1 %}
+    <nav><ul class="pagination pagination-sm mb-0">
+      <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">«</a></li>
+      {% for pg in page_range %}
+      {% if pg == '...' %}<li class="page-item disabled"><span class="page-link">…</span></li>
+      {% else %}<li class="page-item {% if pg == page %}active{% endif %}"><a class="page-link" href="?page={{ pg }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">{{ pg }}</a></li>
+      {% endif %}
+      {% endfor %}
+      <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">»</a></li>
+    </ul></nav>
     {% endif %}
-    {% endfor %}
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&sort={{ sort }}&dir={{ direction }}&search={{ search }}&status={{ status_filter }}">»</a></li>
-  </ul></nav>
-  {% endif %}
+  </div>
 </div>
 <script>
 function updateParam(key, val) {

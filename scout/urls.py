@@ -9,6 +9,8 @@ urlpatterns = [
     path('login/', core_views.login_view, name='login'),
     path('logout/', core_views.logout_view, name='logout'),
     path('settings/', core_views.settings_view, name='settings'),
+    path('oidc/<int:provider_id>/login/', core_views.oidc_login, name='oidc_login'),
+    path('oidc/<int:provider_id>/callback/', core_views.oidc_callback, name='oidc_callback'),
     path('', include('dashboard.urls')),
     path('runs/', include('runs.urls')),
     path('suites/', include('suites.urls')),

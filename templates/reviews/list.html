@@ -3,59 +3,96 @@
 {% block page_title %}Review Issues{% endblock %}
 
 {% block topbar_actions %}
-<a href="/reviews/suppressions/" class="btn btn-sm btn-outline-secondary">
-  <i class="bi bi-shield-x"></i> Suppressions
-</a>
+<button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
+  <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
+</button>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div class="d-flex gap-2">
-    <button class="btn btn-sm filter-btn {% if 'pending' in status_filter %}active{% endif %}" onclick="toggleStatus('pending')">Pending</button>
-    <button class="btn btn-sm filter-btn {% if 'confirmed' in status_filter %}active{% endif %}" onclick="toggleStatus('confirmed')">Confirmed</button>
-    <button class="btn btn-sm filter-btn {% if 'resolved' in status_filter %}active{% endif %}" onclick="toggleStatus('resolved')">Resolved</button>
-    <button class="btn btn-sm filter-btn {% if 'dismissed' in status_filter %}active{% endif %}" onclick="toggleStatus('dismissed')">Dismissed</button>
-    <button class="btn btn-sm filter-btn {% if status_filter == 'all' %}active{% endif %}" onclick="setAllStatuses()">All</button>
-    <span class="border-start mx-1"></span>
-    <a href="?status={{ status_filter }}&source=all&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if not source_filter or source_filter == 'all' %}active{% endif %}" title="All sources">
-      All Types
-    </a>
-    <a href="?status={{ status_filter }}&source=ai_analysis&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if source_filter == 'ai_analysis' %}active{% endif %}">
-      <i class="bi bi-cpu"></i> AI
-    </a>
-    <a href="?status={{ status_filter }}&source=screenshot&page_size={{ page_size }}&assessment={{ assessment_filter }}" class="btn btn-sm filter-btn {% if source_filter == 'screenshot' %}active{% endif %}">
-      <i class="bi bi-camera"></i> Screenshots
-    </a>
-    {% if assessments %}
-    <span class="border-start mx-1"></span>
-    <select class="form-select form-select-sm" style="width:auto;display:inline-block" onchange="window.location='?status={{ status_filter }}&source={{ source_filter }}&page_size={{ page_size }}&assessment='+this.value">
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">About Review Issues</h6>
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <p>Review issues are flagged by AI analysis or screenshot comparisons during test runs. Each issue needs human review to determine if it's a real problem.</p>
+        <p><strong>Statuses:</strong></p>
+        <ul>
+          <li><strong>Pending</strong> — awaiting review</li>
+          <li><strong>Confirmed</strong> — reviewed, this is a real issue that needs fixing</li>
+          <li><strong>Resolved</strong> — the issue has been fixed</li>
+          <li><strong>Dismissed</strong> — not a real issue. Dismissing also creates an <a href="/reviews/suppressions/">auto-dismiss rule</a> so the same issue won't be flagged on future runs.</li>
+        </ul>
+        <p>Use the <strong>Filters</strong> to narrow by status, source type, assessment, or owner. Use <strong>Bulk actions</strong> at the bottom to update multiple items at once.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <button class="btn btn-sm btn-outline-secondary filter-toggle" id="filterToggle" onclick="toggleFilterBar()">
+      <i class="bi bi-funnel"></i> Filters <span class="badge bg-primary ms-1" id="filterCount" style="display:none">0</span>
+    </button>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateReviewParam('page_size',this.value)">
+      <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
+      <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+    </select>
+  </div>
+  <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
+</div>
+<div id="filterRow" class="filter-row d-flex flex-wrap align-items-start gap-3 mb-3 d-none">
+  <div>
+    <label class="form-label">Status</label>
+    <select class="form-select form-select-sm" id="statusFilter" style="width:160px" multiple size="4">
+      <option value="pending" {% if 'pending' in status_filter %}selected{% endif %}>Pending</option>
+      <option value="confirmed" {% if 'confirmed' in status_filter %}selected{% endif %}>Confirmed</option>
+      <option value="resolved" {% if 'resolved' in status_filter %}selected{% endif %}>Resolved</option>
+      <option value="dismissed" {% if 'dismissed' in status_filter %}selected{% endif %}>Dismissed</option>
+    </select>
+  </div>
+  <div>
+    <label class="form-label">Source</label>
+    <select class="form-select form-select-sm" id="sourceFilter" style="width:160px" multiple size="4">
+      <option value="ai_analysis" {% if source_filter == 'ai_analysis' or source_filter == 'all' or not source_filter %}selected{% endif %}>AI Analysis</option>
+      <option value="screenshot" {% if source_filter == 'screenshot' or source_filter == 'all' or not source_filter %}selected{% endif %}>Screenshots</option>
+    </select>
+  </div>
+  {% if assessments %}
+  <div>
+    <label class="form-label">Assessment</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="updateReviewParam('assessment',this.value)">
       <option value="">All Assessments</option>
       {% for a in assessments %}
       <option value="{{ a.id }}" {% if assessment_filter == a.id %}selected{% endif %}>{{ a.name }}</option>
       {% endfor %}
     </select>
-    {% endif %}
-    {% if owner_choices %}
-    <span class="border-start mx-1"></span>
-    <select class="form-select form-select-sm" style="width:auto;display:inline-block" onchange="setOwner(this.value)">
+  </div>
+  {% endif %}
+  {% if owner_choices %}
+  <div>
+    <label class="form-label">Owner</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="setOwner(this.value)">
       <option value="all" {% if owner_filter == 'all' %}selected{% endif %}>All Users</option>
       {% for u in owner_choices %}
       <option value="{{ u.id }}" {% if owner_filter == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>
       {% endfor %}
     </select>
-    {% endif %}
   </div>
-  <div class="text-muted small">{{ total }} item{{ total|pluralize }}</div>
+  {% endif %}
+  <div>
+    <button class="btn btn-sm btn-primary" onclick="applyReviewFilters()">Apply</button>
+  </div>
+  <div>
+    <a href="#" onclick="clearAllFilters('?page_size={{ page_size }}');return false;" class="btn btn-sm btn-link text-muted p-0" style="font-size:.75rem">Clear all</a>
+  </div>
 </div>
 
-<div id="bulkBar" class="d-flex align-items-center gap-2 mb-2" style="display:none !important">
-  <span class="small text-muted" id="bulkCount">0 selected</span>
-  <button class="btn btn-sm btn-outline-warning" onclick="bulkAction('pending')">Pending</button>
-  <button class="btn btn-sm btn-outline-danger" onclick="bulkAction('confirm')">Confirmed</button>
-  <button class="btn btn-sm btn-outline-success" onclick="bulkAction('resolve')">Resolved</button>
-  <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('dismiss')">Dismissed</button>
-  <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()"><i class="bi bi-trash me-1"></i>Delete</button>
-</div>
 
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
@@ -118,7 +155,10 @@
             {% endif %}
           </td>
           <td>
-            {% if rv.source_type == 'ai_analysis' and rv.issues %}
+            {% if rv.issue_detail %}
+            <span class="badge {% if rv.issue_detail.severity == 'high' %}bg-danger{% elif rv.issue_detail.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">{{ rv.issue_detail.severity|default:"issue" }}</span>
+            {% if rv.issue_detail.type %}<span class="badge bg-light text-dark ms-1">{{ rv.issue_detail.type }}</span>{% endif %}
+            {% elif rv.source_type == 'ai_analysis' and rv.issues %}
             <span class="badge bg-danger">{{ rv.issues|length }} issue{{ rv.issues|length|pluralize }}</span>
             {% elif rv.source_type == 'screenshot' and rv.flagged %}
             <span class="badge bg-warning text-dark">Flagged</span>
@@ -175,32 +215,48 @@
                   </div>
                   {% endif %}
 
-                  {% if rv.source_type == 'ai_analysis' and rv.issues %}
-                  <strong class="small text-muted">Issues Found</strong>
-                  <div class="mt-1">
-                    {% for issue in rv.issues %}
-                    <div class="border rounded p-2 mb-2 bg-white">
-                      <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="badge {% if issue.severity == 'high' %}bg-danger{% elif issue.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
-                          {{ issue.severity|default:"—" }}
-                        </span>
-                        <span class="badge bg-light text-dark">{{ issue.type|default:"—" }}</span>
-                      </div>
-                      {% if issue.detail %}
-                      <div class="small">{{ issue.detail }}</div>
+                  {% if rv.issue_detail %}
+                  <div class="border rounded p-2 mb-2 bg-white">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      {% if rv.issue_detail.severity %}
+                      <span class="badge {% if rv.issue_detail.severity == 'high' %}bg-danger{% elif rv.issue_detail.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                        {{ rv.issue_detail.severity }}
+                      </span>
                       {% endif %}
-                      {% if issue.text %}
-                      <div class="small"><strong>Text:</strong> <code>{{ issue.text }}</code>
-                        {% if issue.suggestion %} <i class="bi bi-arrow-right"></i> <code>{{ issue.suggestion }}</code>{% endif %}
-                      </div>
-                      {% endif %}
-                      {% if issue.context %}
-                      <div class="small text-muted mt-1">"...{{ issue.context }}..."</div>
-                      {% endif %}
+                      {% if rv.issue_detail.type %}<span class="badge bg-light text-dark">{{ rv.issue_detail.type }}</span>{% endif %}
                     </div>
-                    {% endfor %}
+                    {% if rv.issue_detail.message %}<div class="small">{{ rv.issue_detail.message }}</div>{% endif %}
+                    {% if rv.issue_detail.detail %}<div class="small">{{ rv.issue_detail.detail }}</div>{% endif %}
+                    {% if rv.issue_detail.text %}
+                    <div class="small"><strong>Text:</strong> <code>{{ rv.issue_detail.text }}</code>
+                      {% if rv.issue_detail.suggestion %} <i class="bi bi-arrow-right"></i> <code>{{ rv.issue_detail.suggestion }}</code>{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if rv.issue_detail.context %}
+                    <div class="small text-muted mt-1">"...{{ rv.issue_detail.context }}..."</div>
+                    {% endif %}
                   </div>
-                  {% elif rv.source_type == 'screenshot' %}
+                  {% elif rv.source_type == 'ai_analysis' and rv.issues %}
+                  <!-- Legacy: reviews without per-issue detail -->
+                  {% for issue in rv.issues %}
+                  <div class="border rounded p-2 mb-2 bg-white">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="badge {% if issue.severity == 'high' %}bg-danger{% elif issue.severity == 'medium' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                        {{ issue.severity|default:"—" }}
+                      </span>
+                      <span class="badge bg-light text-dark">{{ issue.type|default:"—" }}</span>
+                    </div>
+                    {% if issue.detail %}<div class="small">{{ issue.detail }}</div>{% endif %}
+                    {% if issue.text %}
+                    <div class="small"><strong>Text:</strong> <code>{{ issue.text }}</code>
+                      {% if issue.suggestion %} <i class="bi bi-arrow-right"></i> <code>{{ issue.suggestion }}</code>{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if issue.context %}<div class="small text-muted mt-1">"...{{ issue.context }}..."</div>{% endif %}
+                  </div>
+                  {% endfor %}
+                  {% endif %}
+                  {% if rv.source_type == 'screenshot' %}
                   {% if rv.flag_notes %}
                   <div class="mb-2">
                     <strong class="small text-muted">Flag Notes</strong>
@@ -236,7 +292,19 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3">
-  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="pending">Mark Pending</option>
+      <option value="confirm">Mark Confirmed</option>
+      <option value="resolve">Mark Resolved</option>
+      <option value="dismiss">Mark Dismissed</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulk()">Go</button>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</span>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
     <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}&assessment={{ assessment_filter }}">«</a></li>
@@ -247,7 +315,8 @@
     {% endfor %}
     <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&status={{ status_filter }}&source={{ source_filter }}&assessment={{ assessment_filter }}">»</a></li>
   </ul></nav>
-  {% endif %}
+    {% endif %}
+  </div>
 </div>
 
 <!-- Screenshot zoom modal -->
@@ -335,59 +404,51 @@ function getCsrf() {
 
 function setOwner(val) {
   document.cookie = 'scout_owner=' + encodeURIComponent(val) + ';path=/;max-age=31536000;SameSite=Lax';
+  updateReviewParam('owner', val);
+}
+
+function updateReviewParam(key, val) {
   var url = new URL(window.location);
-  url.searchParams.set('owner', val);
+  url.searchParams.set(key, val);
   url.searchParams.set('page', '1');
   window.location = url;
 }
 
-function toggleStatus(val) {
-  var current = '{{ status_filter }}';
-  var statuses = current === 'all' ? [] : current.split(',').filter(Boolean);
-  var idx = statuses.indexOf(val);
-  if (idx >= 0) {
-    statuses.splice(idx, 1);
-  } else {
-    statuses.push(val);
-  }
-  var newStatus = statuses.length ? statuses.join(',') : 'all';
-  window.location = '?status=' + newStatus + '&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}';
-}
-
-function setAllStatuses() {
-  window.location = '?status=all&source={{ source_filter }}&page_size={{ page_size }}&assessment={{ assessment_filter }}';
+function applyReviewFilters() {
+  var statusSel = document.getElementById('statusFilter');
+  var sourceSel = document.getElementById('sourceFilter');
+  var statuses = Array.from(statusSel.selectedOptions).map(function(o) { return o.value; });
+  var sources = Array.from(sourceSel.selectedOptions).map(function(o) { return o.value; });
+  var url = new URL(window.location);
+  url.searchParams.set('status', statuses.length && statuses.length < 4 ? statuses.join(',') : 'all');
+  url.searchParams.set('source', sources.length === 1 ? sources[0] : 'all');
+  url.searchParams.set('page', '1');
+  window.location = url;
 }
 
 function getSelectedIds() {
   return Array.from(document.querySelectorAll('.review-cb:checked')).map(function(cb) { return cb.value; });
 }
 
-function updateBulkBar() {
-  var ids = getSelectedIds();
-  var bar = document.getElementById('bulkBar');
-  if (ids.length > 0) {
-    bar.style.cssText = '';
-    document.getElementById('bulkCount').textContent = ids.length + ' selected';
-  } else {
-    bar.style.cssText = 'display:none !important';
-  }
-  document.getElementById('selectAll').checked = ids.length > 0 && ids.length === document.querySelectorAll('.review-cb').length;
-}
-
 function toggleSelectAll(checked) {
   document.querySelectorAll('.review-cb').forEach(function(cb) { cb.checked = checked; });
-  updateBulkBar();
 }
 
-function bulkAction(action) {
+function applyBulk() {
+  var action = document.getElementById('bulkAction').value;
+  if (!action) { alert('Select a bulk action.'); return; }
   var ids = getSelectedIds();
-  if (!ids.length) return;
+  if (!ids.length) { alert('Select at least one item.'); return; }
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected review(s)? This cannot be undone.')) return;
+  }
   fetch('/reviews/bulk-action/', {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
     body: JSON.stringify({ids: ids, action: action})
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
+      if (action === 'delete') { location.reload(); return; }
       d.updated.forEach(function(item) {
         var badge = document.getElementById('status-badge-' + item.id);
         if (badge) { badge.textContent = item.status; badge.className = 'status-badge status-' + item.status; }
@@ -395,22 +456,8 @@ function bulkAction(action) {
         var cb = document.querySelector('.review-cb[value="' + item.id + '"]');
         if (cb) cb.checked = false;
       });
-      updateBulkBar();
+      document.getElementById('bulkAction').value = '';
     } else { alert('Error: ' + (d.error || 'Unknown error')); }
-  });
-}
-
-function bulkDelete() {
-  var ids = getSelectedIds();
-  if (!ids.length) return;
-  if (!confirm('Delete ' + ids.length + ' selected review(s)? This cannot be undone.')) return;
-  fetch('/reviews/bulk-action/', {
-    method: 'POST',
-    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json'},
-    body: JSON.stringify({ids: ids, action: 'delete'})
-  }).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.ok) { location.reload(); }
-    else { alert('Error: ' + (d.error || 'Unknown error')); }
   });
 }
 </script>

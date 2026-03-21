@@ -172,7 +172,9 @@ def detail(request, numeric_id):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_item(request):
-    """Delete an item (removes it entirely)."""
+    """Delete an item (removes it entirely). Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Admin access required'}, status=403)
     try:
         data = json.loads(request.body)
         numeric_id = data.get('numeric_id')
@@ -408,7 +410,9 @@ def api_bulk_import_items(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_assessment(request):
-    """Delete a single assessment and its associated items."""
+    """Delete a single assessment and its associated items. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Admin access required'}, status=403)
     try:
         data = json.loads(request.body)
         assessment_id = data.get('assessment_id')
@@ -427,7 +431,9 @@ def api_delete_assessment(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_assessments_bulk(request):
-    """Delete multiple assessments by ID list."""
+    """Delete multiple assessments by ID list. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Admin access required'}, status=403)
     try:
         data = json.loads(request.body)
         ids = data.get('ids', [])

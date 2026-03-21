@@ -412,12 +412,29 @@ def general_settings(request):
         rows = {r[0]: r[1] for r in cursor.fetchall()}
         script_types = get_script_types(cursor)
 
+    # OIDC / local login settings
+    from core.models import OIDCProvider
+    from decouple import config as env_config
+    oidc_providers = list(OIDCProvider.objects.values(
+        'id', 'name', 'client_id', 'sign_algo', 'enabled'))
+    local_login_enabled = True
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT value FROM ai_settings WHERE key = 'local_login_enabled'")
+        ll_row = cursor.fetchone()
+        if ll_row:
+            local_login_enabled = _load_json_val(ll_row[0])
+    allow_local_override = env_config('ALLOW_LOCAL_LOGIN', default='0') == '1'
+
     return render(request, 'admin_config/general_settings.html', {
         'archiving_enabled': _load_json_val(rows.get('archiving_enabled', False)),
         'retention_days': _load_json_val(rows.get('archiving_retention_days', 30)),
         'script_types': script_types,
         'script_types_json': json.dumps(script_types),
         'success': request.GET.get('success'),
+        'oidc_providers': oidc_providers,
+        'oidc_providers_json': json.dumps(oidc_providers),
+        'local_login_enabled': local_login_enabled,
+        'allow_local_override': allow_local_override,
     })
 
 
@@ -879,3 +896,108 @@ def api_client_delete(request, client_id):
         cursor.execute('DELETE FROM api_clients WHERE id = %s', [str(client_id)])
 
     return redirect('/admin-config/api/?success=deleted')
+
+
+# ── OIDC Provider Management ──────────────────────────────────────
+
+@admin_required
+def api_oidc_list(request):
+    from core.models import OIDCProvider
+    providers = list(OIDCProvider.objects.values(
+        'id', 'name', 'client_id', 'authorization_endpoint',
+        'token_endpoint', 'user_endpoint', 'jwks_endpoint',
+        'sign_algo', 'enabled', 'logout_url',
+    ))
+    return JsonResponse({'ok': True, 'providers': providers})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def api_oidc_create(request):
+    from core.models import OIDCProvider
+    try:
+        data = json.loads(request.body)
+        required = ['name', 'client_id', 'client_secret', 'authorization_endpoint',
+                     'token_endpoint', 'user_endpoint']
+        for field in required:
+            if not data.get(field, '').strip():
+                return JsonResponse({'error': f'{field} is required'}, status=400)
+        provider = OIDCProvider.objects.create(
+            name=data['name'].strip(),
+            client_id=data['client_id'].strip(),
+            client_secret=data['client_secret'].strip(),
+            authorization_endpoint=data['authorization_endpoint'].strip(),
+            token_endpoint=data['token_endpoint'].strip(),
+            user_endpoint=data['user_endpoint'].strip(),
+            jwks_endpoint=data.get('jwks_endpoint', '').strip(),
+            sign_algo=data.get('sign_algo', 'RS256'),
+            enabled=data.get('enabled', True),
+            logout_url=data.get('logout_url', '').strip(),
+        )
+        return JsonResponse({'ok': True, 'id': provider.id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def api_oidc_update(request, provider_id):
+    from core.models import OIDCProvider
+    try:
+        provider = OIDCProvider.objects.get(id=provider_id)
+        data = json.loads(request.body)
+        provider.name = data.get('name', provider.name).strip()
+        provider.client_id = data.get('client_id', provider.client_id).strip()
+        # Only update secret if provided (non-empty)
+        secret = data.get('client_secret', '').strip()
+        if secret:
+            provider.client_secret = secret
+        provider.authorization_endpoint = data.get('authorization_endpoint', provider.authorization_endpoint).strip()
+        provider.token_endpoint = data.get('token_endpoint', provider.token_endpoint).strip()
+        provider.user_endpoint = data.get('user_endpoint', provider.user_endpoint).strip()
+        provider.jwks_endpoint = data.get('jwks_endpoint', provider.jwks_endpoint).strip()
+        provider.sign_algo = data.get('sign_algo', provider.sign_algo)
+        provider.enabled = data.get('enabled', provider.enabled)
+        provider.logout_url = data.get('logout_url', provider.logout_url).strip()
+        provider.save()
+        return JsonResponse({'ok': True})
+    except OIDCProvider.DoesNotExist:
+        return JsonResponse({'error': 'Provider not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def api_oidc_delete(request, provider_id):
+    from core.models import OIDCProvider
+    try:
+        OIDCProvider.objects.filter(id=provider_id).delete()
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@admin_required
+def api_toggle_local_login(request):
+    from core.models import OIDCProvider
+    try:
+        data = json.loads(request.body)
+        enabled = bool(data.get('enabled', True))
+        if not enabled:
+            has_providers = OIDCProvider.objects.filter(enabled=True).exists()
+            if not has_providers:
+                return JsonResponse({'error': 'Cannot disable local login without an active identity provider'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO ai_settings (key, value) VALUES ('local_login_enabled', %s::jsonb)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """, [json.dumps(enabled)])
+        return JsonResponse({'ok': True, 'enabled': enabled})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

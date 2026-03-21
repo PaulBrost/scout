@@ -25,11 +25,6 @@
       <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
       {% if search %}<a href="?page_size={{ page_size }}&type={{ type_filter }}" class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></a>{% endif %}
     </form>
-    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
-      <option value="">Bulk</option>
-      <option value="delete">Delete</option>
-    </select>
-    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulk()">Go</button>
   </div>
 </div>
 
@@ -79,7 +74,15 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3">
-  <div class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</div>
+  <div class="d-flex align-items-center gap-2">
+    <select class="form-select form-select-sm" style="width:auto" id="bulkAction">
+      <option value="">Bulk actions</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" onclick="applyBulk()">Go</button>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small">Showing {{ start_item }}–{{ end_item }} of {{ total }}</span>
   {% if total_pages > 1 %}
   <nav><ul class="pagination pagination-sm mb-0">
     <li class="page-item {% if page <= 1 %}disabled{% endif %}"><a class="page-link" href="?page=1&page_size={{ page_size }}&type={{ type_filter }}&search={{ search }}">«</a></li>
@@ -90,7 +93,8 @@
     {% endfor %}
     <li class="page-item {% if page >= total_pages %}disabled{% endif %}"><a class="page-link" href="?page={{ total_pages }}&page_size={{ page_size }}&type={{ type_filter }}&search={{ search }}">»</a></li>
   </ul></nav>
-  {% endif %}
+    {% endif %}
+  </div>
 </div>
 
 <script>

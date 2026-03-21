@@ -313,10 +313,16 @@ def _compute_pixel_diff(baseline_path, screenshot_path, result_id, project_root)
         return 0.0
 
 
+def _issue_signature(issue, analysis_type, item_id):
+    """Build a stable key for per-issue suppression matching."""
+    parts = [analysis_type or '', item_id or '', issue.get('type', ''), issue.get('text', '')]
+    return '|'.join(parts).lower().strip()
+
+
 def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, issues,
                                 raw_response='', model_used='', duration_ms=0,
                                 screenshot_name=None, summary=''):
-    """Create an AIAnalysis record, and a Review if issues were found."""
+    """Create an AIAnalysis record, and one Review per issue found."""
     issues_found = len(issues) > 0
 
     with connection.cursor() as cursor:
@@ -332,10 +338,30 @@ def _create_analysis_and_review(run_id, item_id, test_result_id, analysis_type, 
         analysis_id = cursor.fetchone()[0]
 
         if issues_found:
-            cursor.execute("""
-                INSERT INTO reviews (id, analysis_id, source_type, status, created_at)
-                VALUES (gen_random_uuid(), %s, 'ai_analysis', 'pending', now())
-            """, [str(analysis_id)])
+            # Load suppression rules for this analysis type + script + env
+            suppressed_sigs = set()
+            try:
+                cursor.execute("""
+                    SELECT rs.issue_signature FROM review_suppressions rs
+                    JOIN test_runs tr ON tr.id = %s
+                    JOIN test_run_scripts trs ON trs.run_id = tr.id
+                    WHERE rs.rule_type = 'ai_analysis'
+                      AND rs.analysis_type = %s
+                      AND rs.script_path = trs.script_path
+                      AND rs.environment_id = tr.environment_id
+                """, [run_id, analysis_type])
+                suppressed_sigs = {r[0] for r in cursor.fetchall() if r[0]}
+            except Exception:
+                pass
+
+            # Create one review per issue
+            for issue in issues:
+                sig = _issue_signature(issue, analysis_type, item_id)
+                status = 'dismissed' if sig in suppressed_sigs else 'pending'
+                cursor.execute("""
+                    INSERT INTO reviews (id, analysis_id, source_type, status, issue_detail, created_at)
+                    VALUES (gen_random_uuid(), %s, 'ai_analysis', %s, %s::jsonb, now())
+                """, [str(analysis_id), status, json.dumps(issue)])
 
 
 def _update_analysis_progress(run_id, current, total, status='processing'):

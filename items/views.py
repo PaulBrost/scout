@@ -290,7 +290,9 @@ def api_update_item(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_item(request):
-    """Delete a single item by numeric_id."""
+    """Delete a single item by numeric_id. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Admin access required'}, status=403)
     try:
         data = json.loads(request.body)
         numeric_id = data.get('numeric_id')
@@ -309,7 +311,9 @@ def api_delete_item(request):
 @require_http_methods(["POST"])
 @login_required(login_url='/login/')
 def api_delete_items_bulk(request):
-    """Delete multiple items by numeric_id list."""
+    """Delete multiple items by numeric_id list. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Admin access required'}, status=403)
     try:
         data = json.loads(request.body)
         ids = data.get('ids', [])

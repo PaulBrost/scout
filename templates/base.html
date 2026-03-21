@@ -154,6 +154,11 @@
     .status-suppressed { background: #e2e3e5; color: #383d41; }
     .status-dismissed { background: #e2e3e5; color: #383d41; }
     .status-cancelled { background: #f5c6cb; color: #721c24; }
+    /* ── Filter bar ── */
+    .filter-toggle { font-size: .8rem; }
+    .filter-toggle .badge { font-size: .65rem; vertical-align: middle; }
+    .filter-row { border: 1px solid #e9ecef; border-radius: .375rem; padding: .5rem .75rem; background: #fafbfc; }
+    .filter-row .form-label { font-size: .7rem; margin-bottom: 0; color: #6c757d; }
     /* ── Table styles ── */
     .table { font-size: .875rem; }
     .table th { font-weight: 500; }
@@ -203,17 +208,8 @@
     <nav>
       <!-- Main navigation -->
       <div id="nav-main">
-        <div class="nav-section">Overview</div>
         <a href="/" class="{% if request.resolver_match.url_name == 'index' %}active{% endif %}">
           <i class="bi bi-house"></i> <span class="nav-label">Home</span>
-        </a>
-
-        <div class="nav-section">Content</div>
-        <a href="/assessments/" class="{% if 'assessments' in request.path %}active{% endif %}">
-          <i class="bi bi-clipboard-data"></i> <span class="nav-label">Assessments</span>
-        </a>
-        <a href="/items/" class="{% if 'items' in request.path %}active{% endif %}">
-          <i class="bi bi-grid-3x3-gap"></i> <span class="nav-label">Items</span>
         </a>
 
         <div class="nav-section">Testing</div>
@@ -226,11 +222,20 @@
         <a href="/runs/" class="{% if 'runs' in request.path %}active{% endif %}">
           <i class="bi bi-play-circle"></i> <span class="nav-label">Test Results</span>
         </a>
-        <a href="/reviews/" class="{% if 'reviews' in request.path %}active{% endif %}">
+        <a href="/reviews/" class="{% if request.path == '/reviews/' %}active{% endif %}">
           <i class="bi bi-flag"></i> <span class="nav-label">Review Issues</span>
         </a>
+        <a href="/reviews/suppressions/" class="{% if 'suppressions' in request.path %}active{% endif %}">
+          <i class="bi bi-shield-x"></i> <span class="nav-label">Auto-Dismiss Rules</span>
+        </a>
 
-        <div class="nav-section">Data</div>
+        <div class="nav-section">Content</div>
+        <a href="/assessments/" class="{% if 'assessments' in request.path %}active{% endif %}">
+          <i class="bi bi-clipboard-data"></i> <span class="nav-label">Assessments</span>
+        </a>
+        <a href="/items/" class="{% if 'items' in request.path %}active{% endif %}">
+          <i class="bi bi-grid-3x3-gap"></i> <span class="nav-label">Items</span>
+        </a>
         <a href="/test-data/" class="{% if 'test-data' in request.path %}active{% endif %}">
           <i class="bi bi-database"></i> <span class="nav-label">Test Data</span>
         </a>
@@ -391,6 +396,50 @@
           sel.addEventListener('change', function() { setSessionEnv(this.value); });
         });
       });
+    })();
+    // ── Collapsible filter bar ──
+    window.clearAllFilters = function(baseUrl) {
+      // Clear env cookie and set owner to 'all' so server-side defaults don't re-apply
+      document.cookie = 'scout_env=;path=/;max-age=0';
+      document.cookie = 'scout_owner=all;path=/;max-age=31536000;SameSite=Lax';
+      window.location = baseUrl || '?';
+    };
+
+    window.toggleFilterBar = function() {
+      var bar = document.getElementById('filterRow');
+      var btn = document.getElementById('filterToggle');
+      if (!bar) return;
+      var isHidden = bar.classList.contains('d-none');
+      bar.classList.toggle('d-none', !isHidden);
+      if (btn) btn.classList.toggle('active', isHidden);
+      localStorage.setItem('scout_filters_' + window.location.pathname, isHidden ? 'open' : 'closed');
+    };
+
+    // Init filter bar state on load
+    (function() {
+      var bar = document.getElementById('filterRow');
+      var btn = document.getElementById('filterToggle');
+      var badge = document.getElementById('filterCount');
+      if (!bar) return;
+
+      // Count active filters
+      var count = 0;
+      bar.querySelectorAll('select').forEach(function(sel) {
+        var def = sel.options[0] ? sel.options[0].value : '';
+        if (sel.value && sel.value !== def) count++;
+      });
+      bar.querySelectorAll('.filter-btn.active').forEach(function() { count++; });
+
+      if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? '' : 'none';
+      }
+
+      var key = 'scout_filters_' + window.location.pathname;
+      var saved = localStorage.getItem(key);
+      var shouldOpen = saved === 'open' || (saved === null && count > 0);
+      bar.classList.toggle('d-none', !shouldOpen);
+      if (btn) btn.classList.toggle('active', shouldOpen);
     })();
   </script>
   {% block extra_scripts %}{% endblock %}

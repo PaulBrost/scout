@@ -292,6 +292,7 @@ class Review(models.Model):
     source_type = models.TextField(default='ai_analysis', choices=SOURCE_TYPE_CHOICES)
     reviewer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     status = models.TextField(default='pending', choices=STATUS_CHOICES)
+    issue_detail = models.JSONField(null=True, blank=True)  # single issue object for per-issue reviews
     notes = models.TextField(null=True, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -302,10 +303,18 @@ class Review(models.Model):
 
 
 class ReviewSuppression(models.Model):
+    RULE_TYPE_CHOICES = [
+        ('screenshot', 'Screenshot'),
+        ('ai_analysis', 'AI Analysis'),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    screenshot_name = models.TextField()
+    rule_type = models.TextField(choices=RULE_TYPE_CHOICES, default='screenshot')
+    screenshot_name = models.TextField(null=True, blank=True)
     script_path = models.TextField()
     environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name='suppressions')
+    analysis_type = models.TextField(null=True, blank=True)  # e.g. text_content, visual_layout
+    item_id = models.TextField(null=True, blank=True)  # item_id for AI analysis rules
+    issue_signature = models.TextField(null=True, blank=True)  # stable key for per-issue matching
     suppressed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -316,7 +325,7 @@ class ReviewSuppression(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.screenshot_name} — {self.script_path}"
+        return f"{self.rule_type}: {self.screenshot_name or self.item_id} — {self.script_path}"
 
 
 class TestScript(models.Model):
@@ -671,3 +680,26 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"{self.feedback_type}: {self.subject}"
+
+
+class OIDCProvider(models.Model):
+    SIGN_ALGO_CHOICES = [
+        ('RS256', 'RS256 (asymmetric, recommended)'),
+        ('HS256', 'HS256 (symmetric)'),
+    ]
+    name = models.CharField(max_length=100)
+    client_id = models.CharField(max_length=255)
+    client_secret = models.CharField(max_length=500)
+    authorization_endpoint = models.CharField(max_length=500)
+    token_endpoint = models.CharField(max_length=500)
+    user_endpoint = models.CharField(max_length=500)
+    jwks_endpoint = models.CharField(max_length=500, blank=True, default='')
+    sign_algo = models.CharField(max_length=10, choices=SIGN_ALGO_CHOICES, default='RS256')
+    enabled = models.BooleanField(default=True)
+    logout_url = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        db_table = 'oidc_providers'
+
+    def __str__(self):
+        return self.name

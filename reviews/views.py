@@ -130,7 +130,7 @@ def index(request):
         offset = (page - 1) * page_size
         cursor.execute(f"""
             SELECT rv.id, rv.status, rv.notes, rv.reviewed_at, rv.created_at,
-                   rv.source_type,
+                   rv.source_type, rv.issue_detail,
                    aa.analysis_type, aa.issues_found, aa.issues, aa.summary,
                    aa.model_used, aa.screenshot_name AS analysis_screenshot_name,
                    aa.run_id AS ai_run_id, aa.item_id,
@@ -159,6 +159,11 @@ def index(request):
                 rv['issues'] = json.loads(rv['issues'])
             except Exception:
                 rv['issues'] = []
+        if isinstance(rv.get('issue_detail'), str):
+            try:
+                rv['issue_detail'] = json.loads(rv['issue_detail'])
+            except Exception:
+                rv['issue_detail'] = None
 
     # Fetch assessments for the filter dropdown
     with connection.cursor() as cursor:
@@ -222,28 +227,49 @@ def review_action(request):
                 [new_status, notes or None, request.user.id, review_id]
             )
 
-            # If dismissing, create a ReviewSuppression record so future runs
-            # auto-dismiss the same screenshot+script+environment combo
+            # If dismissing, create a suppression rule so the same issue is auto-dismissed on future runs
             if action == 'dismiss':
-                # Get the screenshot details to build the suppression key
                 cursor.execute("""
-                    SELECT rs.name, trs.script_path, tr.environment_id
+                    SELECT rv.source_type, rv.issue_detail,
+                           rs.name AS screenshot_name,
+                           aa.analysis_type, aa.item_id,
+                           COALESCE(trs.script_path, trs2.script_path) AS script_path,
+                           tr.environment_id
                     FROM reviews rv
                     LEFT JOIN run_screenshots rs ON rv.screenshot_id = rs.id
+                    LEFT JOIN ai_analyses aa ON rv.analysis_id = aa.id
                     LEFT JOIN test_run_scripts trs ON rs.run_script_id = trs.id
-                    LEFT JOIN test_runs tr ON rs.run_id = tr.id
+                    LEFT JOIN test_runs tr ON COALESCE(aa.run_id, rs.run_id) = tr.id
+                    LEFT JOIN test_run_scripts trs2 ON trs2.run_id = tr.id
                     WHERE rv.id = %s
+                    LIMIT 1
                 """, [review_id])
                 row = cursor.fetchone()
-                if row and row[0] and row[1] and row[2]:
-                    screenshot_name, script_path, environment_id = row
-                    cursor.execute("""
-                        INSERT INTO review_suppressions
-                            (id, screenshot_name, script_path, environment_id, suppressed_by_id, notes, created_at)
-                        VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, now())
-                        ON CONFLICT (screenshot_name, script_path, environment_id) DO NOTHING
-                    """, [screenshot_name, script_path, str(environment_id),
-                          request.user.id, notes or None])
+                if row:
+                    source_type, issue_detail, ss_name, analysis_type, item_id, script_path, env_id = row
+                    if script_path and env_id:
+                        if source_type == 'screenshot' and ss_name:
+                            cursor.execute("""
+                                INSERT INTO review_suppressions
+                                    (id, rule_type, screenshot_name, script_path, environment_id, suppressed_by_id, notes, created_at)
+                                VALUES (gen_random_uuid(), 'screenshot', %s, %s, %s, %s, %s, now())
+                                ON CONFLICT (screenshot_name, script_path, environment_id) DO NOTHING
+                            """, [ss_name, script_path, str(env_id),
+                                  request.user.id, notes or None])
+                        elif source_type == 'ai_analysis' and analysis_type:
+                            # Build per-issue signature for granular suppression
+                            issue = issue_detail if isinstance(issue_detail, dict) else {}
+                            sig_parts = [analysis_type or '', item_id or '',
+                                         issue.get('type', ''), issue.get('text', '')]
+                            sig = '|'.join(sig_parts).lower().strip()
+                            cursor.execute("""
+                                INSERT INTO review_suppressions
+                                    (id, rule_type, analysis_type, item_id, issue_signature,
+                                     script_path, environment_id, suppressed_by_id, notes, created_at)
+                                VALUES (gen_random_uuid(), 'ai_analysis', %s, %s, %s, %s, %s, %s, %s, now())
+                                ON CONFLICT DO NOTHING
+                            """, [analysis_type, item_id, sig, script_path, str(env_id),
+                                  request.user.id, notes or None])
 
         return JsonResponse({'ok': True, 'status': new_status})
     except Exception as e:
@@ -356,35 +382,54 @@ def api_list(request):
 
 @login_required(login_url='/login/')
 def suppressions(request):
-    """List all active suppressions with management UI."""
+    """List all active auto-dismiss rules with pagination."""
+    page = max(1, int(request.GET.get('page', 1)))
+    page_size = min(500, max(1, int(request.GET.get('page_size', 25))))
     env_ids = get_user_env_ids(request.user)
 
     where = []
     params = []
     if env_ids is not None:
         if not env_ids:
-            return render(request, 'reviews/suppressions.html', {'suppressions': [], 'total': 0})
+            return render(request, 'reviews/suppressions.html', {
+                'suppressions': [], 'total': 0, 'page': 1, 'page_size': page_size,
+                'page_size_options': [10, 25, 50, 100],
+                'total_pages': 1, 'start_item': 0, 'end_item': 0, 'page_range': [],
+            })
         params.append(list(str(e) for e in env_ids))
         where.append('s.environment_id = ANY(%s::uuid[])')
 
     where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
 
     with connection.cursor() as cursor:
+        cursor.execute(f'SELECT COUNT(*) FROM review_suppressions s {where_clause}', params)
+        total = cursor.fetchone()[0]
+
+        offset = (page - 1) * page_size
         cursor.execute(f"""
-            SELECT s.id, s.screenshot_name, s.script_path, s.notes, s.created_at,
+            SELECT s.id, s.rule_type, s.screenshot_name, s.script_path,
+                   s.analysis_type, s.item_id, s.issue_signature, s.notes, s.created_at,
                    e.name AS environment_name, u.username AS suppressed_by_name
             FROM review_suppressions s
             JOIN environments e ON s.environment_id = e.id
             LEFT JOIN auth_user u ON s.suppressed_by_id = u.id
             {where_clause}
             ORDER BY s.created_at DESC
-        """, params)
+            LIMIT %s OFFSET %s
+        """, params + [page_size, offset])
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start_item = offset + 1 if total > 0 else 0
+    end_item = min(offset + page_size, total)
+
     return render(request, 'reviews/suppressions.html', {
         'suppressions': rows,
-        'total': len(rows),
+        'total': total, 'page': page, 'page_size': page_size,
+        'page_size_options': [10, 25, 50, 100],
+        'total_pages': total_pages, 'start_item': start_item, 'end_item': end_item,
+        'page_range': build_page_range(page, total_pages),
     })
 
 
