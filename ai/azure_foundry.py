@@ -124,7 +124,7 @@ class AzureFoundryProvider(BaseProvider):
     def _chat_completion(self, messages, deployment=None, max_tokens=1000):
         deployment = deployment or self.text_deployment
         url = f"{self.endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self.api_version}"
-        body = {'messages': messages, 'max_completion_tokens': max_tokens}
+        body = {'messages': messages, 'max_completion_tokens': max_tokens, 'temperature': 0}
         last_error = None
 
         for attempt in range(3):

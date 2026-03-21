@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Auto-Dismiss Rules{% endblock %}
-{% block page_title %}<a href="/reviews/" class="text-decoration-none text-muted">Review Issues</a> <span class="text-muted mx-1">/</span> Auto-Dismiss Rules{% endblock %}
+{% block page_title %}Auto-Dismiss Rules{% endblock %}
 
 {% block topbar_actions %}
 <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
@@ -77,7 +77,9 @@
             {{ s.screenshot_name|default:"—" }}
             {% endif %}
           </td>
-          <td class="font-monospace small text-truncate" style="max-width:200px" title="{{ s.script_path }}">{{ s.script_path }}</td>
+          <td class="small text-truncate" style="max-width:200px">
+            <a href="/builder/?file={{ s.script_path }}" class="text-decoration-none" title="{{ s.script_path }}">{{ s.test_plan_name|default:s.script_path }}</a>
+          </td>
           <td class="small">{{ s.environment_name }}</td>
           <td class="small text-muted">{{ s.suppressed_by_name|default:"—" }}</td>
           <td class="small text-muted">{{ s.created_at }}</td>

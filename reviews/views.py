@@ -409,10 +409,12 @@ def suppressions(request):
         cursor.execute(f"""
             SELECT s.id, s.rule_type, s.screenshot_name, s.script_path,
                    s.analysis_type, s.item_id, s.issue_signature, s.notes, s.created_at,
-                   e.name AS environment_name, u.username AS suppressed_by_name
+                   e.name AS environment_name, u.username AS suppressed_by_name,
+                   ts.description AS test_plan_name
             FROM review_suppressions s
             JOIN environments e ON s.environment_id = e.id
             LEFT JOIN auth_user u ON s.suppressed_by_id = u.id
+            LEFT JOIN test_scripts ts ON ts.script_path = s.script_path
             {where_clause}
             ORDER BY s.created_at DESC
             LIMIT %s OFFSET %s

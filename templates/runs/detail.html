@@ -1334,8 +1334,32 @@ document.querySelectorAll('#analysisTable th.sortable').forEach(function(th) {
   });
 });
 
+var analysisCountAtStart = {{ analyses|length }};
+
+function showAnalysisBanner(msg) {
+  var banner = document.getElementById('analysisBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'analysisBanner';
+    banner.className = 'alert alert-info py-2 d-flex align-items-center gap-2 mb-0';
+    var resultsEl = document.getElementById('analysisResults');
+    resultsEl.parentNode.insertBefore(banner, resultsEl);
+  }
+  banner.innerHTML = '<span class="spinner-border spinner-border-sm"></span><span class="small">' + msg + '</span>';
+  banner.style.display = '';
+}
+
+function hideAnalysisBanner() {
+  var banner = document.getElementById('analysisBanner');
+  if (banner) banner.style.display = 'none';
+}
+
 function runAnalysis(type) {
+  if (analysisCountAtStart > 0) {
+    if (!confirm('This run already has ' + analysisCountAtStart + ' analysis result(s). Running again will add new results alongside the existing ones.\n\nTo start fresh, use the Clear button first.\n\nContinue?')) return;
+  }
   var btn = type === 'visual' ? document.getElementById('analyzeVisualBtn') : document.getElementById('analyzeTextBtn');
+  var label = type === 'visual' ? 'screenshot' : 'text';
   var origHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyzing...';
@@ -1352,13 +1376,8 @@ function runAnalysis(type) {
   .then(function(d) {
     btn.disabled = false;
     btn.innerHTML = origHtml;
-    if (d.error) {
-      alert('Error: ' + d.error);
-      return;
-    }
-    // Show status and poll for results
-    var resultsEl = document.getElementById('analysisResults');
-    resultsEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span><span class="text-muted small">AI analysis queued. Results will appear shortly...</span></div>';
+    if (d.error) { alert('Error: ' + d.error); return; }
+    showAnalysisBanner('Running AI ' + label + ' analysis on all test plans...');
     pollAnalysisResults();
   })
   .catch(function(err) {
@@ -1369,6 +1388,10 @@ function runAnalysis(type) {
 }
 
 function analyzeScript(runScriptId, type, btn) {
+  if (analysisCountAtStart > 0) {
+    if (!confirm('This run already has analysis results. New results will be added alongside existing ones. Continue?')) return;
+  }
+  var label = type === 'visual' ? 'screenshot' : 'text';
   var origHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -1386,8 +1409,7 @@ function analyzeScript(runScriptId, type, btn) {
     btn.disabled = false;
     btn.innerHTML = origHtml;
     if (d.error) { alert('Error: ' + d.error); return; }
-    var resultsEl = document.getElementById('analysisResults');
-    resultsEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span><span class="text-muted small">AI analysis queued for this test plan. Results will appear shortly...</span></div>';
+    showAnalysisBanner('Running AI ' + label + ' analysis...');
     pollAnalysisResults();
   })
   .catch(function(err) {
@@ -1406,24 +1428,28 @@ function pollAnalysisResults() {
       .then(function(d) {
         if (!d || !d.analyses) return;
 
-        // Update progress display
-        var resultsEl = document.getElementById('analysisResults');
         var p = d.progress;
         if (p && p.status !== 'completed') {
-          resultsEl.innerHTML = '<div class="text-center py-3">' +
-            '<span class="spinner-border spinner-border-sm me-2"></span>' +
-            '<span class="text-muted small">AI Analysis (' + p.current + '/' + p.total + ')...</span>' +
-            (d.analyses.length > 0 ? '<div class="text-muted small mt-1">' + d.analyses.length + ' completed so far</div>' : '') +
-            '</div>';
+          showAnalysisBanner('AI Analysis in progress (' + p.current + '/' + p.total + ')...');
+          return;
+        }
+
+        // Check if new results have arrived beyond what was on the page at start
+        if (d.analyses.length > analysisCountAtStart) {
+          clearInterval(analysisPolling);
+          analysisPolling = null;
+          hideAnalysisBanner();
+          location.reload();
           return;
         }
 
         // Check if any are still processing
         var pending = d.analyses.some(function(a) { return a.status === 'pending' || a.status === 'processing'; });
-        if (!pending && d.analyses.length > 0) {
+        if (!pending) {
           clearInterval(analysisPolling);
           analysisPolling = null;
-          location.reload();
+          hideAnalysisBanner();
+          if (d.analyses.length > 0) location.reload();
         }
       });
   }, 3000);
@@ -1432,6 +1458,7 @@ function pollAnalysisResults() {
     if (analysisPolling) {
       clearInterval(analysisPolling);
       analysisPolling = null;
+      hideAnalysisBanner();
       location.reload();
     }
   }, 300000);

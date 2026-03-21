@@ -138,6 +138,7 @@ class AnthropicProvider(BaseProvider):
             'model': self.model,
             'max_tokens': max_tokens,
             'messages': api_messages,
+            'temperature': 0,
         }
         if system_text:
             body['system'] = system_text

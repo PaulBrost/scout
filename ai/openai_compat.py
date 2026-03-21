@@ -127,6 +127,7 @@ class OpenAICompatProvider(BaseProvider):
             'model': self.model,
             'messages': messages,
             'max_completion_tokens': max_tokens,
+            'temperature': 0,
         }
 
         last_error = None

@@ -107,7 +107,7 @@ class OllamaProvider(BaseProvider):
             'model': model,
             'messages': messages,
             'stream': False,
-            'options': {'num_predict': max_tokens},
+            'options': {'num_predict': max_tokens, 'temperature': 0},
         }
         resp = requests.post(f"{self.base_url}/api/chat", json=body, timeout=120)
         resp.raise_for_status()
