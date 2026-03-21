@@ -236,11 +236,11 @@
       </button>
       <!-- Save & Run split dropdown -->
       <div class="btn-group">
-        <button class="btn btn-sm btn-primary" onclick="saveAndRun()" id="saveRunBtn" {% if not file_path %}disabled{% endif %}>
+        <button class="btn btn-sm btn-primary" onclick="saveAndRun()" id="saveRunBtn">
           <i class="bi bi-play-fill"></i> Save &amp; Run
         </button>
         <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split"
-          data-bs-toggle="dropdown" aria-expanded="false" {% if not file_path %}disabled{% endif %}>
+          data-bs-toggle="dropdown" aria-expanded="false">
           <span class="visually-hidden">Toggle Dropdown</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
@@ -280,7 +280,7 @@
         <button class="btn btn-sm btn-success" onclick="saveFile()">
           <i class="bi bi-save"></i> Save
         </button>
-        <button class="btn btn-sm btn-primary" onclick="saveAndRun()" {% if not file_path %}disabled{% endif %}>
+        <button class="btn btn-sm btn-primary" onclick="saveAndRun()">
           <i class="bi bi-play-fill"></i> Save &amp; Run
         </button>
       </div>
