@@ -9,7 +9,6 @@
   <i class="bi bi-x-circle"></i> Cancel Run
 </button>
 {% endif %}
-<button class="btn btn-sm btn-outline-primary me-2" onclick="rerunTest()"><i class="bi bi-arrow-repeat"></i> Rerun</button>
 <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help">
   <i class="bi bi-question-circle" style="font-size:1.1rem"></i>
 </button>
@@ -55,6 +54,7 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
     <span>Test Result Details</span>
+    <button class="btn btn-sm btn-outline-primary" onclick="rerunTest()"><i class="bi bi-arrow-repeat me-1"></i>Rerun</button>
   </div>
   <div class="card-body">
     <div class="row g-3 small">
@@ -196,7 +196,7 @@
           <td>
             <div class="d-flex align-items-center gap-1">
               <div>
-                <div class="small fw-semibold">{{ sr.test_name|default:sr.script_path }}</div>
+                <a href="/builder/?file={{ sr.script_path }}" class="small fw-semibold text-decoration-none">{{ sr.test_name|default:sr.script_path }}</a>
               </div>
               {% if sr.test_summary %}
               <button class="btn btn-sm p-0 ms-1 text-info" onclick="showSummary({{ forloop.counter0 }})" title="View test summary">
@@ -233,9 +233,6 @@
             </button>
             {% endif %}
             {% endif %}
-            <a href="/builder/?file={{ sr.script_path }}" class="btn btn-sm btn-outline-primary" title="Edit test plan">
-              <i class="bi bi-pencil"></i>
-            </a>
           </td>
         </tr>
         {% empty %}
@@ -534,9 +531,14 @@
 <div class="modal fade" id="logModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Execution Log</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="logModalTitle">Execution Log</h6>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-outline-secondary" id="logRefreshBtn" onclick="refreshLog()" style="display:none" title="Refresh">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
       </div>
       <div class="modal-body p-0">
         <pre id="logContent" class="p-3 mb-0" style="background:#1e2a3a;color:#cdd5e0;font-size:.78rem;max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
@@ -553,26 +555,65 @@ var scriptSummaries = JSON.parse('{{ summaries_json|escapejs }}');
 function showSummary(index) {
   var summary = scriptSummaries[index];
   if (!summary) return;
+  currentLogScriptId = null;
+  document.getElementById('logModalTitle').textContent = 'Test Plan Summary';
+  document.getElementById('logRefreshBtn').style.display = 'none';
   document.getElementById('logContent').textContent = summary;
   new bootstrap.Modal(document.getElementById('logModal')).show();
 }
 
+var currentLogScriptId = null;
+var logAutoRefresh = null;
+
 function showLog(id) {
+  currentLogScriptId = id;
+  document.getElementById('logModalTitle').textContent = 'Execution Log';
+  document.getElementById('logRefreshBtn').style.display = '';
+  _fetchLog(id, true);
+}
+
+function _fetchLog(id, openModal) {
   fetch('/runs/' + runId + '/script/' + id + '/')
     .then(function(r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     })
     .then(function(d) {
-      document.getElementById('logContent').textContent = d.execution_log || 'No log available.';
-      new bootstrap.Modal(document.getElementById('logModal')).show();
+      var pre = document.getElementById('logContent');
+      pre.textContent = d.execution_log || 'No log available.';
+      pre.scrollTop = pre.scrollHeight;
+      if (openModal) {
+        new bootstrap.Modal(document.getElementById('logModal')).show();
+      }
+      // Auto-refresh if script is still running
+      var isRunning = d.status === 'running' || d.status === 'queued';
+      if (isRunning && !logAutoRefresh) {
+        logAutoRefresh = setInterval(function() { _fetchLog(currentLogScriptId, false); }, 3000);
+      } else if (!isRunning && logAutoRefresh) {
+        clearInterval(logAutoRefresh);
+        logAutoRefresh = null;
+      }
     })
     .catch(function(err) {
-      alert('Failed to load log: ' + err.message);
+      if (openModal) alert('Failed to load log: ' + err.message);
     });
 }
 
+function refreshLog() {
+  if (currentLogScriptId) _fetchLog(currentLogScriptId, false);
+}
+
+// Stop auto-refresh when modal closes
+document.getElementById('logModal').addEventListener('hidden.bs.modal', function() {
+  if (logAutoRefresh) { clearInterval(logAutoRefresh); logAutoRefresh = null; }
+  currentLogScriptId = null;
+  document.getElementById('logRefreshBtn').style.display = 'none';
+});
+
 function showError(msg) {
+  currentLogScriptId = null;
+  document.getElementById('logModalTitle').textContent = 'Error Details';
+  document.getElementById('logRefreshBtn').style.display = 'none';
   document.getElementById('logContent').textContent = msg || 'No details.';
   new bootstrap.Modal(document.getElementById('logModal')).show();
 }

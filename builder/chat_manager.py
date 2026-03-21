@@ -185,11 +185,13 @@ test('AI visual inspection — CRA Form 1', async ({ page }) => {
 ```
 
 ### Visual Comparison (cross-locale with pixelmatch)
+The test data dataset should include a `baseline: true` entry for the reference locale and other entries for the locales to compare.
+Example dataset: `[{"country": "ZZZ", "language": "eng", "baseline": true}, {"country": "SAU", "language": "ara"}, {"country": "SVN", "language": "slv"}]`
 ```javascript
 const { test, expect } = require('@playwright/test');
 const { login } = require('../src/helpers/auth');
-const { selectFilters, getItemLinks, openItem } = require('../src/helpers/piaac');
-const fs = require('fs');
+const { selectFilters, getItemLinks, openItem, navigateItemScreens } = require('../src/helpers/piaac');
+const { getCustomData } = require('../src/helpers/testdata');
 const { PNG } = require('pngjs');
 const pixelmatch = require('pixelmatch');
 
@@ -197,41 +199,100 @@ function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
 }
 
-function compareImages(actualBuf, baselineBuf, name) {
+function compareImages(actualBuf, baselineBuf) {
   const actual = PNG.sync.read(actualBuf);
   const baseline = PNG.sync.read(baselineBuf);
+  if (actual.width !== baseline.width || actual.height !== baseline.height) {
+    return { sizeMismatch: true, diffRatio: 1, diffPng: null };
+  }
   const { width, height } = actual;
   const diff = new PNG({ width, height });
   const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, { threshold: 0.1 });
-  return { diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) };
+  return { sizeMismatch: false, diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) };
 }
 
 test('Visual comparison — translated vs baseline', async ({ page }) => {
-  test.setTimeout(300000);
+  test.setTimeout(600000);
   const envConfig = loadEnvConfig();
-  await login(page, { env: envConfig });
-  await selectFilters(page, { version: 'FT New', country: 'ROU', language: 'ron', domain: 'LITNew' });
-  const items = await getItemLinks(page);
-  const failures = [];
+  const ds = getCustomData();
+  const locales = ds && ds.entries ? ds.entries : [];
+  if (!locales.length) {
+    console.warn('[SCOUT] No test data linked. Link a dataset with locale entries.');
+    return;
+  }
 
-  for (const item of items) {
+  // Separate baseline locale from comparison locales
+  const baselineLocale = locales.find(l => l.baseline) || locales[0];
+  const compareLocales = locales.filter(l => l !== baselineLocale && !l.baseline);
+  const domain = baselineLocale.domain || 'LITNew';
+
+  await login(page, { env: envConfig });
+
+  // Step 1: Capture baseline screenshots
+  const baselineLabel = `${baselineLocale.country}-${baselineLocale.language}`;
+  console.log(`[SCOUT] Capturing baseline: ${baselineLabel}`);
+  await selectFilters(page, {
+    version: baselineLocale.version || 'FT New',
+    country: baselineLocale.country, language: baselineLocale.language, domain
+  });
+  const baselineItems = await getItemLinks(page);
+  const baselineScreenshots = {}; // { 'itemId-screenIdx': Buffer }
+
+  for (const item of baselineItems) {
     const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    const screenshot = await itemPage.screenshot({ fullPage: true });
-    // Compare against baseline (stored from a previous baseline run)
-    const baselinePath = `test-results/baseline/${item.itemId}.png`;
-    if (fs.existsSync(baselinePath)) {
-      const baseline = fs.readFileSync(baselinePath);
-      const result = compareImages(screenshot, baseline, item.itemId);
-      if (result.diffRatio > 0.05) {
-        failures.push(`${item.itemId}: ${(result.diffRatio * 100).toFixed(2)}% diff`);
-      }
-      await test.info().attach(`diff-${item.itemId}`, { body: result.diffPng, contentType: 'image/png' });
-    }
+    await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
+      const buf = await pg.screenshot({ fullPage: true });
+      baselineScreenshots[`${item.itemId}-${idx}`] = buf;
+      await test.info().attach(`baseline-${item.itemId}-${baselineLabel}-screen-${idx}`, {
+        body: buf, contentType: 'image/png',
+      });
+    });
     await itemPage.close();
   }
 
-  if (failures.length) console.warn('Layout differences:', failures);
+  // Step 2: Compare each locale against baseline
+  const failures = [];
+  for (const loc of compareLocales) {
+    const locLabel = `${loc.country}-${loc.language}`;
+    console.log(`[SCOUT] Comparing locale: ${locLabel} vs ${baselineLabel}`);
+    await selectFilters(page, {
+      version: loc.version || 'FT New',
+      country: loc.country, language: loc.language, domain: loc.domain || domain
+    });
+    const items = await getItemLinks(page);
+
+    for (const item of items) {
+      const itemPage = await openItem(page, item.itemId);
+      await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
+        const actual = await pg.screenshot({ fullPage: true });
+        await test.info().attach(`actual-${item.itemId}-${locLabel}-screen-${idx}`, {
+          body: actual, contentType: 'image/png',
+        });
+        const baselineKey = `${item.itemId}-${idx}`;
+        const baselineBuf = baselineScreenshots[baselineKey];
+        if (baselineBuf) {
+          const result = compareImages(actual, baselineBuf);
+          if (result.sizeMismatch) {
+            failures.push(`${item.itemId} ${locLabel} screen ${idx}: SIZE MISMATCH`);
+          } else if (result.diffRatio > 0.05) {
+            failures.push(`${item.itemId} ${locLabel} screen ${idx}: ${(result.diffRatio * 100).toFixed(2)}% diff`);
+          }
+          if (result.diffPng) {
+            await test.info().attach(`diff-${item.itemId}-${locLabel}-screen-${idx}`, {
+              body: result.diffPng, contentType: 'image/png',
+            });
+          }
+        }
+      });
+      await itemPage.close();
+    }
+  }
+
+  if (failures.length) {
+    console.warn('[SCOUT] Visual differences found:', failures);
+  } else {
+    console.log('[SCOUT] No significant visual differences detected.');
+  }
 });
 ```
 
@@ -352,7 +413,9 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += 'Dynamic discovery (e.g. reading dropdown options) is fragile and often fails due to page state changes.\n'
     prompt += '- Use `getCustomData()` or `getInputs()` from `src/helpers/testdata.js` to load the list at runtime.\n'
     prompt += '- If no dataset is linked yet, tell the user they need to create a Test Data dataset with the values and link it to this script from the Settings tab.\n'
-    prompt += '- Example: for a cross-locale visual comparison, the user creates a "Languages" dataset with entries like `[{"code": "fra", "country": "ZZZ"}, {"code": "deu", "country": "ZZZ"}]` and the script iterates over them.\n'
+    prompt += '- Example: for a cross-locale visual comparison, the user creates a dataset with entries like `[{"country": "ZZZ", "language": "eng", "baseline": true}, {"country": "SAU", "language": "ara"}, {"country": "SVN", "language": "slv"}]`.\n'
+    prompt += '- The entry with `"baseline": true` is the reference locale. The script captures it first, then compares each other locale against it.\n'
+    prompt += '- If no entry has `"baseline": true`, use the first entry as the baseline.\n'
     prompt += '- NEVER hardcode lists of languages, locales, or other variable data directly in the script. Always load from Test Data.\n\n'
 
     # QC Checklist instructions
@@ -745,8 +808,8 @@ test('Functional test — {sc.get("assessmentName", "Assessment")}', async ({{ p
     elif template_type == 'visual_comparison':
         code = f"""const {{ test, expect }} = require('@playwright/test');
 const {{ login }} = require('../src/helpers/auth');
-const {{ selectFilters, getItemLinks, openItem }} = require('../src/helpers/piaac');
-const fs = require('fs');
+const {{ selectFilters, getItemLinks, openItem, navigateItemScreens }} = require('../src/helpers/piaac');
+const {{ getCustomData }} = require('../src/helpers/testdata');
 const {{ PNG }} = require('pngjs');
 const pixelmatch = require('pixelmatch');
 
@@ -755,35 +818,96 @@ const pixelmatch = require('pixelmatch');
 function compareImages(actualBuf, baselineBuf) {{
   const actual = PNG.sync.read(actualBuf);
   const baseline = PNG.sync.read(baselineBuf);
+  if (actual.width !== baseline.width || actual.height !== baseline.height) {{
+    return {{ sizeMismatch: true, diffRatio: 1, diffPng: null }};
+  }}
   const {{ width, height }} = actual;
   const diff = new PNG({{ width, height }});
   const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, {{ threshold: 0.1 }});
-  return {{ diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) }};
+  return {{ sizeMismatch: false, diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) }};
 }}
 
 test('Visual comparison — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
-  test.setTimeout(300000);
+  test.setTimeout(600000);
   const envConfig = loadEnvConfig();
-  await login(page, {{ env: envConfig }});
-  // TODO: Set the target locale/language filters
-  await selectFilters(page, {{ version: 'FT New', country: 'ZZZ', language: 'eng', domain: '{domain or "LITNew"}' }});
-  const items = await getItemLinks(page);
-  const failures = [];
+  const ds = getCustomData();
+  const locales = ds && ds.entries ? ds.entries : [];
+  if (!locales.length) {{
+    console.warn('[SCOUT] No test data linked. Link a dataset with locale entries (include one with baseline: true).');
+    return;
+  }}
 
-  for (const item of items) {{
+  // Separate baseline locale (marked with baseline: true) from comparison locales
+  const baselineLocale = locales.find(l => l.baseline) || locales[0];
+  const compareLocales = locales.filter(l => l !== baselineLocale && !l.baseline);
+  const domain = baselineLocale.domain || '{domain or "LITNew"}';
+
+  await login(page, {{ env: envConfig }});
+
+  // Step 1: Capture baseline screenshots
+  const baselineLabel = `${{baselineLocale.country}}-${{baselineLocale.language}}`;
+  console.log(`[SCOUT] Capturing baseline: ${{baselineLabel}}`);
+  await selectFilters(page, {{
+    version: baselineLocale.version || 'FT New',
+    country: baselineLocale.country, language: baselineLocale.language, domain
+  }});
+  const baselineItems = await getItemLinks(page);
+  const baselineScreenshots = {{}};
+
+  for (const item of baselineItems) {{
     const itemPage = await openItem(page, item.itemId);
-    await itemPage.waitForLoadState('networkidle');
-    const screenshot = await itemPage.screenshot({{ fullPage: true }});
-    const baselinePath = `test-results/baseline/${{item.itemId}}.png`;
-    if (fs.existsSync(baselinePath)) {{
-      const baseline = fs.readFileSync(baselinePath);
-      const result = compareImages(screenshot, baseline);
-      if (result.diffRatio > 0.05) {{
-        failures.push(`${{item.itemId}}: ${{(result.diffRatio * 100).toFixed(2)}}% diff`);
-      }}
-      await test.info().attach(`diff-${{item.itemId}}`, {{ body: result.diffPng, contentType: 'image/png' }});
-    }}
+    await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
+      const buf = await pg.screenshot({{ fullPage: true }});
+      baselineScreenshots[`${{item.itemId}}-${{idx}}`] = buf;
+      await test.info().attach(`baseline-${{item.itemId}}-${{baselineLabel}}-screen-${{idx}}`, {{
+        body: buf, contentType: 'image/png',
+      }});
+    }});
     await itemPage.close();
+  }}
+
+  // Step 2: Compare each locale against baseline
+  const failures = [];
+  for (const loc of compareLocales) {{
+    const locLabel = `${{loc.country}}-${{loc.language}}`;
+    console.log(`[SCOUT] Comparing locale: ${{locLabel}} vs ${{baselineLabel}}`);
+    await selectFilters(page, {{
+      version: loc.version || 'FT New',
+      country: loc.country, language: loc.language, domain: loc.domain || domain
+    }});
+    const items = await getItemLinks(page);
+
+    for (const item of items) {{
+      const itemPage = await openItem(page, item.itemId);
+      await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
+        const actual = await pg.screenshot({{ fullPage: true }});
+        await test.info().attach(`actual-${{item.itemId}}-${{locLabel}}-screen-${{idx}}`, {{
+          body: actual, contentType: 'image/png',
+        }});
+        const baselineKey = `${{item.itemId}}-${{idx}}`;
+        const baselineBuf = baselineScreenshots[baselineKey];
+        if (baselineBuf) {{
+          const result = compareImages(actual, baselineBuf);
+          if (result.sizeMismatch) {{
+            failures.push(`${{item.itemId}} ${{locLabel}} screen ${{idx}}: SIZE MISMATCH`);
+          }} else if (result.diffRatio > 0.05) {{
+            failures.push(`${{item.itemId}} ${{locLabel}} screen ${{idx}}: ${{(result.diffRatio * 100).toFixed(2)}}% diff`);
+          }}
+          if (result.diffPng) {{
+            await test.info().attach(`diff-${{item.itemId}}-${{locLabel}}-screen-${{idx}}`, {{
+              body: result.diffPng, contentType: 'image/png',
+            }});
+          }}
+        }}
+      }});
+      await itemPage.close();
+    }}
+  }}
+
+  if (failures.length) {{
+    console.warn('[SCOUT] Visual differences found:', failures);
+  }} else {{
+    console.log('[SCOUT] No significant visual differences detected.');
   }}
 
   if (failures.length) console.warn('Layout differences:', failures);
