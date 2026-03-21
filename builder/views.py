@@ -458,6 +458,11 @@ def _archive_script(cursor, script_path, full_path, user):
 
     # Remove from active tables
     cursor.execute('DELETE FROM test_suite_scripts WHERE script_path = %s', [script_path])
+    cursor.execute("""
+        DELETE FROM test_script_data_sets WHERE script_id IN (
+            SELECT id FROM test_scripts WHERE script_path = %s
+        )
+    """, [script_path])
     cursor.execute('DELETE FROM test_scripts WHERE script_path = %s', [script_path])
 
     # Delete file from disk
@@ -478,6 +483,13 @@ def _hard_delete_script(cursor, script_path, full_path):
 
     # Delete run data
     _cascade_delete_run_data(cursor, script_path)
+
+    # Delete test data set links (not the datasets themselves)
+    cursor.execute("""
+        DELETE FROM test_script_data_sets WHERE script_id IN (
+            SELECT id FROM test_scripts WHERE script_path = %s
+        )
+    """, [script_path])
 
     # Delete script record
     cursor.execute('DELETE FROM test_scripts WHERE script_path = %s', [script_path])

@@ -184,114 +184,178 @@ test('AI visual inspection — CRA Form 1', async ({ page }) => {
 });
 ```
 
-### Visual Comparison (cross-locale with pixelmatch)
-The test data dataset should include a `baseline: true` entry for the reference locale and other entries for the locales to compare.
+### Cross-Locale Translation Verification (PIAAC)
+Compares translated locales against a baseline (e.g. eng-ZZZ) to detect: untranslated text, layout overflow, and missing content.
+The test data dataset should include a `baseline: true` entry for the reference locale.
 Example dataset: `[{"country": "ZZZ", "language": "eng", "baseline": true}, {"country": "SAU", "language": "ara"}, {"country": "SVN", "language": "slv"}]`
+
+Key differences from pixel-diff comparison:
+- Screenshots are saved to **disk** (not just test.info().attach) so SCOUT can archive them
+- Text is **extracted** from each screen and compared for similarity — screens with >80% text similarity to baseline are flagged as likely untranslated
+- DOM overflow detection catches clipped/truncated translated text
+- Pixel diff is NOT used for pass/fail (translated text will always differ)
 ```javascript
-const { test, expect } = require('@playwright/test');
+const { test } = require('@playwright/test');
 const { login } = require('../src/helpers/auth');
 const { selectFilters, getItemLinks, openItem, navigateItemScreens } = require('../src/helpers/piaac');
 const { getCustomData } = require('../src/helpers/testdata');
-const { PNG } = require('pngjs');
-const pixelmatch = require('pixelmatch');
 
 function loadEnvConfig() {
   return process.env.SCOUT_ENV_CONFIG ? JSON.parse(process.env.SCOUT_ENV_CONFIG) : {};
 }
 
-function compareImages(actualBuf, baselineBuf) {
-  const actual = PNG.sync.read(actualBuf);
-  const baseline = PNG.sync.read(baselineBuf);
-  if (actual.width !== baseline.width || actual.height !== baseline.height) {
-    return { sizeMismatch: true, diffRatio: 1, diffPng: null };
-  }
-  const { width, height } = actual;
-  const diff = new PNG({ width, height });
-  const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, { threshold: 0.1 });
-  return { sizeMismatch: false, diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) };
+// Simple text similarity (Jaccard on words) — returns 0.0 to 1.0
+function textSimilarity(a, b) {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  if (!wordsA.size && !wordsB.size) return 1;
+  let intersection = 0;
+  for (const w of wordsA) { if (wordsB.has(w)) intersection++; }
+  return intersection / Math.max(wordsA.size, wordsB.size);
 }
 
-test('Visual comparison — translated vs baseline', async ({ page }) => {
+// Detect DOM elements with clipped/overflowed content
+async function detectOverflow(page) {
+  return await page.evaluate(() => {
+    const results = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+      const el = walker.currentNode;
+      if (!(el instanceof HTMLElement)) continue;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (!(el.textContent || '').trim()) continue;
+      const clipped = style.overflow !== 'visible' &&
+        (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+      if (clipped) {
+        results.push({
+          selector: el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+          scrollW: el.scrollWidth, clientW: el.clientWidth,
+          scrollH: el.scrollHeight, clientH: el.clientHeight,
+          text: (el.textContent || '').trim().slice(0, 120),
+        });
+        if (results.length >= 30) break;
+      }
+    }
+    return results;
+  });
+}
+
+// Extract visible text from the page content area
+async function extractText(page) {
+  return await page.evaluate(() => {
+    const el = document.getElementById('item') || document.querySelector('[role="main"]') || document.body;
+    return (el.innerText || el.textContent || '').trim();
+  });
+}
+
+test('Translation verification — cross-locale', async ({ page }) => {
   test.setTimeout(600000);
   const envConfig = loadEnvConfig();
   const ds = getCustomData();
   const locales = ds && ds.entries ? ds.entries : [];
   if (!locales.length) {
-    console.warn('[SCOUT] No test data linked. Link a dataset with locale entries.');
+    console.warn('[SCOUT] No test data linked. Link a dataset with locale entries (include one with baseline: true).');
     return;
   }
 
-  // Separate baseline locale from comparison locales
   const baselineLocale = locales.find(l => l.baseline) || locales[0];
   const compareLocales = locales.filter(l => l !== baselineLocale && !l.baseline);
   const domain = baselineLocale.domain || 'LITNew';
+  const baselineLabel = `${baselineLocale.country}-${baselineLocale.language}`;
+  const findings = [];
 
   await login(page, { env: envConfig });
 
-  // Step 1: Capture baseline screenshots
-  const baselineLabel = `${baselineLocale.country}-${baselineLocale.language}`;
+  // Step 1: Capture baseline text and screenshots
   console.log(`[SCOUT] Capturing baseline: ${baselineLabel}`);
   await selectFilters(page, {
     version: baselineLocale.version || 'FT New',
-    country: baselineLocale.country, language: baselineLocale.language, domain
+    country: baselineLocale.country, language: baselineLocale.language, domain,
   });
   const baselineItems = await getItemLinks(page);
-  const baselineScreenshots = {}; // { 'itemId-screenIdx': Buffer }
+  const baselineData = {}; // { 'itemId-idx': { text, screenshot } }
 
   for (const item of baselineItems) {
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
-      const buf = await pg.screenshot({ fullPage: true });
-      baselineScreenshots[`${item.itemId}-${idx}`] = buf;
-      await test.info().attach(`baseline-${item.itemId}-${baselineLabel}-screen-${idx}`, {
-        body: buf, contentType: 'image/png',
+      await pg.waitForLoadState('networkidle');
+      const text = await extractText(pg);
+      const screenshot = await pg.screenshot({
+        path: `test-results/baseline-${item.itemId}-${baselineLabel}-screen-${idx}.png`, fullPage: true
       });
+      baselineData[`${item.itemId}-${idx}`] = { text, screenshot };
+      console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `Baseline ${baselineLabel} ${item.itemId} screen ${idx}`, text })}`);
     });
     await itemPage.close();
   }
+  console.log(`[SCOUT] Baseline captured: ${Object.keys(baselineData).length} screens`);
 
-  // Step 2: Compare each locale against baseline
-  const failures = [];
+  // Step 2: Compare each locale
   for (const loc of compareLocales) {
     const locLabel = `${loc.country}-${loc.language}`;
-    console.log(`[SCOUT] Comparing locale: ${locLabel} vs ${baselineLabel}`);
+    console.log(`[SCOUT] Checking locale: ${locLabel}`);
     await selectFilters(page, {
       version: loc.version || 'FT New',
-      country: loc.country, language: loc.language, domain: loc.domain || domain
+      country: loc.country, language: loc.language, domain: loc.domain || domain,
     });
     const items = await getItemLinks(page);
 
     for (const item of items) {
       const itemPage = await openItem(page, item.itemId);
       await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
-        const actual = await pg.screenshot({ fullPage: true });
-        await test.info().attach(`actual-${item.itemId}-${locLabel}-screen-${idx}`, {
-          body: actual, contentType: 'image/png',
+        await pg.waitForLoadState('networkidle');
+        const key = `${item.itemId}-${idx}`;
+        const text = await extractText(pg);
+
+        // Save screenshot to disk for SCOUT archiving
+        await pg.screenshot({
+          path: `test-results/${item.itemId}-${locLabel}-screen-${idx}.png`, fullPage: true
         });
-        const baselineKey = `${item.itemId}-${idx}`;
-        const baselineBuf = baselineScreenshots[baselineKey];
-        if (baselineBuf) {
-          const result = compareImages(actual, baselineBuf);
-          if (result.sizeMismatch) {
-            failures.push(`${item.itemId} ${locLabel} screen ${idx}: SIZE MISMATCH`);
-          } else if (result.diffRatio > 0.05) {
-            failures.push(`${item.itemId} ${locLabel} screen ${idx}: ${(result.diffRatio * 100).toFixed(2)}% diff`);
+        console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `${locLabel} ${item.itemId} screen ${idx}`, text })}`);
+
+        // Check 1: Untranslated text (high similarity to baseline)
+        const baseline = baselineData[key];
+        if (baseline && baseline.text) {
+          const sim = textSimilarity(baseline.text, text);
+          if (sim > 0.80) {
+            const pct = (sim * 100).toFixed(0);
+            const msg = `${item.itemId} ${locLabel} screen ${idx}: LIKELY UNTRANSLATED (${pct}% similar to ${baselineLabel})`;
+            console.warn('[SCOUT]', msg);
+            findings.push({ type: 'untranslated', severity: 'high', item: item.itemId, locale: locLabel, screen: idx, similarity: sim, detail: msg });
           }
-          if (result.diffPng) {
-            await test.info().attach(`diff-${item.itemId}-${locLabel}-screen-${idx}`, {
-              body: result.diffPng, contentType: 'image/png',
-            });
-          }
+        }
+
+        // Check 2: Layout overflow
+        const overflow = await detectOverflow(pg);
+        if (overflow.length) {
+          const msg = `${item.itemId} ${locLabel} screen ${idx}: ${overflow.length} overflow element(s)`;
+          console.warn('[SCOUT]', msg);
+          findings.push({ type: 'overflow', severity: 'medium', item: item.itemId, locale: locLabel, screen: idx, elements: overflow.length, detail: msg });
+        }
+
+        // Check 3: Missing content (baseline had text but locale has none)
+        if (baseline && baseline.text && baseline.text.length > 20 && (!text || text.length < 10)) {
+          const msg = `${item.itemId} ${locLabel} screen ${idx}: MISSING CONTENT (baseline had ${baseline.text.length} chars, locale has ${text ? text.length : 0})`;
+          console.warn('[SCOUT]', msg);
+          findings.push({ type: 'missing_content', severity: 'high', item: item.itemId, locale: locLabel, screen: idx, detail: msg });
         }
       });
       await itemPage.close();
     }
   }
 
-  if (failures.length) {
-    console.warn('[SCOUT] Visual differences found:', failures);
+  // Summary
+  if (findings.length) {
+    console.warn(`[SCOUT] Found ${findings.length} issue(s):`);
+    findings.forEach(f => console.warn(`  - ${f.detail}`));
+    await test.info().attach('translation-findings', {
+      body: JSON.stringify(findings, null, 2), contentType: 'application/json',
+    });
   } else {
-    console.log('[SCOUT] No significant visual differences detected.');
+    console.log('[SCOUT] All locales verified — no translation issues detected.');
   }
 });
 ```
@@ -414,8 +478,13 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '- Use `getCustomData()` or `getInputs()` from `src/helpers/testdata.js` to load the list at runtime.\n'
     prompt += '- If no dataset is linked yet, tell the user they need to create a Test Data dataset with the values and link it to this script from the Settings tab.\n'
     prompt += '- Example: for a cross-locale visual comparison, the user creates a dataset with entries like `[{"country": "ZZZ", "language": "eng", "baseline": true}, {"country": "SAU", "language": "ara"}, {"country": "SVN", "language": "slv"}]`.\n'
-    prompt += '- The entry with `"baseline": true` is the reference locale. The script captures it first, then compares each other locale against it.\n'
+    prompt += '- The entry with `"baseline": true` is the reference locale. The script captures its text and screenshots first, then compares each other locale against it.\n'
     prompt += '- If no entry has `"baseline": true`, use the first entry as the baseline.\n'
+    prompt += '- For cross-locale comparison, do NOT use pixel-diff threshold for pass/fail — translated text will always differ. Instead check for:\n'
+    prompt += '  1. **Untranslated text**: compare extracted text similarity (Jaccard on words) — flag screens >80% similar to baseline as likely untranslated\n'
+    prompt += '  2. **Layout overflow**: detect DOM elements with clipped/truncated content from longer translated text\n'
+    prompt += '  3. **Missing content**: flag screens where baseline had text but the locale has none\n'
+    prompt += '- Save screenshots to disk with `page.screenshot({ path: "test-results/..." })` so SCOUT can archive them. Do NOT use only `test.info().attach()` — those are not archived.\n'
     prompt += '- NEVER hardcode lists of languages, locales, or other variable data directly in the script. Always load from Test Data.\n\n'
 
     # QC Checklist instructions
@@ -806,28 +875,56 @@ test('Functional test — {sc.get("assessmentName", "Assessment")}', async ({{ p
 }});"""
 
     elif template_type == 'visual_comparison':
-        code = f"""const {{ test, expect }} = require('@playwright/test');
+        code = f"""const {{ test }} = require('@playwright/test');
 const {{ login }} = require('../src/helpers/auth');
 const {{ selectFilters, getItemLinks, openItem, navigateItemScreens }} = require('../src/helpers/piaac');
 const {{ getCustomData }} = require('../src/helpers/testdata');
-const {{ PNG }} = require('pngjs');
-const pixelmatch = require('pixelmatch');
 
 {env_config_block}
 
-function compareImages(actualBuf, baselineBuf) {{
-  const actual = PNG.sync.read(actualBuf);
-  const baseline = PNG.sync.read(baselineBuf);
-  if (actual.width !== baseline.width || actual.height !== baseline.height) {{
-    return {{ sizeMismatch: true, diffRatio: 1, diffPng: null }};
-  }}
-  const {{ width, height }} = actual;
-  const diff = new PNG({{ width, height }});
-  const numDiff = pixelmatch(actual.data, baseline.data, diff.data, width, height, {{ threshold: 0.1 }});
-  return {{ sizeMismatch: false, diffRatio: numDiff / (width * height), diffPng: PNG.sync.write(diff) }};
+function textSimilarity(a, b) {{
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.toLowerCase().split(/\\s+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().split(/\\s+/).filter(w => w.length > 2));
+  if (!wordsA.size && !wordsB.size) return 1;
+  let intersection = 0;
+  for (const w of wordsA) {{ if (wordsB.has(w)) intersection++; }}
+  return intersection / Math.max(wordsA.size, wordsB.size);
 }}
 
-test('Visual comparison — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
+async function detectOverflow(page) {{
+  return await page.evaluate(() => {{
+    const results = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {{
+      const el = walker.currentNode;
+      if (!(el instanceof HTMLElement)) continue;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (!(el.textContent || '').trim()) continue;
+      const clipped = style.overflow !== 'visible' &&
+        (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+      if (clipped) {{
+        results.push({{
+          selector: el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+          text: (el.textContent || '').trim().slice(0, 120),
+        }});
+        if (results.length >= 30) break;
+      }}
+    }}
+    return results;
+  }});
+}}
+
+async function extractText(page) {{
+  return await page.evaluate(() => {{
+    const el = document.getElementById('item') || document.querySelector('[role="main"]') || document.body;
+    return (el.innerText || el.textContent || '').trim();
+  }});
+}}
+
+test('Translation verification — {sc.get("assessmentName", "Assessment")}', async ({{ page }}) => {{
   test.setTimeout(600000);
   const envConfig = loadEnvConfig();
   const ds = getCustomData();
@@ -837,80 +934,91 @@ test('Visual comparison — {sc.get("assessmentName", "Assessment")}', async ({{
     return;
   }}
 
-  // Separate baseline locale (marked with baseline: true) from comparison locales
   const baselineLocale = locales.find(l => l.baseline) || locales[0];
   const compareLocales = locales.filter(l => l !== baselineLocale && !l.baseline);
   const domain = baselineLocale.domain || '{domain or "LITNew"}';
+  const baselineLabel = `${{baselineLocale.country}}-${{baselineLocale.language}}`;
+  const findings = [];
 
   await login(page, {{ env: envConfig }});
 
-  // Step 1: Capture baseline screenshots
-  const baselineLabel = `${{baselineLocale.country}}-${{baselineLocale.language}}`;
+  // Step 1: Capture baseline text and screenshots
   console.log(`[SCOUT] Capturing baseline: ${{baselineLabel}}`);
   await selectFilters(page, {{
     version: baselineLocale.version || 'FT New',
-    country: baselineLocale.country, language: baselineLocale.language, domain
+    country: baselineLocale.country, language: baselineLocale.language, domain,
   }});
   const baselineItems = await getItemLinks(page);
-  const baselineScreenshots = {{}};
+  const baselineData = {{}};
 
   for (const item of baselineItems) {{
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
-      const buf = await pg.screenshot({{ fullPage: true }});
-      baselineScreenshots[`${{item.itemId}}-${{idx}}`] = buf;
-      await test.info().attach(`baseline-${{item.itemId}}-${{baselineLabel}}-screen-${{idx}}`, {{
-        body: buf, contentType: 'image/png',
+      await pg.waitForLoadState('networkidle');
+      const text = await extractText(pg);
+      await pg.screenshot({{
+        path: `test-results/baseline-${{item.itemId}}-${{baselineLabel}}-screen-${{idx}}.png`, fullPage: true
       }});
+      baselineData[`${{item.itemId}}-${{idx}}`] = {{ text }};
+      console.log(`[SCOUT_TEXT] ${{JSON.stringify({{ label: `Baseline ${{baselineLabel}} ${{item.itemId}} screen ${{idx}}`, text }})}}`);
     }});
     await itemPage.close();
   }}
 
-  // Step 2: Compare each locale against baseline
-  const failures = [];
+  // Step 2: Compare each locale
   for (const loc of compareLocales) {{
     const locLabel = `${{loc.country}}-${{loc.language}}`;
-    console.log(`[SCOUT] Comparing locale: ${{locLabel}} vs ${{baselineLabel}}`);
+    console.log(`[SCOUT] Checking locale: ${{locLabel}}`);
     await selectFilters(page, {{
       version: loc.version || 'FT New',
-      country: loc.country, language: loc.language, domain: loc.domain || domain
+      country: loc.country, language: loc.language, domain: loc.domain || domain,
     }});
     const items = await getItemLinks(page);
 
     for (const item of items) {{
       const itemPage = await openItem(page, item.itemId);
       await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
-        const actual = await pg.screenshot({{ fullPage: true }});
-        await test.info().attach(`actual-${{item.itemId}}-${{locLabel}}-screen-${{idx}}`, {{
-          body: actual, contentType: 'image/png',
+        await pg.waitForLoadState('networkidle');
+        const key = `${{item.itemId}}-${{idx}}`;
+        const text = await extractText(pg);
+        await pg.screenshot({{
+          path: `test-results/${{item.itemId}}-${{locLabel}}-screen-${{idx}}.png`, fullPage: true
         }});
-        const baselineKey = `${{item.itemId}}-${{idx}}`;
-        const baselineBuf = baselineScreenshots[baselineKey];
-        if (baselineBuf) {{
-          const result = compareImages(actual, baselineBuf);
-          if (result.sizeMismatch) {{
-            failures.push(`${{item.itemId}} ${{locLabel}} screen ${{idx}}: SIZE MISMATCH`);
-          }} else if (result.diffRatio > 0.05) {{
-            failures.push(`${{item.itemId}} ${{locLabel}} screen ${{idx}}: ${{(result.diffRatio * 100).toFixed(2)}}% diff`);
+        console.log(`[SCOUT_TEXT] ${{JSON.stringify({{ label: `${{locLabel}} ${{item.itemId}} screen ${{idx}}`, text }})}}`);
+
+        const baseline = baselineData[key];
+        if (baseline && baseline.text) {{
+          const sim = textSimilarity(baseline.text, text);
+          if (sim > 0.80) {{
+            const msg = `${{item.itemId}} ${{locLabel}} screen ${{idx}}: LIKELY UNTRANSLATED (${{(sim * 100).toFixed(0)}}% similar to ${{baselineLabel}})`;
+            console.warn('[SCOUT]', msg);
+            findings.push({{ type: 'untranslated', severity: 'high', item: item.itemId, locale: locLabel, screen: idx, detail: msg }});
           }}
-          if (result.diffPng) {{
-            await test.info().attach(`diff-${{item.itemId}}-${{locLabel}}-screen-${{idx}}`, {{
-              body: result.diffPng, contentType: 'image/png',
-            }});
-          }}
+        }}
+        const overflow = await detectOverflow(pg);
+        if (overflow.length) {{
+          const msg = `${{item.itemId}} ${{locLabel}} screen ${{idx}}: ${{overflow.length}} overflow element(s)`;
+          console.warn('[SCOUT]', msg);
+          findings.push({{ type: 'overflow', severity: 'medium', item: item.itemId, locale: locLabel, screen: idx, detail: msg }});
+        }}
+        if (baseline && baseline.text && baseline.text.length > 20 && (!text || text.length < 10)) {{
+          const msg = `${{item.itemId}} ${{locLabel}} screen ${{idx}}: MISSING CONTENT`;
+          console.warn('[SCOUT]', msg);
+          findings.push({{ type: 'missing_content', severity: 'high', item: item.itemId, locale: locLabel, screen: idx, detail: msg }});
         }}
       }});
       await itemPage.close();
     }}
   }}
 
-  if (failures.length) {{
-    console.warn('[SCOUT] Visual differences found:', failures);
+  if (findings.length) {{
+    console.warn(`[SCOUT] Found ${{findings.length}} issue(s)`);
+    await test.info().attach('translation-findings', {{
+      body: JSON.stringify(findings, null, 2), contentType: 'application/json',
+    }});
   }} else {{
-    console.log('[SCOUT] No significant visual differences detected.');
+    console.log('[SCOUT] All locales verified — no translation issues detected.');
   }}
-
-  if (failures.length) console.warn('Layout differences:', failures);
 }});"""
     else:
         return {'success': False, 'result': f'Unknown template type: {template_type}'}

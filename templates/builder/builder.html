@@ -503,7 +503,41 @@
           </div>
         </div>
         {% else %}
-        <p class="text-muted small mb-0">Save the test first to edit its details.</p>
+        <!-- New test plan — allow setting environment, assessment, item before first save -->
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Environment *</label>
+            <select id="newMetaEnv" class="form-select form-select-sm" onchange="onNewMetaEnvChange(this.value)">
+              <option value="">— Select —</option>
+              {% for env in environments %}
+              <option value="{{ env.id }}" {% if assessment and assessment.environment_id|stringformat:'s' == env.id|stringformat:'s' %}selected{% endif %}>{{ env.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Assessment</label>
+            <select id="newMetaAssessment" class="form-select form-select-sm" onchange="onNewMetaAssessmentChange(this.value)">
+              <option value="">— None —</option>
+              {% for a in assessments %}
+              <option value="{{ a.id }}" {% if assessment and assessment.id|stringformat:'s' == a.id|stringformat:'s' %}selected{% endif %}>{{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Item</label>
+            <select id="newMetaItem" class="form-select form-select-sm" onchange="onNewMetaItemChange(this.value)">
+              <option value="">— None —</option>
+              {% for item in items %}
+              <option value="{{ item.item_id }}" {% if qp_item_id == item.item_id %}selected{% endif %}>{{ item.item_id }}{% if item.title %} — {{ item.title|truncatechars:40 }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold mb-1">Description</label>
+            <input type="text" id="newMetaDescription" class="form-control form-control-sm" value="{{ qp_description|default:'' }}" placeholder="Short description of this test plan">
+          </div>
+        </div>
+        <p class="text-muted small mt-3 mb-0"><i class="bi bi-info-circle me-1"></i>Additional settings (AI analysis, test data, browser/viewport) will be available after the first save.</p>
         {% endif %}
       </div>
     </div>
@@ -726,6 +760,41 @@ var pendingAiConfig = null;  // AI-suggested config stored until first save
 var pendingSummary = null;   // Summary stored until first save
 var pendingConversationId = null;  // Chat conversation ID stored until first save
 var linkedDatasetCount = {{ linked_datasets|length|default:"0" }};
+
+// ── New test plan settings sync ──
+function onNewMetaEnvChange(envId) {
+  // Sync with the envPicker at the top
+  var envPicker = document.getElementById('envPicker');
+  if (envPicker) envPicker.value = envId;
+  // Update scriptContext
+  scriptContext.environmentName = envId ? document.getElementById('newMetaEnv').selectedOptions[0].text : '';
+}
+
+function onNewMetaAssessmentChange(val) {
+  scriptContext.assessmentId = val;
+  var sel = document.getElementById('newMetaAssessment');
+  scriptContext.assessmentName = val && sel.selectedOptions[0] ? sel.selectedOptions[0].text : '';
+}
+
+function onNewMetaItemChange(val) {
+  scriptContext.itemId = val;
+}
+
+// Sync envPicker → Settings tab when envPicker changes (for new scripts)
+(function() {
+  var envPicker = document.getElementById('envPicker');
+  var newMetaEnv = document.getElementById('newMetaEnv');
+  if (envPicker && newMetaEnv) {
+    envPicker.addEventListener('change', function() {
+      newMetaEnv.value = this.value;
+      onNewMetaEnvChange(this.value);
+    });
+    // Also sync Settings → envPicker on load if Settings has a value
+    if (newMetaEnv.value && !envPicker.value) {
+      envPicker.value = newMetaEnv.value;
+    }
+  }
+})();
 
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1186,9 +1255,13 @@ function saveFile() {
     url = '/builder/api/save/';
     payload = { code: code };
     if (envId) payload.environment_id = envId;
-    if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
-    if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
-    if (scriptContext.description) payload.description = scriptContext.description;
+    // Read from Settings tab if available, fallback to scriptContext
+    var newDesc = document.getElementById('newMetaDescription');
+    var newAssess = document.getElementById('newMetaAssessment');
+    var newItem = document.getElementById('newMetaItem');
+    payload.assessment_id = (newAssess && newAssess.value) || scriptContext.assessmentId || null;
+    payload.item_id = (newItem && newItem.value) || scriptContext.itemId || null;
+    payload.description = (newDesc && newDesc.value.trim()) || scriptContext.description || null;
     if (pendingAiConfig) payload.ai_config = pendingAiConfig;
     if (pendingSummary) payload.test_summary = pendingSummary;
     if (pendingConversationId) payload.conversation_id = pendingConversationId;
@@ -1399,9 +1472,12 @@ function _doSaveAndRun(browser, viewport, aiConfig) {
       url = '/builder/api/save/';
       payload = { code: code };
       if (envId) payload.environment_id = envId;
-      if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
-      if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
-      if (scriptContext.description) payload.description = scriptContext.description;
+      var newDesc = document.getElementById('newMetaDescription');
+      var newAssess = document.getElementById('newMetaAssessment');
+      var newItem = document.getElementById('newMetaItem');
+      payload.assessment_id = (newAssess && newAssess.value) || scriptContext.assessmentId || null;
+      payload.item_id = (newItem && newItem.value) || scriptContext.itemId || null;
+      payload.description = (newDesc && newDesc.value.trim()) || scriptContext.description || null;
       if (pendingAiConfig) payload.ai_config = pendingAiConfig;
       if (pendingSummary) payload.test_summary = pendingSummary;
       if (pendingConversationId) payload.conversation_id = pendingConversationId;
