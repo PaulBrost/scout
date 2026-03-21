@@ -57,12 +57,20 @@
               <div class="form-text">Admins have full access to all environments and admin settings.</div>
             </div>
           </div>
-          <div class="mb-4">
+          <div class="mb-3">
             <div class="form-check form-switch">
               <input type="checkbox" name="is_active" id="isActive" class="form-check-input"
                      {% if edit_user.is_active or not edit_user %}checked{% endif %}>
               <label class="form-check-label fw-semibold" for="isActive">Active</label>
               <div class="form-text">Inactive users cannot log in.</div>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="form-check form-switch">
+              <input type="checkbox" name="can_change_password" id="canChangePassword" class="form-check-input"
+                     {% if user_can_change_password %}checked{% endif %}>
+              <label class="form-check-label fw-semibold" for="canChangePassword">User can update their password</label>
+              <div class="form-text">Disable for users who authenticate via OIDC/SSO only.</div>
             </div>
           </div>
 

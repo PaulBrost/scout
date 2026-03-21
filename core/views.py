@@ -151,7 +151,7 @@ def settings_view(request):
             request.user.save()
             messages.success(request, 'Profile updated.')
 
-        elif form_type == 'password':
+        elif form_type == 'password' and settings_obj.can_change_password:
             current = request.POST.get('current_password', '')
             new_pw = request.POST.get('new_password', '')
             confirm = request.POST.get('confirm_password', '')
@@ -172,6 +172,7 @@ def settings_view(request):
     return render(request, 'core/settings.html', {
         'timezone_choices': TIMEZONE_CHOICES,
         'current_timezone': settings_obj.timezone,
+        'can_change_password': settings_obj.can_change_password,
     })
 
 
@@ -342,6 +343,10 @@ def oidc_callback(request, provider_id):
         user = User.objects.create_user(username=username, email=email, is_staff=is_admin)
         user.set_unusable_password()
         user.save()
+        # OIDC users don't need local password management
+        settings_obj, _ = UserSettings.objects.get_or_create(user=user)
+        settings_obj.can_change_password = False
+        settings_obj.save()
     else:
         # Sync admin status from IdP on every login
         if user.is_staff != is_admin:

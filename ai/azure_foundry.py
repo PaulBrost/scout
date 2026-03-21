@@ -30,7 +30,7 @@ class AzureFoundryProvider(BaseProvider):
                 {'role': 'system', 'content': 'You are a proofreading assistant. Respond with ONLY a JSON object. No markdown, no explanation.'},
                 {'role': 'user', 'content': prompt},
             ],
-            deployment=self.text_deployment, max_tokens=16000
+            deployment=self.text_deployment, max_tokens=16000, temperature=0
         )
         result = self._parse_response(raw)
         issues = result['issues']
@@ -58,7 +58,7 @@ class AzureFoundryProvider(BaseProvider):
                 ],
             },
         ]
-        raw = self._chat_completion(messages, deployment=self.vision_deployment, max_tokens=4000)
+        raw = self._chat_completion(messages, deployment=self.vision_deployment, max_tokens=4000, temperature=0)
         result = self._parse_response(raw)
         issues = result['issues']
         summary = result['summary'] or (
@@ -121,10 +121,12 @@ class AzureFoundryProvider(BaseProvider):
         options = options or {}
         return self._chat_completion(messages, max_tokens=options.get('max_tokens', 3000))
 
-    def _chat_completion(self, messages, deployment=None, max_tokens=1000):
+    def _chat_completion(self, messages, deployment=None, max_tokens=1000, temperature=None):
         deployment = deployment or self.text_deployment
         url = f"{self.endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self.api_version}"
-        body = {'messages': messages, 'max_completion_tokens': max_tokens, 'temperature': 0}
+        body = {'messages': messages, 'max_completion_tokens': max_tokens}
+        if temperature is not None:
+            body['temperature'] = temperature
         last_error = None
 
         for attempt in range(3):
@@ -134,6 +136,14 @@ class AzureFoundryProvider(BaseProvider):
                     headers={'Content-Type': 'application/json', 'api-key': self.api_key},
                     timeout=120
                 )
+                # If temperature caused a 400, retry without it
+                if resp.status_code == 400 and temperature is not None:
+                    body.pop('temperature', None)
+                    resp = requests.post(
+                        url, json=body,
+                        headers={'Content-Type': 'application/json', 'api-key': self.api_key},
+                        timeout=120
+                    )
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get('retry-after', '2'))
                     delay = min(retry_after * 1000, 10000) * (attempt + 1) / 1000

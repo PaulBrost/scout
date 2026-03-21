@@ -507,6 +507,7 @@ class TestScriptDataSet(models.Model):
 class UserSettings(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='settings')
     timezone = models.CharField(max_length=63, default='America/New_York')
+    can_change_password = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'user_settings'

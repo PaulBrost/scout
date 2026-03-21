@@ -75,10 +75,19 @@ def user_edit(request, user_id):
         environments = _get_all_environments(cursor)
         user_env_ids = _get_user_environment_ids(cursor, user_id)
 
+    # Load can_change_password setting
+    user_can_change_password = True
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT can_change_password FROM user_settings WHERE user_id = %s', [user_id])
+        row = cursor.fetchone()
+        if row:
+            user_can_change_password = row[0]
+
     return render(request, 'users/edit.html', {
         'edit_user': edit_user,
         'environments': environments,
         'user_env_ids': user_env_ids,
+        'user_can_change_password': user_can_change_password,
     })
 
 
@@ -208,6 +217,14 @@ def user_update(request, user_id):
                 'INSERT INTO user_environments (user_id, environment_id) VALUES (%s, %s)',
                 [user_id, eid],
             )
+
+        # Save can_change_password setting
+        can_change_pw = request.POST.get('can_change_password') == 'on'
+        cursor.execute("""
+            INSERT INTO user_settings (user_id, timezone, can_change_password)
+            VALUES (%s, 'America/New_York', %s)
+            ON CONFLICT (user_id) DO UPDATE SET can_change_password = EXCLUDED.can_change_password
+        """, [user_id, can_change_pw])
 
     return redirect('/users/')
 
