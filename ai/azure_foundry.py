@@ -123,36 +123,28 @@ class AzureFoundryProvider(BaseProvider):
 
     def _chat_completion(self, messages, deployment=None, max_tokens=1000, temperature=None):
         deployment = deployment or self.text_deployment
-        url = f"{self.endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self.api_version}"
-        body = {'messages': messages, 'max_completion_tokens': max_tokens}
-        if temperature is not None:
-            body['temperature'] = temperature
+        headers = {'Content-Type': 'application/json', 'api-key': self.api_key}
         last_error = None
 
         for attempt in range(3):
             try:
-                resp = requests.post(
-                    url, json=body,
-                    headers={'Content-Type': 'application/json', 'api-key': self.api_key},
-                    timeout=120
-                )
-                # If temperature caused a 400, retry without it
-                if resp.status_code == 400 and temperature is not None:
-                    body.pop('temperature', None)
-                    resp = requests.post(
-                        url, json=body,
-                        headers={'Content-Type': 'application/json', 'api-key': self.api_key},
-                        timeout=120
-                    )
-                if resp.status_code == 429:
-                    retry_after = int(resp.headers.get('retry-after', '2'))
-                    delay = min(retry_after * 1000, 10000) * (attempt + 1) / 1000
-                    time.sleep(delay)
-                    last_error = Exception(f"Azure rate limited (429)")
+                # Try Chat Completions API first
+                result = self._try_chat_completions(messages, deployment, max_tokens, temperature, headers)
+                if result is not None:
+                    return result
+
+                # Chat Completions not supported — fall back to Responses API
+                result = self._try_responses_api(messages, deployment, max_tokens, temperature, headers)
+                if result is not None:
+                    return result
+
+                raise Exception(f"Model {deployment} did not return a valid response from either API")
+            except _RetryableError as e:
+                last_error = e.original
+                if attempt < 2:
+                    time.sleep(1 * (attempt + 1))
                     continue
-                resp.raise_for_status()
-                data = resp.json()
-                return data['choices'][0]['message']['content']
+                raise last_error
             except Exception as e:
                 last_error = e
                 if attempt < 2 and '401' not in str(e) and '403' not in str(e):
@@ -160,3 +152,87 @@ class AzureFoundryProvider(BaseProvider):
                     continue
                 raise
         raise last_error
+
+    def _try_chat_completions(self, messages, deployment, max_tokens, temperature, headers):
+        """Try the Chat Completions API. Returns content string or None if unsupported."""
+        url = f"{self.endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self.api_version}"
+        body = {'messages': messages, 'max_completion_tokens': max_tokens, 'model': deployment}
+        if temperature is not None:
+            body['temperature'] = temperature
+
+        resp = requests.post(url, json=body, headers=headers, timeout=120)
+
+        # If 400, try stripping params
+        if resp.status_code == 400:
+            error_text = resp.text[:500] if resp.text else ''
+            # Model doesn't support chat completions at all — signal to try Responses API
+            if 'OperationNotSupported' in error_text:
+                return None
+            # Try removing temperature
+            if 'temperature' in body:
+                body.pop('temperature')
+                resp = requests.post(url, json=body, headers=headers, timeout=120)
+            # Try switching max_completion_tokens → max_tokens
+            if resp.status_code == 400 and 'max_completion_tokens' in body:
+                body['max_tokens'] = body.pop('max_completion_tokens')
+                resp = requests.post(url, json=body, headers=headers, timeout=120)
+
+        if resp.status_code == 429:
+            raise _RetryableError(Exception("Azure rate limited (429)"))
+
+        if not resp.ok:
+            error_detail = resp.text[:500] if resp.text else ''
+            raise Exception(f"{resp.status_code} {resp.reason}: {error_detail}")
+
+        data = resp.json()
+        return data['choices'][0]['message']['content']
+
+    def _try_responses_api(self, messages, deployment, max_tokens, temperature, headers):
+        """Try the Azure Responses API (for models that don't support chat completions)."""
+        url = f"{self.endpoint}/openai/v1/responses"
+        # Convert chat messages to Responses API format
+        input_items = []
+        for msg in messages:
+            content = msg.get('content', '')
+            if isinstance(content, list):
+                # Multi-part content (vision) — extract text parts
+                text_parts = [p['text'] for p in content if isinstance(p, dict) and p.get('type') == 'text']
+                content = '\n'.join(text_parts) if text_parts else str(content)
+            if msg['role'] == 'system':
+                input_items.append({'role': 'developer', 'content': content})
+            else:
+                input_items.append({'role': msg['role'], 'content': content})
+
+        body = {'model': deployment, 'input': input_items}
+        if max_tokens:
+            body['max_output_tokens'] = max(max_tokens, 16)
+        if temperature is not None:
+            body['temperature'] = temperature
+
+        resp = requests.post(url, json=body, headers=headers, timeout=120)
+
+        if resp.status_code == 429:
+            raise _RetryableError(Exception("Azure rate limited (429)"))
+
+        if not resp.ok:
+            error_detail = resp.text[:500] if resp.text else ''
+            raise Exception(f"{resp.status_code} {resp.reason}: {error_detail}")
+
+        data = resp.json()
+        # Responses API returns output_text directly
+        if data.get('output_text'):
+            return data['output_text']
+        # Or dig into output array
+        for item in data.get('output', []):
+            if item.get('type') == 'message':
+                for c in item.get('content', []):
+                    if c.get('type') == 'output_text':
+                        return c.get('text', '')
+        return None
+
+
+class _RetryableError(Exception):
+    """Wrapper to signal retryable errors in the retry loop."""
+    def __init__(self, original):
+        self.original = original
+        super().__init__(str(original))

@@ -722,6 +722,7 @@ var scriptContext = {
   environmentName: '{% if script_meta.environment_name %}{{ script_meta.environment_name|escapejs }}{% elif assessment %}{{ assessment.env_name|escapejs }}{% endif %}'
 };
 var isDirty = false;
+var pendingAiConfig = null;  // AI-suggested config stored until first save
 
 function getCsrf() {
   var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1066,6 +1067,7 @@ function sendMessage() {
       }
       // Auto-set AI analysis checkboxes if the AI specified ai_config
       if (d.codeUpdate.ai_config) {
+        pendingAiConfig = d.codeUpdate.ai_config;
         var txtCb = document.getElementById('aiTextAnalysis');
         var visCb = document.getElementById('aiVisualAnalysis');
         if (txtCb && d.codeUpdate.ai_config.text_analysis !== undefined) {
@@ -1174,6 +1176,7 @@ function saveFile() {
     if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
     if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
     if (scriptContext.description) payload.description = scriptContext.description;
+    if (pendingAiConfig) payload.ai_config = pendingAiConfig;
   }
 
   fetch(url, {
@@ -1187,6 +1190,11 @@ function saveFile() {
     if (d.error) { alert('Save failed: ' + d.error); return; }
     isDirty = false;
     document.getElementById('dirtyIndicator').style.display = 'none';
+    if (d.path && !currentFilePath) {
+      // First save of a new test — reload to the proper URL so all tabs/features activate
+      window.location = '/builder/?file=' + encodeURIComponent(d.path);
+      return;
+    }
     if (d.path) {
       currentFilePath = d.path;
     }
@@ -1333,10 +1341,11 @@ function saveAndRun() {
   document.getElementById('runCfgBrowser').value = metaBrowser ? metaBrowser.value : 'chromium';
   document.getElementById('runCfgViewport').value = metaViewport ? metaViewport.value : '1920x1080';
   // Pre-populate AI analysis checkboxes from script defaults
+  // Pre-populate AI analysis from Settings checkboxes or pendingAiConfig (for unsaved tests)
   var aiText = document.getElementById('aiTextAnalysis');
   var aiVisual = document.getElementById('aiVisualAnalysis');
-  document.getElementById('runCfgTextAnalysis').checked = aiText ? aiText.checked : false;
-  document.getElementById('runCfgVisualAnalysis').checked = aiVisual ? aiVisual.checked : false;
+  document.getElementById('runCfgTextAnalysis').checked = aiText ? aiText.checked : (pendingAiConfig && pendingAiConfig.text_analysis || false);
+  document.getElementById('runCfgVisualAnalysis').checked = aiVisual ? aiVisual.checked : (pendingAiConfig && pendingAiConfig.visual_analysis || false);
   new bootstrap.Modal(document.getElementById('runConfigModal')).show();
 }
 
@@ -1374,6 +1383,7 @@ function _doSaveAndRun(browser, viewport, aiConfig) {
       if (scriptContext.assessmentId) payload.assessment_id = scriptContext.assessmentId;
       if (scriptContext.itemId) payload.item_id = scriptContext.itemId;
       if (scriptContext.description) payload.description = scriptContext.description;
+      if (pendingAiConfig) payload.ai_config = pendingAiConfig;
     }
 
     setRunStatus('Saving…', 'text-info');

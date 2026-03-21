@@ -498,6 +498,7 @@ def api_save(request):
         assessment_id = data.get('assessment_id') or None
         item_id = data.get('item_id') or None
         description = data.get('description') or None
+        ai_config = data.get('ai_config') or {}
         if not code:
             return JsonResponse({'error': 'No code to save'}, status=400)
         tests_dir = Path(settings.PLAYWRIGHT_TESTS_DIR)
@@ -506,21 +507,23 @@ def api_save(request):
         code = fix_helper_paths(code, filename)
         filepath = tests_dir / filename
         filepath.write_text(code, encoding='utf-8')
-        # Register in DB with environment, assessment, item, description
+        # Register in DB with environment, assessment, item, description, ai_config
         rel_path = filename
+        ai_config_json = json.dumps(ai_config) if ai_config else '{}'
         with connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO test_scripts
                        (script_path, environment_id, assessment_id, item_id, description,
                         test_type, tags, ai_config, browser, viewport, created_by_id, created_at, updated_at)
                    VALUES (%s, %s, %s, %s, %s,
-                           'functional', '[]'::jsonb, '{}'::jsonb, 'chromium', '1920x1080', %s, now(), now())
+                           'functional', '[]'::jsonb, %s::jsonb, 'chromium', '1920x1080', %s, now(), now())
                    ON CONFLICT (script_path) DO UPDATE SET updated_at = now()""",
                 [rel_path,
                  environment_id if environment_id else None,
                  assessment_id,
                  item_id,
                  description,
+                 ai_config_json,
                  request.user.id]
             )
         return JsonResponse({'path': rel_path})

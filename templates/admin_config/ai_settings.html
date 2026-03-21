@@ -49,24 +49,35 @@
 
   <!-- ═══ Tab 1: AI Providers ═══ -->
   <div class="tab-pane fade {% if tab == 'providers' %}show active{% endif %}" id="pane-providers" role="tabpanel">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
-        <span>AI Providers</span>
-        <button class="btn btn-sm btn-primary" onclick="showProviderModal()">Add Provider</button>
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto" id="providerPageSize" onchange="providerChangePageSize()">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+        </select>
       </div>
+      <button class="btn btn-sm btn-primary" onclick="showProviderModal()"><i class="bi bi-plus"></i> Add Provider</button>
+    </div>
+    <div class="card border-0 shadow-sm">
       <div class="card-body p-0">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
+              <th style="width:30px"><input type="checkbox" id="providerSelectAll" onchange="providerToggleAll(this.checked)"></th>
               <th>Name</th>
               <th>Type</th>
               <th class="text-center">Enabled</th>
+              <th class="text-center">Builder</th>
+              <th class="text-center">Grammar</th>
+              <th class="text-center">Visual</th>
               <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody id="providers-table-body">
             {% for p in providers %}
-            <tr id="provider-row-{{ p.id }}">
+            <tr id="provider-row-{{ p.id }}" class="provider-row">
+              <td><input type="checkbox" class="provider-cb" value="{{ p.id }}"></td>
               <td class="fw-semibold">{{ p.name }}</td>
               <td>
                 {% if p.provider_type == 'anthropic' %}Anthropic / Azure AI Foundry
@@ -77,17 +88,40 @@
               <td class="text-center">
                 {% if p.enabled %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}
               </td>
-              <td class="text-end">
+              <td class="text-center">
+                {% if p.id == builder_provider_id %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}
+              </td>
+              <td class="text-center">
+                {% if p.id == text_provider_id %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}
+              </td>
+              <td class="text-center">
+                {% if p.id == vision_provider_id %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}
+              </td>
+              <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-outline-primary" onclick="editProvider('{{ p.id }}')">Edit</button>
                 <button class="btn btn-sm btn-outline-secondary" onclick="testProviderById('{{ p.id }}', this)">Test</button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deleteProvider('{{ p.id }}', '{{ p.name|escapejs }}')">Delete</button>
               </td>
             </tr>
             {% empty %}
-            <tr id="no-providers-row"><td colspan="4" class="text-muted text-center py-4">No providers configured. Click "Add Provider" to get started.</td></tr>
+            <tr class="provider-empty-row"><td colspan="8" class="text-muted text-center py-4">No providers configured. Click "Add Provider" to get started.</td></tr>
             {% endfor %}
           </tbody>
         </table>
+      </div>
+    </div>
+    <div class="d-flex align-items-center justify-content-between mt-3">
+      <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto" id="providerBulkAction">
+          <option value="">Bulk actions</option>
+          <option value="test">Test</option>
+          <option value="delete">Delete</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" onclick="providerApplyBulk()">Go</button>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-muted small" id="providerPageInfo"></span>
+        <nav><ul class="pagination pagination-sm mb-0" id="providerPagination"></ul></nav>
       </div>
     </div>
     <div id="provider-test-result" class="mt-2"></div>
@@ -503,6 +537,84 @@ function onModalTypeChange() {
     baseUrlHint.textContent = 'Leave blank for https://api.openai.com/v1/. For Ollama: http://localhost:11434/v1/';
   }
 }
+
+// ── Provider table pagination ──
+var providerPage = 1;
+var providerPageSz = 25;
+var providerRows = Array.from(document.querySelectorAll('.provider-row'));
+
+function providerRenderPage() {
+  var total = providerRows.length;
+  var totalPages = Math.max(1, Math.ceil(total / providerPageSz));
+  if (providerPage > totalPages) providerPage = totalPages;
+  var start = (providerPage - 1) * providerPageSz;
+  var end = Math.min(start + providerPageSz, total);
+  providerRows.forEach(function(row, i) { row.style.display = (i >= start && i < end) ? '' : 'none'; });
+  var emptyRow = document.querySelector('.provider-empty-row');
+  if (emptyRow) emptyRow.style.display = total > 0 ? 'none' : '';
+  document.getElementById('providerPageInfo').textContent = total > 0 ? 'Showing ' + (start + 1) + '–' + end + ' of ' + total : '';
+  var pag = document.getElementById('providerPagination');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+  var html = '<li class="page-item ' + (providerPage <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="providerGoPage(1);return false;">«</a></li>';
+  for (var p = 1; p <= totalPages; p++) html += '<li class="page-item ' + (p === providerPage ? 'active' : '') + '"><a class="page-link" href="#" onclick="providerGoPage(' + p + ');return false;">' + p + '</a></li>';
+  html += '<li class="page-item ' + (providerPage >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="providerGoPage(' + totalPages + ');return false;">»</a></li>';
+  pag.innerHTML = html;
+}
+function providerGoPage(p) { providerPage = p; providerRenderPage(); }
+function providerChangePageSize() { providerPageSz = parseInt(document.getElementById('providerPageSize').value); providerPage = 1; providerRenderPage(); }
+
+function providerToggleAll(checked) {
+  providerRows.forEach(function(row) {
+    if (row.style.display !== 'none') {
+      var cb = row.querySelector('.provider-cb');
+      if (cb) cb.checked = checked;
+    }
+  });
+}
+
+function providerApplyBulk() {
+  var action = document.getElementById('providerBulkAction').value;
+  if (!action) { alert('Select a bulk action.'); return; }
+  var ids = Array.from(document.querySelectorAll('.provider-cb:checked')).map(function(cb) { return cb.value; });
+  if (!ids.length) { alert('Select at least one item.'); return; }
+  var csrf = document.querySelector('meta[name="csrf-token"]').content;
+
+  if (action === 'delete') {
+    if (!confirm('Delete ' + ids.length + ' selected provider(s)?')) return;
+    Promise.all(ids.map(function(id) {
+      return fetch('/admin-config/ai/providers/delete/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({provider_id: id})
+      }).then(function(r) { return r.json(); });
+    })).then(function() { location.reload(); });
+  } else if (action === 'test') {
+    var resultEl = document.getElementById('provider-test-result');
+    resultEl.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Testing ' + ids.length + ' provider(s)...</div>';
+    Promise.all(ids.map(function(id) {
+      // Get provider name from the table row
+      var row = document.getElementById('provider-row-' + id);
+      var name = row ? row.querySelectorAll('td')[1].textContent.trim() : id;
+      return fetch('/admin-config/ai/providers/test/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({id: id})
+      }).then(function(r) { return r.json(); }).then(function(d) { return {name: name, data: d}; });
+    })).then(function(results) {
+      var html = results.map(function(r) {
+        var d = r.data;
+        if (d.ok) {
+          return '<div class="text-success small"><i class="bi bi-check-circle me-1"></i><strong>' + r.name + '</strong>: ' + (d.message || 'OK') + ' (' + (d.durationMs || 0) + ' ms)</div>';
+        } else {
+          return '<div class="text-danger small"><i class="bi bi-x-circle me-1"></i><strong>' + r.name + '</strong>: ' + (d.error || 'Unknown error') + ' (' + (d.durationMs || 0) + ' ms)</div>';
+        }
+      }).join('');
+      resultEl.innerHTML = html;
+    });
+  }
+}
+
+providerRenderPage();
 
 function showProviderModal(id) {
   document.getElementById('modal-provider-id').value = '';
