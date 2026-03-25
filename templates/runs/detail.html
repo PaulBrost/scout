@@ -531,14 +531,12 @@
 <div class="modal fade" id="logModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title" id="logModalTitle">Execution Log</h6>
-        <div class="d-flex align-items-center gap-2">
-          <button class="btn btn-sm btn-outline-secondary" id="logRefreshBtn" onclick="refreshLog()" style="display:none" title="Refresh">
-            <i class="bi bi-arrow-clockwise"></i>
-          </button>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
+      <div class="modal-header py-2 d-flex align-items-center">
+        <h6 class="modal-title me-3" id="logModalTitle">Execution Log</h6>
+        <button class="btn btn-sm btn-outline-secondary" id="logRefreshBtn" onclick="refreshLog()" style="display:none" title="Refresh">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-0">
         <pre id="logContent" class="p-3 mb-0" style="background:#1e2a3a;color:#cdd5e0;font-size:.78rem;max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
