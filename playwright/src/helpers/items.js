@@ -180,31 +180,36 @@ async function answerAndAdvance(page, envConfig = null) {
   const itemAltSel = sel(envConfig, 'item_container_alt');
   const nextSel = sel(envConfig, 'next_button');
 
-  // Provide a dummy answer — try various input types
+  // Provide a dummy answer — fill ALL visible input types on the page.
+  // Some screens (e.g., Buggy Islands) require both a radio selection AND
+  // text input before advancing, so we don't return after the first match.
   await page.evaluate(({ itemSel, itemAltSel }) => {
+    let answered = false;
     // Try radio buttons (most common for NAEP routing questions)
     const radios = document.querySelectorAll('input[type="radio"]');
     if (radios.length > 0) {
       radios[0].click();
       radios[0].dispatchEvent(new Event('change', { bubbles: true }));
-      return;
+      answered = true;
     }
     // Try custom answer choice elements (divs/spans with click handlers)
-    const choices = document.querySelectorAll(
-      '.answerChoice, .responseOption, .answer-option, ' +
-      '[role="radio"], [role="option"], [data-answer], ' +
-      '.mcChoice, .mc-choice, .choiceLabel'
-    );
-    if (choices.length > 0) {
-      choices[0].click();
-      return;
+    if (!answered) {
+      const choices = document.querySelectorAll(
+        '.answerChoice, .responseOption, .answer-option, ' +
+        '[role="radio"], [role="option"], [data-answer], ' +
+        '.mcChoice, .mc-choice, .choiceLabel'
+      );
+      if (choices.length > 0) {
+        choices[0].click();
+        answered = true;
+      }
     }
     // Try checkboxes
     const checks = document.querySelectorAll('input[type="checkbox"]');
     if (checks.length > 0) {
       checks[0].click();
       checks[0].dispatchEvent(new Event('change', { bubbles: true }));
-      return;
+      answered = true;
     }
     // Try select dropdowns
     const selects = document.querySelectorAll('select');
@@ -212,10 +217,11 @@ async function answerAndAdvance(page, envConfig = null) {
       if (sel.options.length > 1 && sel.id !== 'TheTest') {
         sel.selectedIndex = 1;
         sel.dispatchEvent(new Event('change', { bubbles: true }));
-        return;
+        answered = true;
+        break;
       }
     }
-    // Try text inputs
+    // Try text inputs / textareas
     const inputs = document.querySelectorAll(
       'input[type="text"]:not([readonly]), textarea:not([readonly])'
     );
@@ -223,16 +229,18 @@ async function answerAndAdvance(page, envConfig = null) {
       inputs[0].value = 'test';
       inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
       inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-      return;
+      answered = true;
     }
     // Last resort: click any clickable element inside the item content area
-    const itemEl = document.querySelector(itemSel) || document.querySelector(itemAltSel);
-    if (itemEl) {
-      const clickables = itemEl.querySelectorAll(
-        'a, button, [onclick], [role="button"], label, td[onclick], div[onclick]'
-      );
-      if (clickables.length > 0) {
-        clickables[0].click();
+    if (!answered) {
+      const itemEl = document.querySelector(itemSel) || document.querySelector(itemAltSel);
+      if (itemEl) {
+        const clickables = itemEl.querySelectorAll(
+          'a, button, [onclick], [role="button"], label, td[onclick], div[onclick]'
+        );
+        if (clickables.length > 0) {
+          clickables[0].click();
+        }
       }
     }
   }, { itemSel, itemAltSel });
@@ -467,6 +475,9 @@ async function skipVideoIfPresent(page, launcherConfig = {}) {
  *   - max_screens: safety limit (default 100)
  *   - item_selectors.next_button: CSS selector for the Next button (default #nextButton)
  *   - item_selectors.item_container: CSS selector for the item content area (default #item)
+ *   - interactive_panels: array of {buttons: [...selectors], back_button: selector}
+ *       On each screen, if any of the buttons are visible, click each one in sequence,
+ *       wait for content, click back_button, then repeat for the next button.
  *
  * @param {import('@playwright/test').Page} page
  * @param {object|null} envConfig - Environment config from SCOUT_ENV_CONFIG
@@ -492,6 +503,35 @@ async function navigateAllScreens(page, envConfig, onScreen) {
 
     // Call user's callback on this screen
     await onScreen(page, screenIndex);
+
+    // Handle interactive panels (e.g., Buggy Islands data menu buttons)
+    // Click each button, wait for content, click back, then repeat for next button
+    if (lc.interactive_panels) {
+      for (const panel of lc.interactive_panels) {
+        // Check if the first button in the panel exists on this screen
+        const firstBtn = page.locator(panel.buttons[0]);
+        if (await firstBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          process.stderr.write(`[SCOUT] Screen ${screenIndex}: interactive panel detected, cycling ${panel.buttons.length} buttons\n`);
+          for (const btnSel of panel.buttons) {
+            const btn = page.locator(btnSel);
+            if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await btn.click();
+              await page.waitForTimeout(1000);
+              await page.waitForLoadState('networkidle');
+              // Click back button to return to the menu
+              if (panel.back_button) {
+                const backBtn = page.locator(panel.back_button);
+                if (await backBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                  await backBtn.click();
+                  await page.waitForTimeout(1000);
+                  await page.waitForLoadState('networkidle');
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Check if we've reached the end indicator
     if (lc.end_indicator) {
