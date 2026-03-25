@@ -695,7 +695,19 @@ def execute_run(run_id, script_paths, options=None):
             if test_data_path:
                 env_vars['SCOUT_TEST_DATA'] = test_data_path
             if env_config_json:
-                env_vars['SCOUT_ENV_CONFIG'] = env_config_json
+                # Enrich env_config with the assessment's form_value for this script
+                script_env_config = json.loads(env_config_json)
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """SELECT a.form_value FROM assessments a
+                           JOIN test_scripts ts ON ts.assessment_id = a.id
+                           WHERE ts.script_path = %s AND a.form_value IS NOT NULL""",
+                        [script_path]
+                    )
+                    fv_row = cursor.fetchone()
+                    if fv_row:
+                        script_env_config['form_value'] = fv_row[0]
+                env_vars['SCOUT_ENV_CONFIG'] = json.dumps(script_env_config, default=str)
 
             # Per-entry browser/viewport from test_run_scripts
             script_project = options.get('project') or BROWSER_TO_PROJECT.get(entry['browser'], 'chrome-desktop')
