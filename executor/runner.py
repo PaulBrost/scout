@@ -143,6 +143,9 @@ def find_snapshots(script_path, pre_existing_pngs=None, results_dir=None):
         try:
             if results_dir.exists():
                 for f in sorted(results_dir.rglob('*.png')):
+                    # Skip per-run Playwright output dirs (.run-* contain traces, not screenshots)
+                    if any(p.name.startswith('.run-') for p in f.relative_to(results_dir).parents):
+                        continue
                     # Skip files that existed before and weren't modified
                     if f in pre_existing_pngs and f.stat().st_mtime == pre_existing_pngs[f]:
                         continue
@@ -368,18 +371,22 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         except OSError:
             pass
 
-    # Use a unique results dir per script execution so concurrent runs don't collide
-    # on .playwright-artifacts-N directories or trace/video files.
-    run_suffix = f'{int(time.time())}-{os.urandom(3).hex()}'
-    results_dir = project_root / 'test-results' / run_suffix
+    results_dir = project_root / 'test-results'
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use a unique output dir for Playwright's internal artifacts (.playwright-artifacts,
+    # traces, videos) so concurrent runs don't collide. Test scripts' page.screenshot()
+    # calls still write to the shared test-results/ dir (keyed by spec filename).
+    run_suffix = f'{int(time.time())}-{os.urandom(3).hex()}'
+    pw_output_dir = project_root / 'test-results' / f'.run-{run_suffix}'
+    pw_output_dir.mkdir(parents=True, exist_ok=True)
 
     pre_existing_pngs = {}
 
-    json_file = results_dir / 'report.json'
+    json_file = pw_output_dir / 'report.json'
 
     args = ['npx', 'playwright', 'test', str(full_path),
-            f'--output={results_dir}',
+            f'--output={pw_output_dir}',
             '--reporter=list,json,./src/reporters/live-reporter.js', '--retries=0']
     if update_snapshots:
         args.append('--update-snapshots')
@@ -528,7 +535,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
             error_message = extract_error_message(stdout, stderr, json_report)
             screenshot_mismatches = ss_mismatches
 
-    trace_path, video_path = find_artifacts(script_path, results_dir=results_dir)
+    trace_path, video_path = find_artifacts(script_path, results_dir=pw_output_dir)
     snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs, results_dir=results_dir)
 
     # Parse QC checklist results from structured log output
@@ -546,7 +553,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         'snapshots': snapshots,
         'screenshot_mismatches': screenshot_mismatches,
         'qc_results': qc_results,
-        'results_dir': str(results_dir),
+        'pw_output_dir': str(pw_output_dir),
     }
 
 
@@ -862,11 +869,11 @@ def execute_run(run_id, script_paths, options=None):
                     os.unlink(test_data_path)
                 except OSError:
                     pass
-            # Clean up per-script results dir (artifacts already archived)
+            # Clean up per-script Playwright output dir (artifacts already archived)
             try:
-                run_results_dir = result.get('results_dir') if result else None
-                if run_results_dir:
-                    shutil.rmtree(run_results_dir, ignore_errors=True)
+                pw_out = result.get('pw_output_dir') if result else None
+                if pw_out:
+                    shutil.rmtree(pw_out, ignore_errors=True)
             except Exception:
                 pass
 
