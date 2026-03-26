@@ -68,9 +68,13 @@ def archive_artifacts(run_id, script_path, snapshots, trace_path, video_path):
     return archived_snapshots, archived_trace, archived_video
 
 
-def find_artifacts(script_path):
-    """Scan test-results/ for trace and video artifacts."""
-    results_dir = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / 'test-results'
+def find_artifacts(script_path, results_dir=None):
+    """Scan results dir for trace and video artifacts."""
+    if results_dir is None:
+        results_dir = Path(settings.PLAYWRIGHT_PROJECT_ROOT) / 'test-results'
+    else:
+        results_dir = Path(results_dir)
+    pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
     trace_path = None
     video_path = None
 
@@ -85,19 +89,21 @@ def find_artifacts(script_path):
             if not entry.name.lower().startswith(basename.lower()):
                 continue
             for f in entry.iterdir():
+                rel = str(f.relative_to(pw_root))
                 if not trace_path and f.name == 'trace.zip':
-                    trace_path = f'test-results/{entry.name}/trace.zip'
+                    trace_path = rel
                 if not video_path and f.suffix in ('.webm', '.mp4'):
-                    video_path = f'test-results/{entry.name}/{f.name}'
+                    video_path = rel
     except Exception:
         pass
 
     return trace_path, video_path
 
 
-def find_snapshots(script_path, pre_existing_pngs=None):
-    """Scan -snapshots/ dir AND test-results/ for captured screenshot PNGs.
+def find_snapshots(script_path, pre_existing_pngs=None, results_dir=None):
+    """Scan -snapshots/ dir AND results dir for captured screenshot PNGs.
     pre_existing_pngs: dict of {Path: mtime} that existed before the script ran.
+    results_dir: specific results directory for this run (supports concurrent runs).
     Returns list of dicts: [{name, file_path, project_name}, ...]
     """
     pw_root = Path(settings.PLAYWRIGHT_PROJECT_ROOT)
@@ -128,7 +134,10 @@ def find_snapshots(script_path, pre_existing_pngs=None):
 
     # 2) Scan test-results/ for new or modified PNGs from this run
     if pre_existing_pngs is not None:
-        results_dir = pw_root / 'test-results'
+        if results_dir is None:
+            results_dir = pw_root / 'test-results'
+        else:
+            results_dir = Path(results_dir)
         # Regex to detect Playwright trace resource files — pure hex hashes ≥20 chars
         _trace_resource_re = re.compile(r'^[0-9a-f]{20,}$')
         try:
@@ -359,19 +368,18 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         except OSError:
             pass
 
-    results_dir = project_root / 'test-results'
-
-    # Wipe test-results clean before each run — artifacts are archived to
-    # persistent storage after execution, so this is safe scratch space.
-    if results_dir.exists():
-        shutil.rmtree(results_dir, ignore_errors=True)
+    # Use a unique results dir per script execution so concurrent runs don't collide
+    # on .playwright-artifacts-N directories or trace/video files.
+    run_suffix = f'{int(time.time())}-{os.urandom(3).hex()}'
+    results_dir = project_root / 'test-results' / run_suffix
     results_dir.mkdir(parents=True, exist_ok=True)
 
     pre_existing_pngs = {}
 
-    json_file = results_dir / f'run-{int(time.time())}-{os.urandom(3).hex()}.json'
+    json_file = results_dir / 'report.json'
 
     args = ['npx', 'playwright', 'test', str(full_path),
+            f'--output={results_dir}',
             '--reporter=list,json,./src/reporters/live-reporter.js', '--retries=0']
     if update_snapshots:
         args.append('--update-snapshots')
@@ -520,8 +528,8 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
             error_message = extract_error_message(stdout, stderr, json_report)
             screenshot_mismatches = ss_mismatches
 
-    trace_path, video_path = find_artifacts(script_path)
-    snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs)
+    trace_path, video_path = find_artifacts(script_path, results_dir=results_dir)
+    snapshots = find_snapshots(script_path, pre_existing_pngs=pre_existing_pngs, results_dir=results_dir)
 
     # Parse QC checklist results from structured log output
     qc_results = parse_qc_results(execution_log)
@@ -538,6 +546,7 @@ def execute_script(script_path, project='', timeout=None, env_vars=None, headed=
         'snapshots': snapshots,
         'screenshot_mismatches': screenshot_mismatches,
         'qc_results': qc_results,
+        'results_dir': str(results_dir),
     }
 
 
@@ -853,6 +862,13 @@ def execute_run(run_id, script_paths, options=None):
                     os.unlink(test_data_path)
                 except OSError:
                     pass
+            # Clean up per-script results dir (artifacts already archived)
+            try:
+                run_results_dir = result.get('results_dir') if result else None
+                if run_results_dir:
+                    shutil.rmtree(run_results_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     run_status = 'completed' if (failed + errors) == 0 else 'failed'
     summary_data = {
