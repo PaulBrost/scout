@@ -94,8 +94,38 @@ async function skipIntroScreens(page, count, envConfig = null) {
 }
 
 /**
+ * Check for and dismiss a "must answer" modal — either a native alert() dialog
+ * or a custom c3.net modal (#c4modalDialog). Returns true if one was found.
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<boolean>}
+ */
+async function dismissMustAnswerModal(page) {
+  // Check for custom c3.net modal dialog (#c4modalDialog)
+  const modalDismissed = await page.evaluate(() => {
+    const modal = document.querySelector('#c4modalDialog');
+    if (!modal) return 'no-element';
+    const style = window.getComputedStyle(modal);
+    const rect = modal.getBoundingClientRect();
+    const msg = (modal.querySelector('#c4modalDialogMsgContainer') || {}).textContent || '';
+    // Check if modal is visible — use getComputedStyle since offsetParent is null
+    // for position:fixed elements even when visible
+    if (style.display === 'none' || style.visibility === 'hidden') return 'hidden:' + style.display + '/' + style.visibility + ' msg:' + msg;
+    if (rect.width === 0 && rect.height === 0) return 'zero-rect msg:' + msg;
+    // Dismiss by clicking the OK button
+    const okBtn = modal.querySelector('#c4modalDialogButton1');
+    if (okBtn) okBtn.click();
+    return true;
+  });
+  if (modalDismissed === true) {
+    await page.waitForTimeout(500);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Click the next button, force-enabling it if disabled.
- * Handles native alert() dialogs for "must answer" validation.
+ * Handles native alert() dialogs and custom c3.net modals for "must answer" validation.
  * Useful for skipping audio checks, tutorials, and other gated screens.
  * @param {import('@playwright/test').Page} page
  * @param {object} envConfig - Optional environment config from DB
@@ -112,24 +142,26 @@ async function forceClickNext(page, envConfig = null) {
     }
   }, nextSel);
 
-  // Handle "must answer" alert — only dismiss dialogs about answering
+  // Handle native "must answer" alert
   let mustAnswerFired = false;
   const dialogHandler = async (dialog) => {
     const msg = (dialog.message() || '').toLowerCase();
     if (/answer|question|before continuing|respond/.test(msg)) {
       mustAnswerFired = true;
-      await dialog.accept();
-    } else {
-      // Not a "must answer" dialog — accept but don't trigger answer logic
-      await dialog.accept();
     }
+    await dialog.accept();
   };
   page.on('dialog', dialogHandler);
 
   await page.click(nextSel);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   page.off('dialog', dialogHandler);
+
+  // Also check for custom c3.net modal dialog
+  if (!mustAnswerFired) {
+    mustAnswerFired = await dismissMustAnswerModal(page);
+  }
 
   if (mustAnswerFired) {
     await answerAndAdvance(page, envConfig);
@@ -138,7 +170,7 @@ async function forceClickNext(page, envConfig = null) {
 
 /**
  * Click the next button (only when enabled).
- * Handles native alert() dialogs for "must answer" validation.
+ * Handles native alert() dialogs and custom c3.net modals for "must answer" validation.
  * @param {import('@playwright/test').Page} page
  * @param {object} envConfig - Optional environment config from DB
  */
@@ -146,16 +178,14 @@ async function clickNext(page, envConfig = null) {
   const nextSel = sel(envConfig, 'next_button');
   await page.waitForSelector(nextSel, { state: 'visible', timeout: 10000 });
 
-  // Handle "must answer" alert — only dismiss dialogs about answering
+  // Handle native "must answer" alert
   let mustAnswerFired = false;
   const dialogHandler = async (dialog) => {
     const msg = (dialog.message() || '').toLowerCase();
     if (/answer|question|before continuing|respond/.test(msg)) {
       mustAnswerFired = true;
-      await dialog.accept();
-    } else {
-      await dialog.accept();
     }
+    await dialog.accept();
   };
   page.on('dialog', dialogHandler);
 
@@ -163,6 +193,11 @@ async function clickNext(page, envConfig = null) {
   await page.waitForTimeout(500);
 
   page.off('dialog', dialogHandler);
+
+  // Also check for custom c3.net modal dialog
+  if (!mustAnswerFired) {
+    mustAnswerFired = await dismissMustAnswerModal(page);
+  }
 
   if (mustAnswerFired) {
     await answerAndAdvance(page, envConfig);
@@ -180,37 +215,59 @@ async function answerAndAdvance(page, envConfig = null) {
   const itemAltSel = sel(envConfig, 'item_container_alt');
   const nextSel = sel(envConfig, 'next_button');
 
-  // Provide a dummy answer — fill ALL visible input types on the page.
-  // Some screens (e.g., Buggy Islands) require both a radio selection AND
-  // text input before advancing, so we don't return after the first match.
+  // Provide a dummy answer via page.evaluate to bypass modal overlay actionability
+  // checks. Calls the c3.net framework handlers directly (clickSelect,
+  // updateHistoryWCkslog) when available, falling back to DOM event dispatch.
+  // Fills ALL visible input types — some screens require multiple answers.
   await page.evaluate(({ itemSel, itemAltSel }) => {
     let answered = false;
-    // Try radio buttons (most common for NAEP routing questions)
+
+    // Try radio buttons — call clickSelect() if available (c3.net framework)
     const radios = document.querySelectorAll('input[type="radio"]');
     if (radios.length > 0) {
-      radios[0].click();
-      radios[0].dispatchEvent(new Event('change', { bubbles: true }));
+      const radio = radios[0];
+      radio.checked = true;
+      if (radio.onclick) {
+        radio.onclick(new MouseEvent('click', { bubbles: true }));
+      } else if (typeof clickSelect === 'function' && radio.id) {
+        clickSelect(new MouseEvent('click', { bubbles: true }), radio.id);
+      }
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
       answered = true;
     }
-    // Try custom answer choice elements (divs/spans with click handlers)
+
+    // Try custom answer choice elements (includes c3.net distractorDiv/Label)
     if (!answered) {
       const choices = document.querySelectorAll(
         '.answerChoice, .responseOption, .answer-option, ' +
         '[role="radio"], [role="option"], [data-answer], ' +
-        '.mcChoice, .mc-choice, .choiceLabel'
+        '.mcChoice, .mc-choice, .choiceLabel, ' +
+        '.distractorDiv, .distractorLabel'
       );
       if (choices.length > 0) {
+        // Click up to 2 choices to satisfy "select N groups" requirements
         choices[0].click();
+        if (choices.length > 1) choices[1].click();
         answered = true;
       }
     }
-    // Try checkboxes
+
+    // Try checkboxes — select up to 2 to satisfy "select N groups" requirements.
+    // Call clickSelect directly with the checkbox value (c3.net framework handler).
     const checks = document.querySelectorAll('input[type="checkbox"]');
-    if (checks.length > 0) {
-      checks[0].click();
-      checks[0].dispatchEvent(new Event('change', { bubbles: true }));
+    for (let ci = 0; ci < Math.min(checks.length, 2); ci++) {
+      const cb = checks[ci];
+      if (!cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        // Call c3.net clickSelect handler directly if available
+        if (typeof clickSelect === 'function' && cb.value) {
+          try { clickSelect(new MouseEvent('click', { bubbles: true }), cb.value); } catch (e) {}
+        }
+      }
       answered = true;
     }
+
     // Try select dropdowns
     const selects = document.querySelectorAll('select');
     for (const sel of selects) {
@@ -221,16 +278,29 @@ async function answerAndAdvance(page, envConfig = null) {
         break;
       }
     }
-    // Try text inputs / textareas
-    const inputs = document.querySelectorAll(
-      'input[type="text"]:not([readonly]), textarea:not([readonly])'
-    );
-    if (inputs.length > 0) {
-      inputs[0].value = 'test';
-      inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-      inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Try textareas — call updateHistoryWCkslog() if available (c3.net framework)
+    const textareas = document.querySelectorAll('textarea:not([readonly])');
+    if (textareas.length > 0) {
+      const ta = textareas[0];
+      ta.value = 'test';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.dispatchEvent(new Event('change', { bubbles: true }));
+      if (typeof updateHistoryWCkslog === 'function') {
+        try { updateHistoryWCkslog(new Event('input'), ta, false, false, true); } catch (e) {}
+      }
       answered = true;
     }
+
+    // Try text inputs
+    const textInputs = document.querySelectorAll('input[type="text"]:not([readonly])');
+    if (textInputs.length > 0) {
+      textInputs[0].value = 'test';
+      textInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+      textInputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+      answered = true;
+    }
+
     // Last resort: click any clickable element inside the item content area
     if (!answered) {
       const itemEl = document.querySelector(itemSel) || document.querySelector(itemAltSel);
@@ -246,7 +316,8 @@ async function answerAndAdvance(page, envConfig = null) {
   }, { itemSel, itemAltSel });
   await page.waitForTimeout(500);
 
-  // Retry clicking Next (with dialog handler in case answer wasn't accepted)
+  // Retry clicking Next — use force:true to bypass any brief modal overlay
+  // that might intercept pointer events during the transition.
   let retryDialog = false;
   const retryHandler = async (dialog) => {
     retryDialog = true;
@@ -263,10 +334,13 @@ async function answerAndAdvance(page, envConfig = null) {
       btn.classList.add('enabledButton');
     }
   }, nextSel);
-  await page.click(nextSel);
-  await page.waitForTimeout(500);
+  await page.click(nextSel, { force: true });
+  await page.waitForTimeout(1000);
 
   page.off('dialog', retryHandler);
+
+  // Dismiss custom modal if it reappeared (answer wasn't fully accepted)
+  await dismissMustAnswerModal(page);
 }
 
 /**
@@ -533,6 +607,33 @@ async function navigateAllScreens(page, envConfig, onScreen) {
       }
     }
 
+    // Pre-fill any required answers BEFORE clicking Next — ensures the
+    // assessment's internal validation passes on the first attempt.
+    // Handle radios (click 1) and checkboxes (click up to 2) separately.
+    const uncheckedRadio = page.locator('.distractorInput[type="radio"]:not(:checked)');
+    if (await uncheckedRadio.count() > 0) {
+      await uncheckedRadio.first().click({ force: true });
+      await page.waitForTimeout(300);
+    }
+    const uncheckedCb = page.locator('.distractorInput[type="checkbox"]:not(:checked)');
+    for (let cbi = 0; cbi < Math.min(await uncheckedCb.count(), 2); cbi++) {
+      await page.locator('.distractorInput[type="checkbox"]:not(:checked)').first().click({ force: true });
+      await page.waitForTimeout(300);
+    }
+    // Note: Do NOT click [onclick] elements pre-emptively — some assessments
+    // (e.g., Buggy Islands) use expandable panels that open overlays blocking
+    // navigation. The interactive_panels config handles specific button sequences.
+    // Fill empty textareas
+    const emptyTextareas = page.locator('textarea:not([readonly])');
+    for (let ti = 0; ti < await emptyTextareas.count(); ti++) {
+      const ta = emptyTextareas.nth(ti);
+      const val = await ta.inputValue();
+      if (!val || val.trim().length === 0) {
+        await ta.fill('test');
+        await page.waitForTimeout(300);
+      }
+    }
+
     // Check if we've reached the end indicator
     if (lc.end_indicator) {
       try {
@@ -553,13 +654,17 @@ async function navigateAllScreens(page, envConfig, onScreen) {
       } catch { /* end indicator not visible, continue */ }
     }
 
-    // Snapshot the page content before advancing so we can detect if Next actually moved
+    // Snapshot the page text content (not innerHTML) before advancing so we can
+    // detect if Next actually moved to a new screen. Using textContent avoids false
+    // positives from input state changes (radio checked, textarea filled by answerAndAdvance).
     const contentBefore = await page.evaluate(({ s1, s2 }) => {
       const el = document.querySelector(s1) || document.querySelector(s2) || document.body;
-      return el.innerHTML.substring(0, 1000);
+      return el.innerText.substring(0, 1000);
     }, { s1: itemSel, s2: itemAltSel });
 
-    // Try to advance — force-click handles disabled buttons (audio/video gates)
+    // Try to advance — use clickNext (respects button state) for content screens
+    // so the assessment's internal state machine works properly. Only fall back to
+    // forceClickNext when the button is disabled (intro/audio/video gates).
     try {
       const nextExists = await page.locator(nextSel).count();
       if (nextExists === 0) break; // No next button at all — we're done
@@ -568,7 +673,16 @@ async function navigateAllScreens(page, envConfig, onScreen) {
       const nextVisible = await page.locator(nextSel).isVisible({ timeout: 2000 });
       if (!nextVisible) break;
 
-      await forceClickNext(page, envConfig);
+      const isDisabled = await page.evaluate((s) => {
+        const btn = document.querySelector(s);
+        return btn ? btn.disabled || btn.classList.contains('disabledButton') : true;
+      }, nextSel);
+
+      if (isDisabled) {
+        await forceClickNext(page, envConfig);
+      } else {
+        await clickNext(page, envConfig);
+      }
     } catch {
       // Can't advance — end of assessment
       break;
@@ -578,11 +692,28 @@ async function navigateAllScreens(page, envConfig, onScreen) {
     await page.waitForTimeout(800);
     const contentAfter = await page.evaluate(({ s1, s2 }) => {
       const el = document.querySelector(s1) || document.querySelector(s2) || document.body;
-      return el.innerHTML.substring(0, 1000);
+      return el.innerText.substring(0, 1000);
     }, { s1: itemSel, s2: itemAltSel });
 
     if (contentBefore === contentAfter) {
-      // Page didn't change — we've reached the end of the assessment
+      // Page didn't change with normal clickNext — try forceClickNext to bypass
+      // the assessment's internal state check (e.g., "must read content" screens).
+      await dismissMustAnswerModal(page);
+      try {
+        await forceClickNext(page, envConfig);
+        await page.waitForTimeout(800);
+      } catch { /* ignore */ }
+
+      const contentRetry = await page.evaluate(({ s1, s2 }) => {
+        const el = document.querySelector(s1) || document.querySelector(s2) || document.body;
+        return el.innerText.substring(0, 1000);
+      }, { s1: itemSel, s2: itemAltSel });
+      if (contentBefore !== contentRetry) {
+        screenIndex++;
+        continue;
+      }
+
+      // Page still didn't change — we've reached the end of the assessment
       process.stderr.write(`[SCOUT] Screen ${screenIndex} appears to be the last screen (content unchanged after Next)\n`);
       break;
     }
