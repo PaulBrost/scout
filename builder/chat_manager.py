@@ -82,7 +82,7 @@ test('Baseline screenshots — CRA Form 1', async ({ page }) => {
   await loginAndStartTest(page, { formKey: 'cra-form1', env: envConfig, skipIntro: false });
 
   await navigateAllScreens(page, envConfig, async (pg, idx) => {
-    await pg.screenshot({ path: `test-results/screen-${idx}.png`, fullPage: true });
+    await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/screen-${idx}.png`, fullPage: true });
   });
 });
 ```
@@ -107,7 +107,7 @@ test('Baseline screenshots — PIAAC items', async ({ page }) => {
   for (const item of items) {
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
-      await pg.screenshot({ path: `test-results/${item.itemId}-screen-${idx}.png`, fullPage: true });
+      await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/${item.itemId}-screen-${idx}.png`, fullPage: true });
     });
     await itemPage.close();
   }
@@ -284,7 +284,7 @@ test('Translation verification — cross-locale', async ({ page }) => {
       await pg.waitForLoadState('networkidle');
       const text = await extractText(pg);
       const screenshot = await pg.screenshot({
-        path: `test-results/baseline-${item.itemId}-${baselineLabel}-screen-${idx}.png`, fullPage: true
+        path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/baseline-${item.itemId}-${baselineLabel}-screen-${idx}.png`, fullPage: true
       });
       baselineData[`${item.itemId}-${idx}`] = { text, screenshot };
       console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `Baseline ${baselineLabel} ${item.itemId} screen ${idx}`, text })}`);
@@ -312,7 +312,7 @@ test('Translation verification — cross-locale', async ({ page }) => {
 
         // Save screenshot to disk for SCOUT archiving
         await pg.screenshot({
-          path: `test-results/${item.itemId}-${locLabel}-screen-${idx}.png`, fullPage: true
+          path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/${item.itemId}-${locLabel}-screen-${idx}.png`, fullPage: true
         });
         console.log(`[SCOUT_TEXT] ${JSON.stringify({ label: `${locLabel} ${item.itemId} screen ${idx}`, text })}`);
 
@@ -443,7 +443,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  }\n'
     prompt += '  ```\n'
     prompt += '- Then pass it to login: `const envConfig = loadEnvConfig(); await login(page, { env: envConfig });`\n'
-    prompt += '- Use `page.screenshot({ path: `test-results/name.png`, fullPage: true })` to capture screenshots. SCOUT handles baseline comparison — do NOT use Playwright\'s `toHaveScreenshot()` assertion.\n'
+    prompt += '- Use `page.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || \'test-results\'}/name.png`, fullPage: true })` to capture screenshots. SCOUT handles baseline comparison — do NOT use Playwright\'s `toHaveScreenshot()` assertion.\n'
     prompt += '- IMPORTANT: The global Playwright timeout is 120 seconds. Tests that iterate through multiple items (screenshots, content checks) MUST override the timeout with `test.setTimeout(300000)` (5 minutes) or more at the start of the test body.\n'
     prompt += '- When looping through items, also add `await page.waitForLoadState("networkidle")` after each navigation to ensure the page is fully loaded before taking screenshots.\n'
     prompt += '- Some assessment items require an answer before allowing navigation. The `clickNext(page, envConfig)` and `forceClickNext(page, envConfig)` helpers automatically handle this by dismissing the alert dialog and providing a dummy answer. No extra code is needed in test scripts. ALWAYS pass `envConfig` so the correct button selectors are used.\n'
@@ -454,7 +454,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  ```\n'
     prompt += '  const { navigateItemScreens } = require("../../src/helpers/piaac");\n'
     prompt += '  await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {\n'
-    prompt += '    await pg.screenshot({ path: `test-results/${itemId}-screen-${idx}.png`, fullPage: true });\n'
+    prompt += '    await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || \'test-results\'}/${itemId}-screen-${idx}.png`, fullPage: true });\n'
     prompt += '  });\n'
     prompt += '  ```\n'
     prompt += '- Do NOT hardcode Next/Finish/Continue button selectors in test scripts. Always use `navigateItemScreens()` which reads selectors from the environment config.\n'
@@ -484,7 +484,7 @@ def build_system_prompt(current_code, filename, script_context=None, current_sum
     prompt += '  1. **Untranslated text**: compare extracted text similarity (Jaccard on words) — flag screens >80% similar to baseline as likely untranslated\n'
     prompt += '  2. **Layout overflow**: detect DOM elements with clipped/truncated content from longer translated text\n'
     prompt += '  3. **Missing content**: flag screens where baseline had text but the locale has none\n'
-    prompt += '- Save screenshots to disk with `page.screenshot({ path: "test-results/..." })` so SCOUT can archive them. Do NOT use only `test.info().attach()` — those are not archived.\n'
+    prompt += '- Save screenshots to disk with `page.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || \'test-results\'}/name.png` })` so SCOUT can archive them. Do NOT use only `test.info().attach()` — those are not archived.\n'
     prompt += '- NEVER hardcode lists of languages, locales, or other variable data directly in the script. Always load from Test Data.\n\n'
 
     # QC Checklist instructions
@@ -751,7 +751,7 @@ test('Baseline screenshots — {sc.get("assessmentName", "PIAAC")}', async ({{ p
   for (const item of items) {{
     const itemPage = await openItem(page, item.itemId);
     await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {{
-      await pg.screenshot({{ path: `test-results/${{item.itemId}}-screen-${{idx}}.png`, fullPage: true }});
+      await pg.screenshot({{ path: `${{process.env.SCOUT_RESULTS_DIR || 'test-results'}}/${{item.itemId}}-screen-${{idx}}.png`, fullPage: true }});
     }});
     await itemPage.close();
   }}
@@ -770,7 +770,7 @@ test('Baseline screenshots — {sc.get("assessmentName", "Assessment")}', async 
   await loginAndStartTest(page, {{ formKey: '{form_key}', env: envConfig, skipIntro: false }});
 
   await navigateAllScreens(page, envConfig, async (pg, idx) => {{
-    await pg.screenshot({{ path: `test-results/screen-${{idx}}.png`, fullPage: true }});
+    await pg.screenshot({{ path: `${{process.env.SCOUT_RESULTS_DIR || 'test-results'}}/screen-${{idx}}.png`, fullPage: true }});
   }});
 }});"""
 
@@ -957,7 +957,7 @@ test('Translation verification — {sc.get("assessmentName", "Assessment")}', as
       await pg.waitForLoadState('networkidle');
       const text = await extractText(pg);
       await pg.screenshot({{
-        path: `test-results/baseline-${{item.itemId}}-${{baselineLabel}}-screen-${{idx}}.png`, fullPage: true
+        path: `${{process.env.SCOUT_RESULTS_DIR || 'test-results'}}/baseline-${{item.itemId}}-${{baselineLabel}}-screen-${{idx}}.png`, fullPage: true
       }});
       baselineData[`${{item.itemId}}-${{idx}}`] = {{ text }};
       console.log(`[SCOUT_TEXT] ${{JSON.stringify({{ label: `Baseline ${{baselineLabel}} ${{item.itemId}} screen ${{idx}}`, text }})}}`);
@@ -982,7 +982,7 @@ test('Translation verification — {sc.get("assessmentName", "Assessment")}', as
         const key = `${{item.itemId}}-${{idx}}`;
         const text = await extractText(pg);
         await pg.screenshot({{
-          path: `test-results/${{item.itemId}}-${{locLabel}}-screen-${{idx}}.png`, fullPage: true
+          path: `${{process.env.SCOUT_RESULTS_DIR || 'test-results'}}/${{item.itemId}}-${{locLabel}}-screen-${{idx}}.png`, fullPage: true
         }});
         console.log(`[SCOUT_TEXT] ${{JSON.stringify({{ label: `${{locLabel}} ${{item.itemId}} screen ${{idx}}`, text }})}}`);
 

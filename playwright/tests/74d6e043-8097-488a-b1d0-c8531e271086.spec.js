@@ -17,7 +17,7 @@ test('Gates Screenshots — Student Experience Form', async ({ page }) => {
 
   const totalScreens = await navigateAllScreens(page, envConfig, async (pg, idx) => {
     console.log(`[SCOUT] Capturing screen ${idx}...`);
-    await pg.screenshot({ path: `test-results/screen-${idx}.png`, fullPage: true });
+    await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/screen-${idx}.png`, fullPage: true });
   });
 
   console.log(`[SCOUT] Done — captured ${totalScreens} screens.`);

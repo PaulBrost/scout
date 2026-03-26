@@ -24,7 +24,7 @@ test('Baseline screenshots — U503-Banking (ZZZ eng)', async ({ page }) => {
 
   // Walk through all screens of the item and capture full-page screenshots of each
   await navigateItemScreens(itemPage, envConfig, async (pg, idx) => {
-    await pg.screenshot({ path: `test-results/${itemId}-screen-${idx}.png`, fullPage: true });
+    await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/${itemId}-screen-${idx}.png`, fullPage: true });
   });
 
   await itemPage.close();

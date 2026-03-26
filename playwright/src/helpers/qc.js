@@ -61,7 +61,8 @@ async function safeCheck(page, screenIndex, checkName, fn) {
     const msg = err.message || String(err);
     // Capture evidence screenshot
     const safeName = checkName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-    const path = `test-results/qc-fail-screen${screenIndex}-${safeName}.png`;
+    const resultsDir = process.env.SCOUT_RESULTS_DIR || 'test-results';
+    const path = `${resultsDir}/qc-fail-screen${screenIndex}-${safeName}.png`;
     try {
       await page.screenshot({ path, fullPage: true });
     } catch { /* screenshot failed — non-critical */ }

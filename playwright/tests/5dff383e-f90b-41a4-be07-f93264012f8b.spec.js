@@ -13,6 +13,6 @@ test('Baseline screenshots — CRA Form 3 — Odd Var / Even Base', async ({ pag
   await loginAndStartTest(page, { formKey: 'cra-form3', env: envConfig, skipIntro: false });
 
   await navigateAllScreens(page, envConfig, async (pg, idx) => {
-    await pg.screenshot({ path: `test-results/screen-${idx}.png`, fullPage: true });
+    await pg.screenshot({ path: `${process.env.SCOUT_RESULTS_DIR || 'test-results'}/screen-${idx}.png`, fullPage: true });
   });
 });

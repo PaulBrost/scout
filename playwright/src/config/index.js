@@ -40,6 +40,9 @@ const config = {
 
   // Mock AI mode
   mockAiMode: process.env.MOCK_AI_MODE || 'clean',
+
+  // Per-run results directory for screenshots (set by SCOUT runner for concurrency)
+  resultsDir: process.env.SCOUT_RESULTS_DIR || 'test-results',
 };
 
 /**
